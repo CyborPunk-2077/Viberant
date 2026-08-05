@@ -1,0 +1,2017 @@
+phase 0
+
+Product Constitution
+
+The home screen for developers who build with AI.
+
+Mission
+
+Give developers who work with AI coding assistants a single, calm place to begin — a home that shows what matters, hides what doesn't, and makes the state of their work legible at a glance.
+
+We exist to answer one question the moment the app opens: "Where is my work, and what deserves my attention right now?"
+
+Vision
+
+Software development is becoming a collaboration between human intent and machine execution. The developer's job is shifting from writing every line to directing, reviewing, and deciding. But the tooling landscape still assumes the old world: terminals, diffs, branches, and a dozen scattered sessions with no center of gravity.
+
+We will build that center of gravity. In five years, "opening this app" should be as automatic for AI-native developers as opening a terminal was for the last generation — not because it does everything, but because it is where everything begins.
+
+Product Philosophy
+
+1. The developer is the editor-in-chief, not the typist.When AI writes code, the human's scarce resource is judgment, not keystrokes. Every pixel must serve judgment: understanding, deciding, approving, redirecting. Anything that serves typing, configuring, or bookkeeping is someone else's job.
+
+2. State, not tools.The app is organized around the state of the work — what's in progress, what's waiting on you, what finished while you slept — never around the tools that produced it. Claude Code, Cursor, Aider: these are instruments. We show the music, not the orchestra pit.
+
+3. Calm is a feature.AI agents generate activity at machine speed. Our job is to compress that activity into human-sized meaning. If the AI did forty things, the developer should read one sentence. The app absorbs chaos and emits clarity.
+
+4. Plain language over plumbing."You have three efforts in progress. One is ready for your review." Never "detached HEAD," never "unstaged changes," never "merge conflict in 4 files" as a first-class greeting. Version control is infrastructure. Infrastructure belongs under the floorboards.
+
+5. Opinion is kindness.Every option we don't add is a decision the developer doesn't have to make. We choose good defaults and defend them. Configuration is a tax on attention; we keep the tax near zero.
+
+6. Ten seconds to obvious, ten years to outgrow.A first-time user must understand the app's purpose without reading anything. A tenth-year user must never feel the app has become a burden. These are the same discipline applied at different timescales.
+
+Design Principles
+
+One glance, one truth. The opening screen answers "what's happening?" completely. No tabs to check, no panels to expand, no unread badges competing for anxiety.
+
+Speed is honesty. Every interaction responds instantly. Latency is a lie about how much the software respects your time. If something is genuinely slow, show progress truthfully — never a spinner pretending to be work.
+
+Keyboard-first, mouse-welcome. The fastest path through the app never requires a pointer. But nothing requires memorizing a manual either — discoverability and speed are not enemies.
+
+Progressive disclosure, never progressive clutter. Depth exists, but it is pulled by the user, never pushed by the interface. The surface stays as sparse in year five as on day one.
+
+Show the thing, not a description of the thing. When a developer must judge work, they see the work itself — legible, comparable, in context. Abstractions summarize; they never obstruct.
+
+Reversibility breeds courage. Every action the app enables must feel safe to take. If the developer can always step back, they will move forward faster.
+
+Silence by default. The app never interrupts. It is a place you go to, not a thing that comes at you. Attention flows from the developer inward, never from the app outward.
+
+Beauty through restraint. No decoration, no gradient theater, no personality tics. The aesthetic is the same as a well-set page of type: you notice the content, and only later realize why it was pleasant.
+
+Non-Negotiables
+
+Sub-100ms perceived response to any input, always.
+
+The home screen never requires scrolling to understand your situation.
+
+No Git vocabulary on any primary surface. Ever.
+
+No feature ships if it adds a mandatory decision to the first-run experience.
+
+Works with every AI coding tool, favors none. We are Switzerland. The moment we privilege one assistant, we become its accessory instead of the developer's home.
+
+The developer's work is theirs. Local-first posture, no data hostage-taking, no lock-in as a retention strategy. People stay because leaving is easy and staying is better.
+
+Every feature must earn its keyboard shortcut and its pixel. If it can't justify both, it doesn't ship.
+
+Nothing happens without the developer's intent being traceable to it. The app may prepare, summarize, and suggest — it never silently acts on the work itself.
+
+Anti-Goals — What This App Must Never Become
+
+Not an IDE. We never grow a text editor "just for quick fixes." The moment we edit code, we compete with everything and stand for nothing.
+
+Not a Git GUI. We never expose branch graphs, staging areas, or rebase controls. If a user asks for them, the answer is a better abstraction, not a checkbox.
+
+Not another AI chat. Conversation happens in the assistant's own tool. We are the hallway, not another room shouting for attention.
+
+Not a dashboard. Dashboards display everything and mean nothing. We display almost nothing and mean everything.
+
+Not a project-management tool. No sprints, no assignees, no burndown charts. We reflect the developer's real work; we do not create ceremonial work about the work.
+
+Not a notification hub. Aggregating interruptions is not calm; it's a louder kind of noise.
+
+Not an agent orchestration console for its own sake. Complexity of the machinery must never become the product's subject matter.
+
+Not enterprise-ware. No feature exists solely to please a buyer who isn't the user.
+
+Mental Model
+
+The workshop foyer.
+
+A craftsman's workshop has a foyer: you walk in, see your benches, see which pieces are drying, which are ready for finishing, which need a decision. You don't see the plumbing or the wiring. You pick up the piece that matters and walk to the right bench.
+
+In our model:
+
+Efforts — units of intent ("add billing," "fix the flaky auth test") — are the pieces on the benches. Not branches, not sessions, not repos: intentions with a current state.
+
+Every effort is always in exactly one human-legible state: moving (AI or human is actively working), waiting on you (a decision or review is needed), or done (settled, safe, dismissible).
+
+The AI assistants are power tools on the benches. You reach for them from here; you return to here.
+
+The app is the foyer: you begin here, you return here between benches, and here is where you feel — bodily, instantly — whether your work is under control.
+
+The entire product must be explainable with this paragraph. Any feature that can't find its place in the foyer doesn't belong in the building.
+
+User Psychology
+
+Who they are: developers who have crossed the threshold — they no longer write most of their code by hand. They run one or several AI assistants, often in parallel, and their days are a rhythm of delegate → wait → review → decide → redirect.
+
+What they feel, and what we do about it:
+
+Feeling
+
+Reality behind it
+
+Our response
+
+Fragmentation anxiety — "I have five things running and I've lost track"
+
+Parallel AI work outpaces human working memory
+
+One surface that holds the whole picture, so their head doesn't have to
+
+Review dread — "the AI produced a wall of changes I don't want to face"
+
+Machine output volume exceeds human reading appetite
+
+Compress before presenting; make judgment feel light, not archaeological
+
+Loss-of-control unease — "what did it actually do?"
+
+Trust in AI is provisional and easily broken
+
+Total legibility and easy reversal; control that's felt, not asserted
+
+Competence displacement — "am I still a real engineer?"
+
+Identity built on writing code, now spent directing it
+
+Frame the developer as director and editor — the role with taste and authority
+
+Tool fatigue — "not another app"
+
+Every new tool historically added burden
+
+Subtract burden visibly within the first ten seconds, or lose them forever
+
+The emotional contract: opening this app should lower the user's heart rate. Every design review should ask that question literally.
+
+Success Metrics
+
+North star: the app is the first thing opened in a development session — measured as the share of working days that begin here.
+
+Supporting signals:
+
+Time-to-orientation — seconds from launch to the user's first confident action. Target: under ten, including for first-time users.
+
+Return rate between tasks — do developers come back here after finishing work in an assistant, or does the app get abandoned mid-day? Home means returning.
+
+Decision latency — how long work sits in "waiting on you" before the developer acts. If we make judgment easy, this shrinks.
+
+Parallel confidence — number of simultaneous efforts users comfortably sustain, trending up without anxiety signals (frantic checking, abandoned efforts).
+
+Silence tolerance — users who keep all notifications off and still return daily. The purest proof of a calm product.
+
+Feature restraint ratio — features removed or declined versus features shipped. A constitution-level health metric for the team itself.
+
+We explicitly do not optimize for time-in-app. A great home is one you can leave confidently and return to gladly. Session length is a vanity metric for us — possibly an anti-metric.
+
+Long-Term Vision (5+ Years)
+
+Year 1–2: The Home.Every AI-assisted developer's day begins here. The app earns the muscle-memory launch — the Cmd-Space of development. Its abstraction ("efforts, in states, awaiting judgment") becomes how developers talk about their work, even away from the screen.
+
+Year 3–4: The Standard of Legibility.As AI assistants multiply and grow more autonomous, the industry's hard problem shifts from generation to comprehension — humans keeping honest sight of machine-scale work. Our summaries, states, and review surfaces become the reference for what "human-legible AI development" means. Tools integrate with us because their users demand a place in the foyer.
+
+Year 5+: The Seat of Judgment.Developers may direct dozens of long-running AI efforts across projects, teams, and days. The bottleneck of software creation is no longer typing, or even reviewing — it is deciding well. This app is where those decisions live: the one calm room where a human being, with full sight and full control, exercises taste over an ocean of machine work.
+
+If we succeed, the product will still open to a screen that a newcomer understands in ten seconds. The world underneath it will have changed completely. The feeling of opening it will not.
+
+Every future feature proposal must cite the principles above that it serves — and survive the anti-goals it brushes against. When in doubt, we subtract.
+
+
+
+
+
+
+phase 1
+
+
+10_WORKFLOW_SPEC.md
+
+Workflow specification — derived from and subordinate to the Product Constitution.
+
+0. Scope and Authority
+
+This document specifies the workflows of the product: the core daily loop and its surrounding lifecycle flows. It defines developer intent, effort states, transitions, and outcomes. It does not define visual design, layout, or implementation.
+
+Actor scope. One developer on one machine, running one or more AI assistants in parallel. Workflows acknowledge work arriving from outside the developer's machine (teammates, automated systems) as it enters the developer's view. Multi-human coordination through the app is out of scope.
+
+Named surfaces. Workflows may reference two abstract surfaces:
+
+Home — the opening surface. Holds the whole picture of the developer's efforts.
+
+Effort view — the surface for one effort. Holds its story, its current state, and the work awaiting judgment.
+
+No other surfaces exist in this document. A workflow requiring a third surface is a signal to redesign the workflow, not to add a surface.
+
+Vocabulary contract. Per the constitution's non-negotiables, no workflow may surface version-control vocabulary. This document uses the constitution's terms exclusively:
+
+Term
+
+Meaning
+
+Effort
+
+A unit of intent with a current state ("add billing," "fix flaky auth test")
+
+Moving
+
+An AI or the developer is actively working on the effort
+
+Waiting on you
+
+The effort needs the developer's decision or review to proceed
+
+Done
+
+The effort is settled, safe, and dismissible
+
+Arrived
+
+Work produced outside this machine that now touches the developer's efforts
+
+1. Global State Model
+
+Every effort is in exactly one state at all times. There is no fourth state, no sub-state visible on Home, and no state whose name requires explanation.
+
+States and legal transitions
+
+                 ┌────────────────────────────┐
+                 ▼                            │
+  [created] → MOVING ──────→ WAITING ON YOU ──┘ (redirect)
+                 │                 │
+                 │                 ▼
+                 └──────────────→ DONE
+                                   │
+                                   ▼ (reopen)
+                                MOVING
+
+From
+
+To
+
+Trigger
+
+(created)
+
+Moving
+
+Developer starts an effort and delegates or begins work
+
+(created)
+
+Waiting on you
+
+Developer starts an effort but defers it (intent captured, not yet begun)
+
+Moving
+
+Waiting on you
+
+The AI finishes, pauses, fails, or reaches a decision point
+
+Waiting on you
+
+Moving
+
+Developer redirects: sends the effort back with new direction
+
+Waiting on you
+
+Done
+
+Developer accepts the work
+
+Moving
+
+Done
+
+Developer completes the work directly (rare; human-only efforts)
+
+Done
+
+Moving
+
+Developer reopens with new intent (this is a new chapter of the same effort, not a new effort)
+
+(any)
+
+(dissolved)
+
+Developer abandons the effort (Workflow F)
+
+Invariants
+
+State transitions caused by the developer take effect instantly and visibly.
+
+State transitions caused by machines (AI finishes, external work arrives) update the picture silently. The app never interrupts; the developer discovers changes upon returning to Home. Per constitution: silence by default.
+
+Nothing moves to Done without the developer's traceable intent. Machines can never settle work.
+
+Every transition is reversible or has a reversible equivalent. No workflow contains a point of no return that the developer wasn't explicitly warned is one.
+
+2. Workflow Index
+
+ID
+
+Workflow
+
+Class
+
+A
+
+First run
+
+Lifecycle
+
+B
+
+Opening the day (orientation)
+
+Core loop
+
+C
+
+Starting a new effort
+
+Lifecycle
+
+D
+
+Delegating and returning
+
+Core loop
+
+E
+
+Reviewing and deciding
+
+Core loop
+
+F
+
+Abandoning and reversing
+
+Lifecycle
+
+G
+
+Absorbing arrived work
+
+Team-aware
+
+H
+
+Closing the day
+
+Lifecycle
+
+The core daily rhythm is B → (C) → D → E → repeat → H. All other workflows exist to protect that rhythm.
+
+Workflow A — First Run
+
+Scene
+
+A developer downloads the app on a colleague's recommendation, mid-skepticism, mid-workday. They have three AI sessions already running somewhere and no patience for a setup wizard. The app opens. Within ten seconds they see their own real work — the projects on their machine, rendered as efforts in states — and understand what this app is without reading anything. There was no form. There was no decision. The first feeling is recognition: "that's my actual situation."
+
+Specification
+
+Trigger. First launch on this machine.
+
+Preconditions. None. The app must be valuable with zero configuration, zero accounts, zero connected tools.
+
+Flow.
+
+The app discovers the developer's existing work on this machine and composes Home from it: recognizable projects, with any in-progress work surfaced as efforts in their honest current state.
+
+If in-progress AI-assisted work is detectable, it appears as efforts already Moving or Waiting on you — the developer's real life, not a demo.
+
+If nothing is discoverable, Home presents exactly one possible action: start an effort (Workflow C). An empty Home is a calm, single-purpose surface — never a dashboard of empty panels.
+
+No mandatory decision is presented. Per constitution: no feature ships if it adds a mandatory decision to the first-run experience.
+
+Outcome. The developer is on Home, oriented, within ten seconds. The first-run experience and the everyday experience are the same experience.
+
+Failure paths.
+
+Discovery finds nothing but the developer has work elsewhere. Home states plainly that it sees nothing yet and offers the one action. It never apologizes at length or launches a tour.
+
+Discovery is slow. Home renders immediately with what is known and fills in truthfully. No spinner pretending to be work; progress is shown honestly or not at all.
+
+Workflow B — Opening the Day
+
+Scene
+
+Morning. Coffee. The developer opens the app before anything else — before the terminal, before the assistant, before email. One glance at Home and their heart rate drops rather than rises: two efforts finished overnight and wait calmly for review, one is still moving, one arrived from a teammate. Nothing blinks. Nothing counts up. The developer knows, bodily, what the day looks like — and picks the piece that matters.
+
+Specification
+
+Trigger. App launch or return to Home after any absence.
+
+Preconditions. None.
+
+Flow.
+
+Home presents every live effort, grouped by state, in this fixed priority order: Waiting on you first, Moving second, settled/arrived context last. The ordering is opinionated and not configurable.
+
+Each effort shows its intent (the developer's own words) and one human sentence of current status. Machine activity that occurred during absence is compressed: forty actions read as one sentence. Per constitution: the app absorbs chaos and emits clarity.
+
+The full picture fits without scrolling (non-negotiable). If the developer has more efforts than the picture holds, the app compresses further — it never paginates the truth.
+
+The developer selects an effort (keyboard-first; the top item waiting on them is one keystroke away) and enters its Effort view — or leaves for another tool, confident nothing is hidden.
+
+Outcome. Orientation complete. Time-to-orientation under ten seconds (success metric #1). The developer's next action is chosen with confidence, whether inside or outside the app.
+
+Failure paths.
+
+Everything is Done. Home says so, plainly, and offers to start an effort. A calm empty state is a success state.
+
+An effort's status cannot be determined (e.g., a tool crashed during absence). The effort appears as Waiting on you with an honest sentence about what is unknown. Uncertainty is surfaced as a thing needing judgment — never hidden, never dressed up as normal.
+
+Workflow C — Starting a New Effort
+
+Scene
+
+A thought arrives: "the export flow needs a progress indicator." Before the thought can decay into a sticky note, the developer opens the app, presses one key, and types the intent in their own words. That's it. The effort now exists on Home. Behind the floorboards, everything is prepared so this effort can proceed safely and in parallel with the four others — but the developer expressed intent, and nothing else.
+
+Specification
+
+Trigger. Developer invokes "start an effort" from Home (single keystroke).
+
+Preconditions. None. Starting an effort must never be blocked by the state of other efforts.
+
+Flow.
+
+The developer states the intent in natural language. This sentence becomes the effort's identity everywhere in the app.
+
+If the developer works across multiple projects, the app infers the likely project and states its inference; the developer corrects it only if wrong. One optional correction, zero mandatory decisions.
+
+The app silently prepares whatever isolation the effort needs to proceed in parallel with all other efforts and to be fully reversible. This preparation is invisible and instant from the developer's perspective. No preparation vocabulary ever surfaces.
+
+The developer chooses one of two paths:
+
+Delegate now — hand the effort to an AI assistant immediately (continues as Workflow D).
+
+Park it — capture the intent and return to Home. The effort enters Waiting on you as a deliberate, quiet deferral.
+
+Outcome. A new effort exists in Moving (delegated) or Waiting on you (parked). Total developer input: one sentence, at most one confirmation.
+
+Failure paths.
+
+Preparation fails (machine state prevents safe isolation). The effort still exists — intent is never lost — and enters Waiting on you with one honest sentence about what stands in the way and the single suggested action to clear it.
+
+Duplicate intent (a live effort with substantially the same purpose exists). The app points this out once, plainly, and lets the developer proceed anyway. It advises; it never forbids.
+
+Workflow D — Delegating and Returning
+
+Scene
+
+The developer opens an effort, hands it to their assistant of choice, and leaves. Maybe they direct a second assistant on a second effort. Maybe they get lunch. The app does nothing to hold them — it is the hallway, not another room shouting for attention. An hour later they return to Home. The effort that was Moving is now Waiting on you, its hour of machine activity compressed into a sentence they can read in three seconds. Leaving felt safe. Returning felt informative. At no point did anything buzz.
+
+Specification
+
+Trigger. From an Effort view, the developer hands the effort to an AI assistant; or an already-delegated effort changes state while the developer is away.
+
+Preconditions. The effort exists. Which assistant the developer uses is entirely their choice — the app favors no tool (non-negotiable) and works even with tools it has never seen.
+
+Flow.
+
+Handoff. The app carries the developer to their chosen assistant with the effort's context intact, so the assistant starts oriented rather than cold. The handoff is one action.
+
+Effort enters Moving. Home reflects this instantly.
+
+The developer leaves. The app does not track attention, does not nag, does not compete with the assistant. Its job during delegation is to be trivially returnable-to.
+
+Machine activity accrues silently. The app observes the effort's real state and continuously maintains its one-sentence summary. It never interrupts to report progress.
+
+The assistant finishes, pauses, fails, or hits a decision point. The effort transitions to Waiting on you. Silently. The developer discovers this on their next glance at Home — which is exactly Workflow B.
+
+Parallel delegation. Steps 1–5 hold independently for any number of concurrent efforts. Each effort's isolation (prepared in Workflow C) guarantees that parallel machine work never entangles.
+
+Outcome. Work proceeds at machine speed while the developer's attention stays sovereign. The state on Home is always the truth, always current, always calm.
+
+Failure paths.
+
+The assistant fails or stalls. The effort moves to Waiting on you with an honest sentence: what was attempted, where it stopped. Failure is presented as a decision point, not an alarm.
+
+The assistant does something outside the effort's intent. The app reports what actually happened, in the summary, without euphemism. Legibility is the response to misbehavior; the developer decides in Workflow E.
+
+Two moving efforts collide (their work overlaps despite isolation). Both efforts move to Waiting on you; each states the overlap in plain language and offers a human-sized choice. The word for what happened underneath never surfaces.
+
+Workflow E — Reviewing and Deciding
+
+Scene
+
+The developer opens an effort that's waiting on them. They do not face a wall of raw machine output — they face a story: here is what you asked for, here is what was done, here is the thing itself, legible and in context. They read. They form a judgment. Then one of three verdicts, each a single deliberate action: accept it, redirect it, or let it go. The dread they used to feel before reviewing AI output is absent, because the app did the archaeology in advance. Judgment feels light. It is over in minutes, and it was real judgment — they actually saw the work.
+
+Specification
+
+Trigger. Developer opens an effort in Waiting on you.
+
+Preconditions. The effort has work or a question awaiting judgment.
+
+Flow.
+
+Orient. The Effort view leads with the intent (the developer's original sentence) and the compressed account of what happened since they last looked. Comprehension precedes inspection.
+
+Inspect. The developer descends into the actual work as deeply as they choose. Depth is pulled, never pushed: the summary suffices for trivial work; full inspection is one gesture away for consequential work. The work itself is shown legibly and in context — abstractions summarize, never obstruct.
+
+Decide. Exactly three verdicts exist:
+
+Accept. The work is settled and made safe. Effort → Done. The app performs whatever settling means with no further ceremony and no vocabulary about how.
+
+Redirect. The developer states, in natural language, what should change. The effort returns to Moving, carrying both the original intent and the new direction. This is the same motion as delegation — redirecting must cost no more than one sentence.
+
+Abandon. The developer lets the effort go (proceeds as Workflow F).
+
+Partial judgment. If the effort contains separable pieces of work, the developer may accept some and redirect the rest in a single review — but the effort itself remains one effort in one state (whichever part is still unsettled governs).
+
+Return. After the verdict, the developer lands back on Home, next-most-important effort at hand. The loop continues.
+
+Outcome. The effort is Done, Moving again with clearer direction, or dissolved. Decision latency (success metric #3) is the health measure of this workflow.
+
+Failure paths.
+
+The developer cannot judge (the work is too large or too unclear to review confidently). This is a product failure, and the workflow treats it as one: the developer may redirect with "make this reviewable" as the direction — splitting or clarifying is the assistant's job, never the developer's chore.
+
+Accepting fails (the work cannot be settled safely due to conditions outside the effort). The effort stays Waiting on you with one plain sentence and one suggested action. The developer is never dropped into plumbing.
+
+A question, not work. When the effort waits on an answer rather than a review, the view leads with the question, and the developer's answer acts as a redirect. Same verdicts, same shape.
+
+Workflow F — Abandoning and Reversing
+
+Scene
+
+An effort went sideways — the assistant misread the intent, or the idea was simply wrong. In the old world this moment meant fear: careful unwinding, arcane commands, the possibility of losing something unrelated. Here the developer chooses let it go, confirms once, and the effort dissolves. Everything it touched is restored as though it never happened; everything it didn't touch was never at risk. Ten seconds of regret, zero minutes of cleanup. And because letting go is this cheap, the developer delegates more boldly everywhere else — reversibility breeds courage.
+
+Specification
+
+Trigger. Developer chooses to abandon an effort (from its Effort view or from Home), or to reverse a previously accepted one.
+
+Preconditions. The effort exists in any state. Abandonment must be available even mid-Moving — the developer never waits for a machine's permission to stop it.
+
+Flow — abandoning a live effort.
+
+The developer invokes let it go.
+
+The app states, in one sentence, what will be dissolved and confirms this is the workflow's one deliberate confirmation — abandonment is the single intentionally weighted action in the product, because it discards work.
+
+On confirmation: any machine activity on the effort stops, everything the effort touched is restored, and the effort leaves Home.
+
+The dissolved effort remains quietly recoverable for a grace period. Letting go is itself reversible; the truly irreversible moment is distant, automatic, and never something the developer must think about.
+
+Flow — reversing a settled effort.
+
+From a Done effort, the developer invokes reversal.
+
+The app states plainly what reversing will undo — including, honestly, whether other efforts have since built upon this work.
+
+If the work stands alone: it is unwound, and the effort returns to Waiting on you carrying its history, for the developer to redirect or dissolve.
+
+If other work has built upon it: the app says so in human terms and reframes the reversal as a new effort — "undo X" — because that is the truth of what it now is. It never pretends entangled history can be silently rewritten.
+
+Outcome. The effort is dissolved (recoverable for a grace period) or the settled work is unwound. The developer's other efforts are untouched — isolation guaranteed in Workflow C is honored here.
+
+Failure paths.
+
+Restoration cannot be completed cleanly. The app restores what it can, states exactly what remains, and holds the remainder as a Waiting-on-you item with one suggested action. Partial honesty over false completeness.
+
+Abandon invoked accidentally. The grace period is the answer. Recovery is one action, and the effort returns in its prior state.
+
+Workflow G — Absorbing Arrived Work
+
+Scene
+
+The developer works on a shared codebase. While they slept, a teammate settled work that touches the same ground as one of their moving efforts, and an automated system finished checking another. None of this buzzed their phone. It is simply present on Home the next morning — arrived work, woven into the picture in the same calm grammar as everything else: this changed, it touches that effort of yours, here is what it means for you. The developer absorbs the outside world in one glance, without leaving home to go hunt for it.
+
+Specification
+
+Trigger. Work produced outside this machine becomes relevant to the developer's efforts or projects.
+
+Preconditions. The developer's projects have an outside — teammates or automated systems producing work the developer will eventually meet. (For a fully solo developer, this workflow simply never activates; nothing in the app advertises its absence.)
+
+Flow.
+
+Silent arrival. External work enters the developer's picture without interruption — discovered on the next glance at Home, per the silence invariant.
+
+Relevance filter. Only arrived work that touches the developer's efforts or requires their judgment surfaces on Home. Everything else stays out of the picture. Home is not a feed of the team's activity — that would be the notification hub the constitution forbids.
+
+Framing. Arrived work is expressed in the same grammar as everything else: a plain sentence about what changed and what it means for the developer's own efforts. Never raw external artifacts, never another tool's vocabulary.
+
+Consequences for live efforts:
+
+No overlap. The picture quietly incorporates the new reality; moving efforts continue on the freshest ground when it is safe to bring it under them, and the developer is not consulted about non-decisions.
+
+Overlap with a moving or waiting effort. The affected effort moves to (or remains in) Waiting on you, stating the overlap in human terms — "someone settled work that touches this" — with a human-sized choice: continue on top of the new reality, or redirect in light of it.
+
+Arrived work needing judgment (e.g., a teammate asks the developer to review their work). It appears as an effort-shaped item in Waiting on you and flows through Workflow E like any other review. One grammar for all judgment.
+
+Outcome. The outside world reaches the developer exactly once, at glance-time, pre-translated into consequences for their own work. Team awareness costs no additional attention loop.
+
+Failure paths.
+
+Arrival conflicts with in-flight machine work. Same resolution as the collision path in Workflow D: affected effort to Waiting on you, plain-language account, human choice.
+
+The outside is unreachable (network absent, external systems down). Home continues from the last known truth and marks the staleness honestly — the local picture never degrades, and the app never blocks on the outside world.
+
+Workflow H — Closing the Day
+
+Scene
+
+Evening. The developer glances at Home one last time — not because the app demands a ritual, but because the glance itself is the ritual. Two efforts settled today. One is still moving; it will work through the night and be waiting, summarized, at dawn. One is parked for tomorrow. Nothing is ambiguous, nothing is silently at risk, nothing requires them. They close the laptop with the specific peace of a person whose workshop is in order. The app did not add a close-out procedure to their life; it made the absence of one safe.
+
+Specification
+
+Trigger. None enforced. Closing the day is a glance at Home (Workflow B), read in the evening direction: not "what needs me now" but "is everything safe without me."
+
+Preconditions. None.
+
+Flow.
+
+The developer glances at Home. The same fixed picture answers the evening question: what is still moving (and safe to leave moving), what waits (and can keep waiting), what settled today.
+
+Any effort in an unsafe-to-leave condition — work that would be at risk if the machine slept or the assistant stalled unattended — is already in Waiting on you with an honest sentence, by the invariants of Workflows D and F. Safety is a permanent property of the state model, not an end-of-day audit.
+
+The developer may park anything (as in Workflow C step 4) — one action per effort, no ceremony.
+
+The developer leaves. The app requires no sign-off, no summary screen, no streak. Per constitution: a great home is one you can leave confidently.
+
+Overnight, Workflows D and G continue silently. The next glance at Home — tomorrow's Workflow B — absorbs everything.
+
+Outcome. The day ends with zero unresolved ambiguity about the state of the work. The evening glance and the morning glance are the same glance; the loop is closed because it never had a seam.
+
+Failure paths.
+
+Something genuinely cannot be left safely. It is already Waiting on you with one sentence and one suggested action — the developer resolves it in under a minute or consciously accepts the risk. The app informs; it never detains.
+
+3. Cross-Workflow Rules
+
+These rules bind every workflow above and every workflow added later.
+
+One grammar. Every workflow is expressible as: an effort, in a state, changed by intent or by the world, awaiting judgment or settled. A proposed workflow that cannot be phrased this way does not belong in the product.
+
+Two surfaces. Every workflow completes using only Home and the Effort view. A workflow demanding a third surface must be redesigned.
+
+Silence. No workflow interrupts the developer. All machine- and world-caused changes are discovered at glance-time.
+
+One sentence in, one sentence out. Developer intent enters as natural language; machine activity exits as compressed human sentences. No workflow requires the developer to read raw machine output to stay oriented (inspection remains available by choice).
+
+Instant response. Every developer action in every workflow acknowledges within the constitution's perceived-response bound. Slow underlying operations proceed honestly in the background while the state reflects the truth.
+
+Reversibility. Every workflow's forward path has a backward path. The single deliberately weighted confirmation in the entire product is abandoning an effort (Workflow F). Nothing else asks "are you sure."
+
+Tool neutrality. No workflow names, favors, or requires a specific AI assistant. Handoff (Workflow D) works identically for every tool, including tools that do not yet exist.
+
+Honesty under failure. Every failure path resolves to the same shape: the effort in Waiting on you, one plain sentence about reality, one suggested action. Failure is never a modal, an alarm, or a dead end.
+
+No ceremony. No workflow adds a ritual the developer must perform for the app's benefit — no check-ins, no sign-offs, no maintenance chores. The app serves the work; the work never serves the app.
+
+4. Workflow Acceptance Test
+
+A future change to any workflow ships only if all answers are yes:
+
+Can a first-time user complete it without instruction?
+
+Does it lower, or at worst preserve, the number of decisions the developer makes per day?
+
+Does it survive the constitution's anti-goals — introducing no editing, no version-control vocabulary, no chat, no dashboard, no ceremony?
+
+Is every machine-caused change in it silent until glance-time?
+
+Is its forward path reversible?
+
+Would the developer's heart rate be lower after the workflow than before it?
+
+When in doubt, we subtract.
+
+
+phase 2
+
+
+20_SYSTEM_ARCHITECTURE.md
+
+System architecture — derived from and subordinate to the Product Constitution and the Workflow Specification.
+
+0. Purpose and Authority
+
+This document defines the software architecture required to faithfully implement the locked Product Constitution and Workflow Specification. It describes structure, responsibility, and principle — not languages, frameworks, code, or visual design.
+
+Binding upstream constraints. Every architectural decision below is traceable to one of these obligations:
+
+Obligation
+
+Source
+
+Sub-100ms perceived response to any input
+
+Constitution, non-negotiables
+
+Silence by default; changes discovered at glance-time
+
+Constitution; Workflow cross-rule 3
+
+No version-control vocabulary on any primary surface
+
+Constitution, non-negotiables
+
+Every effort in exactly one of three states, transitions per the state model
+
+Workflow §1
+
+Effort isolation: parallel machine work never entangles
+
+Workflow C, D
+
+Reversibility of every forward path
+
+Constitution; Workflow cross-rule 6
+
+Tool neutrality, including tools that do not yet exist
+
+Constitution; Workflow cross-rule 7
+
+Local-first posture; no data hostage-taking
+
+Constitution, non-negotiables
+
+Failure resolves to: Waiting on you + one sentence + one action
+
+Workflow cross-rule 8
+
+Locked architectural decisions (from design review):
+
+No proprietary backend, ever. Synchronization rides only on infrastructure the developer already possesses. The architecture must nevertheless be sync-ready from day one.
+
+Adapter-first AI integration with observation fallback. Known assistants integrate richly through a formal adapter contract; unknown assistants work automatically through effect observation.
+
+Internal extension points only. No third-party plugin surface in v1; internal seams are designed as if third parties will one day stand on them.
+
+Hybrid effort store. An app-owned local store is the authoritative source of truth; an optional, clearly bounded projection into the repository provides portability. The repository stays normal by default.
+
+1. Overall System Architecture
+
+1.1 Shape
+
+The system is a single local application composed of four cooperating parts around one central truth:
+
+┌─────────────────────────────────────────────────────┐
+│                    SHELL                            │
+│   (Home, Effort view — renders truth, captures      │
+│    intent; owns nothing)                            │
+└───────────────▲─────────────────────┬───────────────┘
+                │ projections         │ intents
+┌───────────────┴─────────────────────▼───────────────┐
+│                    CORE                             │
+│   (domain model, state machine, event log,          │
+│    summarization, policy — the only writer of       │
+│    truth)                                           │
+└───▲──────────────▲──────────────▲──────────────▲────┘
+    │              │              │              │
+┌───┴────┐    ┌────┴─────┐   ┌────┴─────┐   ┌────┴────┐
+│ WORK-  │    │ ASSISTANT│   │ WORLD    │   │ SYNC    │
+│ SPACE  │    │ GATEWAY  │   │ WATCHER  │   │ CARRIER │
+│ ENGINE │    │          │   │          │   │         │
+└────────┘    └──────────┘   └──────────┘   └─────────┘
+ isolation,    adapters +     arrived        projection
+ versioning,   observation    work,          onto owned
+ reversal      fallback       outside        infra
+                              reality
+
+Shell — the interaction surface. Stateless with respect to truth; it renders projections of Core state and converts human input into intents. It contains no domain logic and can crash, restart, or be replaced without loss.
+
+Core — the domain. Owns the effort model, the state machine, the event log, summarization, and all policy decisions. It is the only component permitted to change domain truth.
+
+Workspace Engine — the machinery of isolation, versioning, settling, and reversal. It is where all version-control reality lives, fully encapsulated. Nothing above it ever sees that vocabulary.
+
+Assistant Gateway — the boundary to AI tools: adapter contracts, handoff, and the observation fallback.
+
+World Watcher — the boundary to reality outside the app's own actions: external work arriving, filesystem truth, teammate and automated-system output.
+
+Sync Carrier — the projection of durable state onto infrastructure the developer already owns, serving both portability and multi-machine continuity.
+
+1.2 Governing rules of the shape
+
+One writer. Only Core mutates domain state. Every other component either proposes facts to Core (upward) or executes Core's decisions (downward).
+
+Facts up, commands down. Boundary components (Gateway, Watcher, Engine, Carrier) report observed facts. Core interprets facts into domain events and issues commands. No boundary component interprets meaning; no boundary component talks to another boundary component directly.
+
+The Shell is disposable. All truth survives Shell death. This is what makes instant response honest: the Shell acknowledges instantly because it never waits on truth to be durable before reflecting intent — Core guarantees convergence.
+
+Encapsulation is constitutional. The no-Git-vocabulary rule is enforced by architecture, not discipline: the Workspace Engine's interface is expressed purely in domain terms (prepare, settle, restore, unwind). Vocabulary cannot leak upward because the seam does not carry it.
+
+2. Core Domain Model
+
+2.1 Entities
+
+Effort — the atomic unit of the product. An effort is:
+
+an identity — globally unique, stable across machines and time, never reused;
+
+an intent — the developer's sentence, immutable as history (redirections append, never overwrite);
+
+a state — exactly one of Moving, Waiting on you, Done (plus the terminal Dissolved, which is invisible on surfaces but real in the model during the grace period);
+
+a story — the append-only sequence of events that happened to it;
+
+a summary — the current one-sentence human account, derived from the story, never stored as truth (always recomputable);
+
+a workspace claim — a reference to the isolated ground the Workspace Engine prepared for it.
+
+Project — a body of work the developer recognizes as one thing. A project is:
+
+an identity and a human name;
+
+a binding to a location of code on this machine;
+
+a container of efforts (every effort belongs to exactly one project);
+
+a horizon for the World Watcher (arrived work is detected per project).
+
+Verdict — a first-class record of developer judgment: accept, redirect (with direction), or abandon. Verdicts are the only events that can move an effort to Done or Dissolved. Machines cannot create verdicts — this is enforced in the model, not in the interface.
+
+Arrival — a fact about the world: external work that touches the developer's projects. Arrivals are interpreted by Core into consequences (overlap notices, effort state changes, review-shaped efforts per Workflow G).
+
+Chapter — a reopening of a Done effort (Workflow §1). A chapter is not a new effort; it extends the same identity and story with a new intent sentence.
+
+2.2 The event log
+
+The spine of the model is a per-project append-only event log. Every domain fact is an event: effort created, delegated, transitioned, summarized, judged, dissolved, restored; arrival detected; overlap declared.
+
+Properties, all load-bearing:
+
+Append-only makes reversibility cheap: the past is never rewritten, so "undo" is always "append a compensating event," and the story of an effort is always complete and honest.
+
+Deterministic replay: current state is a pure fold over the log. This makes the store corruption-tolerant (rebuild from log), makes summaries recomputable, and makes sync a log-merge problem rather than a state-merge problem.
+
+Causally ordered, machine-attributed: every event carries its origin (which machine, which actor class: developer / assistant / world / system) and causal position. This is the day-one sync-readiness required by the locked sync decision — even though no sync service exists.
+
+Human-attributable intent: every state transition event links to the intent or verdict that caused it, satisfying the constitutional traceability non-negotiable mechanically.
+
+2.3 State machine authority
+
+The three-state model of Workflow §1 is implemented as a closed transition table inside Core. Illegal transitions are unrepresentable, not merely rejected. Notably:
+
+No event authored by an assistant or the world can produce a transition into Done.
+
+Every transition into Waiting on you must carry a reason capable of rendering as one plain sentence and (for failure reasons) one suggested action — the cross-rule 8 failure shape is a schema requirement, not a UI convention.
+
+3. Internal Concepts and Responsibilities
+
+Concept
+
+Lives in
+
+Responsibility
+
+Explicitly not responsible for
+
+Intent capture
+
+Core
+
+Turning developer sentences into effort identity and direction
+
+Interpreting intent's meaning (that is the assistant's job)
+
+State machine
+
+Core
+
+Sole authority over effort states and legal transitions
+
+Deciding when machine facts warrant a transition proposal (Gateway/Watcher propose)
+
+Summarizer
+
+Core
+
+Compressing an effort's story into one current human sentence; compressing activity-while-away into glance-time accounts
+
+Being a chat, generating opinions, or blocking anything (summaries are async and never gate state)
+
+Workspace claims
+
+Workspace Engine
+
+Preparing isolated ground per effort; settling accepted work; restoring on abandonment; unwinding on reversal
+
+Naming its mechanisms to anyone above it
+
+Adapter registry
+
+Assistant Gateway
+
+Knowing which assistants are present, their capabilities, and their adapter or fallback status
+
+Ranking, recommending, or defaulting to any assistant
+
+Effect observer
+
+Assistant Gateway
+
+Watching the working ground of a delegated effort and reporting raw facts (activity, quiescence, exit)
+
+Judging quality or completeness of the work
+
+Arrival detector
+
+World Watcher
+
+Noticing external work relevant to the developer's projects; reporting facts
+
+Deciding relevance to specific efforts (Core interprets)
+
+Overlap analyst
+
+Core
+
+Determining when two efforts, or an effort and an arrival, touch the same ground; producing human-language overlap notices
+
+Resolving overlaps (the developer resolves; the app offers choices)
+
+Projection writer
+
+Sync Carrier
+
+Serializing durable domain state into the bounded repo projection and other developer-owned carriers
+
+Merging (merge is Core's log-merge, executed on read-back)
+
+Grace keeper
+
+Core + Workspace Engine
+
+Retaining dissolved efforts and their restorable ground during the grace period; expiring them silently afterward
+
+Asking the developer about expiry (the truly irreversible moment is automatic and distant, per Workflow F)
+
+4. Application Layers
+
+Strict layering, dependency arrows pointing only downward:
+
+Surface layer (Shell): projection rendering + intent capture. Knows domain vocabulary, knows no mechanism.
+
+Domain layer (Core): the model, state machine, log, summarizer, policy. Knows nothing about Git, processes, files, networks, or pixels.
+
+Capability layer (Workspace Engine, Assistant Gateway, World Watcher, Sync Carrier): mechanism behind sealed, domain-language interfaces. Each capability is replaceable behind its seam — this is where the internal extension points live (§15).
+
+Substrate layer: the machine — filesystem, processes, OS services. Only the capability layer touches it.
+
+The critical property is the vocabulary gradient: each layer's interface is expressed strictly in the language of the layer above it. The substrate speaks files and processes; capabilities speak prepare/settle/observe/carry; the domain speaks efforts/states/verdicts; the surface speaks the constitution's plain language. Vocabulary cannot skip layers, which is how "no Git on any surface" is guaranteed structurally.
+
+5. Data Ownership
+
+Three classes of data, three different owners, never confused:
+
+The developer's work (code, files, repositories). Owned by the developer, mediated by their existing tools. The app holds claims on it (via the Workspace Engine) but never owns it, never relocates its authority, and never makes itself necessary for accessing it. If the app is uninstalled, every repository is a normal repository and all settled work is intact — this is the constitutional no-hostage rule made physical.
+
+Domain truth (efforts, events, verdicts, summaries, grace-period holdings). Owned by the app, stored in the app-owned local store, exportable at will through the repo projection. Authoritative copy: the local store, always (locked decision 4).
+
+Derived state (current-state snapshots, summary caches, orientation projections for Home). Owned by nobody — disposable, rebuilt from the log at any time. Corruption here is a performance event, not a data-loss event.
+
+The repo projection (locked decision 4) is a bounded, optional, explicitly enabled serialization of class-2 data into a clearly fenced area of the developer's repository. Rules:
+
+Off by default; the repository stays 100% normal for teammates without the app.
+
+When on, the projection is legible, minimal, and self-describing — a future reader (human or app reinstall) can reconstruct the effort story from it.
+
+The projection is never the authority while a local store exists; on conflict, the log-merge semantics of §11 apply.
+
+6. State Management Philosophy
+
+One truth, many projections. There is exactly one authoritative state (the folded event log). Home and the Effort view render projections of it — precomputed, instantly readable shapes answering exactly the questions the workflows ask ("what waits on me," "what happened while I was away," "is everything safe to leave").
+
+Intents are optimistic, facts are eventual. A developer action is acknowledged to the Shell instantly as an intent, applied to the projection immediately, and made durable asynchronously. Machine facts flow in the opposite direction: durable first, projected at glance-time. This asymmetry is the constitution's attention model expressed in data flow — the developer's actions feel instant; the machine's actions never push.
+
+No hidden state. Anything that influences what the developer sees must be an event in the log. There is no side-channel state, no component memory that the log doesn't reflect. This is what makes "the state on Home is always the truth" verifiable rather than aspirational.
+
+Summaries are lossy views, never truth. Compression (forty actions → one sentence) is recomputable and improvable over time without touching history.
+
+Staleness is a first-class value. When a fact source is unreachable (world offline, adapter dead), projections carry an explicit last-known-truth timestamp rather than silently presenting old truth as current — Workflow G's honesty-under-unreachability, in the type system.
+
+7. Project and Effort Model
+
+A project binds to a code location on this machine. Projects are discovered (first run, Workflow A) or confirmed on effort creation (Workflow C's single optional correction). Discovery is a World Watcher capability; confirmation is a Core policy.
+
+An effort belongs to one project, forever. Cross-project intent is two efforts.
+
+Efforts are cheap. The model budget for effort creation is: one identity, one intent event, one workspace claim — nothing else. Constitutional courage ("start an effort must never be blocked") demands that creating an effort allocates no scarce resource and acquires no lock.
+
+Efforts are parallel by construction. The model contains no ordering, no queue, no dependency graph between efforts. Overlap (two efforts touching the same ground) is detected and surfaced as a fact for judgment — never modeled as a scheduling constraint. The app reflects work; it does not manage it (anti-goal: not a project-management tool).
+
+Parked efforts (Workflow C) are ordinary efforts in Waiting-on-you whose reason is "deferred by you" — no special entity, no separate list. One grammar.
+
+Chapters preserve identity across reopening so that the story of an intent is continuous across weeks, satisfying the mental model (a piece on the bench, revisited) without inventing a hierarchy.
+
+8. Isolation Model
+
+The Workspace Engine guarantees Workflow C/D's isolation invariant: parallel machine work never entangles.
+
+Principles, mechanism-agnostic:
+
+One effort, one ground. Every effort that will receive work gets its own isolated working ground, prepared silently at creation. Two efforts never share mutable ground. An assistant delegated to effort A physically cannot corrupt effort B's work-in-progress.
+
+The project's settled reality is sacred. Efforts work on claims derived from the project's settled state; they never mutate it directly. Only a verdict (accept) settles work back — through the Engine, atomically, reversibly.
+
+Isolation is invisible. Preparation is instant from the developer's perspective (or honestly in-progress per §17), and no isolation vocabulary surfaces. If preparation cannot complete, the effort still exists and enters Waiting-on-you with the standard failure shape (Workflow C).
+
+Collision is detection, not prevention. Isolation prevents accidental entanglement; it does not forbid two efforts from intentionally addressing the same area. When their work overlaps in effect, the overlap analyst declares it and both efforts await judgment (Workflow D failure path). The Engine's job is to make the overlap legible and safe, never to auto-resolve it.
+
+Restoration is total. Ground plus claims are constructed such that dissolving an effort restores everything it touched and nothing it didn't (Workflow F). The grace period holds the dissolved ground intact and invisible; expiry reclaims it without ceremony.
+
+9. AI Provider Abstraction
+
+Per locked decision 2: adapter-first, observation fallback, under absolute tool neutrality.
+
+9.1 The adapter contract
+
+An assistant adapter is a first-party capability module that teaches the Gateway how one assistant family works. The contract is deliberately thin — four duties:
+
+Presence — detect that the assistant is available on this machine.
+
+Handoff — carry an effort to the assistant with context intact (the intent, the direction history, the working ground), as one action (Workflow D step 1). Redirection reuses the same duty with the accumulated direction.
+
+Facts — report observable session facts in a normalized form: working / paused / awaiting-input / finished / failed, plus whatever structured account of activity the tool exposes.
+
+Account — supply raw material for the Summarizer (activity records, tool output). Adapters never summarize; Core does. This keeps the one-sentence voice uniform across every assistant.
+
+Adapters are stateless translators. They hold no domain state, make no state-machine proposals in domain vocabulary (they report facts; Core decides transitions), and are individually removable without touching truth.
+
+9.2 The observation fallback
+
+For assistants with no adapter — including tools that do not yet exist — the Gateway degrades to the effect observer: the working ground of a delegated effort is watched for activity and quiescence, and process-level facts (running, exited) are reported where available.
+
+Consequences by design:
+
+Unknown tools work automatically, satisfying "works with every AI coding tool, favors none — including future ones."
+
+The fallback yields coarser facts, therefore coarser summaries — but the same state machine, the same three states, the same workflows. Feature difference between adapted and unadapted tools is richness of the account, never capability of the loop.
+
+The observer is also the truth-check on adapters: observed effects are reconciled against adapter-reported facts, and when they disagree, observed reality wins (Workflow D: "the app reports what actually happened, without euphemism").
+
+9.3 Neutrality enforcement
+
+The registry exposes assistants as an unordered capability set. Nothing in Core may branch on assistant identity. The architecture reserves no privileged integration depth that only one vendor could reach — the adapter contract is the maximum depth, and it is the same contract for all.
+
+10. Git Abstraction
+
+The Workspace Engine encapsulates all version-control reality. Its architecture:
+
+A sealed domain interface. The Engine's operations are exactly the domain's needs and nothing more: prepare ground (Workflow C), derive from settled reality, settle (accept verdict), restore (abandon), unwind (reverse a settled effort), describe effect (for overlap analysis and summaries), hold/release grace ground. Inputs and outputs are domain objects. No revision identifiers, no branch names, no staging concepts cross the seam — in either direction.
+
+VCS as a backend, not a model. Underneath the seam, version control is one interchangeable backend among possible others (the second internal extension point, §15). The domain would not change if the backing mechanism changed — this is the test that the abstraction is genuine.
+
+Honest capability reporting. Where the underlying mechanism cannot do what the domain asks cleanly (e.g., unwinding settled work that later work built upon), the Engine reports what is possible in domain terms — which is how Workflow F's reframe-as-new-effort path is triggered by architecture rather than by special-case logic.
+
+The teammate invariant. Everything the Engine does must leave the repository comprehensible and normal for collaborators who don't run the app. Isolation machinery is either invisible to them or indistinguishable from ordinary practice. The app must never make a shared repository hostile to non-users.
+
+Escape hatch honesty. Developers may touch the repository directly with other tools at any time. The Engine treats external mutation as world activity (routed through the World Watcher as arrival facts), never as corruption. The app coexists with the developer's habits; it does not require custody.
+
+11. Local-First Architecture and Multi-Machine Synchronization Philosophy
+
+11.1 Local-first
+
+Every workflow (A–H) completes fully offline except the arrival-detection half of Workflow G, which degrades to honest staleness.
+
+The authoritative store is on the developer's machine, in an inspectable, documented form. Export is trivial; the projection (§5) is one export always available.
+
+No account is required for anything. Identity, if ever needed, is the developer's existing identities (their machines, their repositories) — never an identity the app issues.
+
+11.2 Synchronization philosophy (locked: no proprietary backend, ever)
+
+The app will never operate, require, or depend on its own server. Multi-machine continuity is achieved by carrying state over infrastructure the developer already owns and trusts — with the bounded repo projection as the natural first carrier, and the architecture permitting other developer-owned carriers behind the same seam (§15).
+
+Design consequences, honored from day one even though no sync ships in v1:
+
+Sync-ready identity. All identities (efforts, events, verdicts, projects) are globally unique and machine-independent (§2.1).
+
+Log-merge, not state-merge. Because truth is an append-only, causally ordered, origin-attributed event log (§2.2), synchronization is a union of logs followed by a deterministic fold — not a reconciliation of divergent snapshots.
+
+Conflict semantics defined by the domain, now. The merge rules are fixed in the domain model before any sync exists:
+
+Events never conflict (append-only union).
+
+Concurrent verdicts on the same effort from different machines are resolved by the state machine's own legality rules plus a total order on events; where two legal verdicts genuinely race, the resolution is the constitutional one — the effort enters Waiting-on-you with one sentence stating what happened on both machines, and the developer judges. A sync conflict is just another arrival needing judgment. One grammar.
+
+Workspace ground never syncs. Ground is per-machine by definition; only domain truth travels. An effort whose ground lives on another machine renders honestly as such.
+
+The carrier is dumb. Whatever infrastructure carries the projection, it is treated as a passive medium. All intelligence (merge, interpretation) is Core's, locally. This is what keeps "no backend" permanent rather than provisional.
+
+12. Background Services
+
+The app's silent half consists of continuously running, individually restartable background services. All obey three laws: never interrupt (results land in the log, discovered at glance-time), never block (no foreground operation waits on a background service), die quietly (a crashed service degrades honestly and restarts without ceremony).
+
+Service
+
+Duty
+
+Feeds
+
+Effect observation
+
+Watch delegated efforts' ground for activity, quiescence, completion
+
+Workflow D transitions
+
+Adapter sessions
+
+Maintain live fact streams from adapted assistants
+
+Workflow D richness
+
+Summarization
+
+Continuously maintain each effort's one-sentence account; compress activity-while-away
+
+Workflows B, D, E
+
+World watching
+
+Detect arrivals relevant to projects
+
+Workflow G
+
+Overlap analysis
+
+Compare effect footprints across live efforts and arrivals
+
+Workflows D, G
+
+Projection writing
+
+Keep the repo projection (when enabled) current
+
+§5, §11
+
+Grace keeping
+
+Hold dissolved ground; expire it after the grace period
+
+Workflow F
+
+Health
+
+Watch the other services; convert their failures into honest staleness markers
+
+§17
+
+Background work is budgeted to be imperceptible: it yields entirely to foreground interaction (the sub-100ms bound outranks every background deadline, always).
+
+13. Event System
+
+One internal event fabric connects everything, with a strict taxonomy:
+
+Facts — raw observations from capability modules ("process exited," "files changed in ground X," "external work appeared touching project Y"). Facts are proposals; they carry no domain meaning yet.
+
+Domain events — Core's interpretation of facts and intents, appended to the log. Only these are truth.
+
+Projections updates — notifications that a rendered view's underlying answer changed. The Shell subscribes to these; they are how Home is always current when glanced at without anything ever pushing at the developer.
+
+Rules:
+
+Facts flow only upward into Core; domain events flow only outward from Core; the Shell consumes only projection updates. No component subscribes across the taxonomy.
+
+The fabric is asynchronous and lossy-tolerant for facts (a missed fact is recovered by re-observation) but lossless for domain events (the log is the log).
+
+No event reaches the developer as an interruption. There is no notification pathway in the architecture at all — not a suppressed one, an absent one. The only way the developer learns anything is by looking. Silence is structural.
+
+14. Security Principles
+
+The app is a guardian of ground truth, not a custodian of secrets. It stores no credentials for assistants (they manage their own), no tokens for external services beyond what the developer's existing infrastructure already holds, and it never proxies the developer's identity.
+
+Least reach. Each capability module touches only its own substrate: the Engine touches project ground, the Gateway touches assistant processes and effort ground, the Watcher reads project horizons, the Carrier touches only the fenced projection area. Core touches nothing but its store.
+
+Assistants are untrusted by default. The isolation model (§8) is also the security model: a misbehaving or compromised assistant can damage at most one effort's ground — which is restorable — and can never author a verdict or settle work (§2.3). Observed reality overrides assistant self-reporting (§9.2).
+
+The log is honest forensics. Because every change to truth is an attributed event, "what happened and who caused it" is always answerable — the constitutional traceability guarantee is also the audit trail.
+
+Nothing leaves the machine uninvited. No telemetry, no phone-home, no silent network activity. The only network use is the developer's own infrastructure, at the developer's explicit configuration, through the Carrier.
+
+The projection carries no secrets. The repo projection's bounded schema excludes anything sensitive by construction, because it may travel to shared infrastructure.
+
+15. Plugin Architecture (Internal Extension Points)
+
+Per locked decision 3: no third-party surface in v1. But every internal seam is built as if strangers will one day stand on it — because the discipline that makes seams safe for strangers makes them clean for us.
+
+The three sanctioned seams:
+
+Assistant adapters (§9.1) — the contract for teaching the Gateway a new tool.
+
+Workspace backends (§10) — the contract behind the Engine's sealed interface.
+
+Sync carriers (§11.2) — the contract for projecting durable state onto a developer-owned medium.
+
+Future-proofing rules, binding now:
+
+Every seam contract is versioned, documented, and expressed purely in the vocabulary of its layer (§4). A contract that would require leaking mechanism upward is a rejected contract.
+
+Seam modules are capability-scoped (§14.2): a module declares what it touches, and can touch nothing else.
+
+Seam modules cannot render surfaces, author domain events, or reach the event fabric's domain tier. They report facts and execute commands. If a future third-party ecosystem opens, this containment is what keeps "minimal even as features grow" true — extensions deepen accounts and widen compatibility; they cannot add chrome.
+
+No seam may ever grant one assistant, backend, or carrier a capability unavailable to its peers (neutrality, §9.3, generalized).
+
+16. Performance Principles
+
+The 100ms bound is architectural, not aspirational. It is met by construction: the Shell renders precomputed projections (never computes answers), intents are acknowledged optimistically (§6.2), and nothing in the interaction path performs I/O against ground, network, or assistants.
+
+Glance-time is the deadline that matters. All expensive work (summarization, overlap analysis, arrival interpretation) is done ahead of the glance, continuously, in the background. Home is never assembled on demand; it is always already assembled.
+
+Honest progress, never fake liveness. Anything genuinely slow (ground preparation on a huge project, settling large work) proceeds in the background with truthful state ("preparing — safe to leave") rather than a blocking spinner (Workflow A/C failure paths).
+
+Cost scales with efforts, not with repository size. The domain's hot path touches the log and projections — small by construction. Repository-scale work lives behind the Engine and Watcher, off the interaction path, incremental wherever possible.
+
+Startup is a projection read. Opening the app renders the last projection instantly, then refreshes truth beneath it — orientation in under ten seconds even on a cold, slow machine.
+
+17. Offline Behavior
+
+Offline is not a mode; it is the default assumption.
+
+Workflows A–F and H are fully functional with no network whatsoever: creating, delegating (to local assistants), reviewing, judging, abandoning, reversing — all local.
+
+Assistants that require the network fail like any assistant failure: the effort enters Waiting-on-you with one honest sentence (Workflow D failure path). The app never fails because a tool is offline.
+
+Workflow G degrades to explicit staleness: last-known outside truth, marked with when it was last known (§6.5). The local picture never degrades and never blocks.
+
+The Carrier queues projection writes and reconciles on reconnection using the log-merge semantics of §11 — reconnection is silent and produces, at most, new items discovered at glance-time.
+
+18. Failure Handling Philosophy
+
+One shape for all failures, mandated by Workflow cross-rule 8 and enforced by schema (§2.3):
+
+Any failure, anywhere → the affected effort in Waiting-on-you, with one plain sentence about reality and one suggested action.
+
+Architectural corollaries:
+
+Failures are domain events, not exceptions. A failure that matters to the developer becomes a log event with a reason; a failure that doesn't (transient, self-healing) becomes at most a health fact. Nothing in between exists — no error toasts, no modals, no alarm states.
+
+Every component is presumed mortal. Shell, services, adapters, even Core's process — each can die and restart without data loss (log durability) and without ceremony (projections rebuild). Crash recovery is indistinguishable from a normal launch.
+
+Partial truth over false completeness. When an operation half-completes (restoration, settling), the architecture reports exactly what happened and holds the remainder as a judgment item (Workflow F failure path) — never rolls forward silently, never pretends.
+
+Unknown state is a first-class state-reason. When truth about an effort cannot be determined (tool crashed opaquely, ground in an unrecognized condition), "unknown, here is what we know" is a legal, renderable Waiting-on-you reason (Workflow B failure path). The architecture never manufactures certainty.
+
+The app's own failures obey the app's own rules. A failed background service produces honest staleness, not a broken surface. The health service exists so that the app degrades the way it asks the world to degrade.
+
+19. Extensibility Principles
+
+How the architecture grows without violating "minimal even as features grow":
+
+Extend accounts, not grammar. The three states, two surfaces, three verdicts, and one failure shape are closed. Extension means richer facts, better summaries, more capable adapters, more carriers — never new states, new surfaces, new verdict types, or new interruption pathways. A proposal that needs new grammar is a constitution amendment, not a feature.
+
+New capability = new seam module, never new Core branch. Core's policy grows only when the domain genuinely grows; everything else lands behind an existing seam (§15).
+
+The log absorbs the future. New event types may be added (append-only schemas, versioned); old logs remain replayable forever. No migration ever rewrites history.
+
+Every extension passes the workflow acceptance test (Workflow §4) and a structural test: does it keep the vocabulary gradient intact (§4), the one-writer rule intact (§1.2), and silence structural (§13)? Fail any one, and it does not ship.
+
+Subtraction is an extension mechanism. The architecture treats removal as first-class: seam modules unplug cleanly, event types deprecate without breaking replay, projections retire without touching truth. When in doubt, we subtract — and the architecture makes subtraction cheap.
+
+20. Architectural Acceptance Test
+
+A change to this architecture ships only if all answers are yes:
+
+Does domain truth still have exactly one writer?
+
+Can the developer still walk away — uninstall, switch machines, stop paying attention — and lose nothing they own?
+
+Does every failure still land in the one constitutional shape?
+
+Is silence still structural — no pathway exists by which anything can interrupt?
+
+Could a brand-new AI tool, released tomorrow, work with the app today?
+
+Does the no-vocabulary seam still hold under the change?
+
+Would the system still meet the 100ms bound on the slowest machine we respect?
+
+When in doubt, we subtract.
+
+
+phase 3
+
+
+30_UI_DESIGN_SYSTEM.md
+
+UI design system — derived from and subordinate to the Product Constitution, the Workflow Specification, and the System Architecture.
+
+0. Purpose and Authority
+
+This document defines the user experience and visual interaction philosophy of the product. It governs how the two surfaces — Home and the Effort view — look, behave, and feel. It selects no colors, no typefaces, no pixel values; it designs no individual screens. It defines the rules from which those decisions must later be derived, such that two designers working apart would produce interchangeable results.
+
+Binding upstream constraints.
+
+Obligation
+
+Source
+
+Obvious within ten seconds; heart rate lower after opening
+
+Constitution
+
+Sub-100ms perceived response; speed is honesty
+
+Constitution; Architecture §16
+
+Home never requires scrolling to understand the situation
+
+Constitution, non-negotiables
+
+No Git vocabulary on any primary surface
+
+Constitution; Architecture §4
+
+Two surfaces only; depth pulled, never pushed
+
+Workflow cross-rule 2; Constitution
+
+Silence is structural; discovery at glance-time
+
+Workflow cross-rule 3; Architecture §13
+
+One failure shape: one sentence, one action
+
+Workflow cross-rule 8
+
+Keyboard-first, mouse-welcome
+
+Constitution
+
+Every feature earns its shortcut and its pixel
+
+Constitution, non-negotiables
+
+Locked design decisions (from design review):
+
+Palette + shortcuts. A single summonable command layer is the universal keyboard entry point for every action, layered over direct shortcuts for the most frequent verbs. The palette is an overlay — a way of speaking to the current surface — never a third surface.
+
+Monochrome + state. The interface is near-monochrome. Hue exists only to encode effort state and semantic status. State color is the entire color story.
+
+OS + override. Appearance follows the operating system by default; one override toggle is the app's single appearance preference.
+
+1. Design Philosophy
+
+1.1 The interface is a reading, not a workspace
+
+The developer does not work in this app; they read the truth and render judgment here. The work happens elsewhere — in assistants, in editors. Therefore the design language is closer to a well-set page than to a tool: optimized for comprehension at a glance, for calm re-reading, and for the small number of deliberate actions that follow understanding.
+
+Every design decision descends from this: the app is prose-first, typography-carried, action-sparse.
+
+1.2 The glance is the atomic unit of experience
+
+Workflows B and H establish that the product's fundamental interaction is the glance — arriving, absorbing the whole situation, and either acting or leaving. The design system's fitness test is the quality of the glance:
+
+Can the situation be absorbed without any interaction?
+
+Does the eye land, unaided, on the one thing that matters most?
+
+Does the developer leave more certain than they arrived?
+
+Features, layouts, and visual choices are judged by whether they sharpen or blur the glance.
+
+1.3 Calm is engineered, not decorated
+
+Calm does not come from softness, roundness, or muted pleasantness. It comes from the absence of unresolved visual questions: nothing blinking, nothing counting, nothing competing, nothing ambiguous, nothing moving without cause. The design system produces calm by elimination — every element either answers a question the developer actually has, or it does not exist.
+
+1.4 The app recedes as trust grows
+
+On first launch, the interface teaches by being self-evident. By the hundredth launch, it should be nearly invisible — a transparent pane between the developer and the state of their work. Design choices must age toward invisibility: nothing that delights on day one is allowed to nag on day one hundred.
+
+2. Information Hierarchy
+
+2.1 The canonical order
+
+All information in the product belongs to one of five ranks. Rank is absolute: no element of a lower rank may ever be more visually prominent than a co-present element of a higher rank.
+
+What waits on you — efforts in Waiting-on-you, led by their reasons. This is the product's headline, always.
+
+What is moving — efforts in progress, with their one-sentence accounts.
+
+What changed — settled work, arrivals, activity-while-away, staleness markers.
+
+Where you are — orientation chrome: project context, effort identity, the intent sentence.
+
+What you could do — affordances, hints, shortcuts. The lowest rank: actions are discovered when sought, never advertised.
+
+2.2 Sentence-first, evidence-beneath
+
+Per the architecture's summarization model, every unit of information leads with its one human sentence. Everything else — the story, the account, the work itself — is evidence beneath the sentence, reached by descent (§16). No surface ever leads with raw material.
+
+2.3 The developer's words outrank the app's words
+
+The intent sentence — written by the developer — is the identity of an effort everywhere. It is always displayed above, and set stronger than, anything the app has to say about the effort. The hierarchy embodies the relationship: human intent commands, machine account reports.
+
+3. Navigation Philosophy
+
+3.1 Two rooms and a hallway
+
+There are exactly two places: Home and the Effort view. Navigation is one gesture deep in each direction — enter an effort, return Home. There is no history stack to manage, no tabs, no breadcrumbs, no back-button archaeology. The developer can never be lost, because there is nowhere to be lost.
+
+3.2 Home is the resting state
+
+All paths return Home. After a verdict, the developer lands on Home (Workflow E). After abandoning, Home. On launch, Home. The Effort view is a visit, not a residence — it exists to answer "what happened here and what do I decide," and releases the developer the moment judgment is rendered.
+
+3.3 The palette is speech, not a place
+
+The command layer (locked decision 1) is summoned, spoken to, and dismissed. It never holds state, never displays content, never becomes a destination. It is the linguistic mode of the same two surfaces: everything the palette can do is done to Home or to an effort. Its contents are verbs and efforts — never settings trees, never documents.
+
+3.4 Leaving is a first-class navigation act
+
+Handing off to an assistant (Workflow D) is designed with the same care as any internal transition: one action, an honest state change, and no residue that demands attention on return. The app must feel as good to exit as to enter — the hallway's job is letting go.
+
+4. Layout System
+
+4.1 One column of truth
+
+Both surfaces are organized as a single primary reading column. A single column enforces sequence, and sequence enforces hierarchy: what is above matters more than what is below (§2.1). Side-by-side regions exist only where comparison is the content itself (§17); they are never used to display more categories simultaneously.
+
+4.2 Density through compression, not through packing
+
+The constitution forbids Home from requiring scroll to understand the situation, and the architecture makes compression the response to volume. Layout obeys the same law: when content grows, the representation compresses (tighter accounts, grouped efforts, summarized ranks) — the layout never shrinks type, never adds panes, never paginates the truth.
+
+4.3 Emptiness is load-bearing
+
+Empty space is the visual encoding of "nothing needs you here." It is never filled defensively. A Home with two efforts shows two efforts and generous silence — not two efforts and six suggestions. Space between ranks (§2.1) is the primary grouping device, outranking rules, borders, and boxes (§11).
+
+4.4 Stability of place
+
+Recurring elements live in fixed positions. The eye must be able to land on "what waits on me" without searching, every time, forever. Layout never reflows to celebrate, promote, or surprise. The only movement between two glances is the movement of truth.
+
+5. Visual Hierarchy
+
+5.1 Four instruments, in order
+
+Prominence is produced by exactly four instruments, applied in this priority order:
+
+Position — higher is more important (§2.1).
+
+Space — isolation confers weight; crowding dissolves it.
+
+Type scale and weight — few steps, decisively different (§10).
+
+State color — the scarcest instrument, reserved for state and status (§9).
+
+Decoration — fills, borders, shadows, badges — is not an instrument of hierarchy. If an element needs a box to seem important, its position, space, or type is wrong.
+
+5.2 One focal point per surface
+
+At any moment, each surface has exactly one intended first fixation: on Home, the top item waiting on you (or the calm declaration that nothing is); in the Effort view, the sentence describing what happened or what is asked. Every other element is subordinated until the focal point is unmistakable in a squint test.
+
+5.3 Chrome whispers
+
+Everything that is app rather than work — labels, affordances, structure, the palette — sits at the lowest contrast that remains comfortably legible. The developer's content (intent sentences, accounts, the work under review) owns the reading contrast. The app never speaks louder than the work.
+
+6. Interaction Principles
+
+6.1 Read, then act; never hunt
+
+Every interaction follows one shape: the surface presents understanding; understanding suggests the act; the act is one gesture. There are no multi-step wizards, no mode switches, no configuration journeys. If an interaction requires hunting, the presentation has failed and must be redesigned — the act is never made more elaborate to compensate.
+
+6.2 The three-verdict grammar is the interaction ceiling
+
+The most complex decision in the product — judging an effort — offers exactly three verbs (Workflow E). No interaction anywhere may be more complex than this. Any proposed interaction with more than three primary choices must be decomposed or rejected.
+
+6.3 Acknowledgment is immediate and truthful
+
+Every input is acknowledged within the perceived-response bound, and the acknowledgment reflects the optimistic-intent model of the architecture: the developer's action is shown as done the instant it is willed, while durability proceeds beneath. What is shown must remain the truth — if the intent later fails, the failure arrives through the one failure shape (§14), never by silently reverting what the developer saw.
+
+6.4 One weighted confirmation in the whole product
+
+Abandoning an effort carries the product's single deliberate confirmation (Workflow F). Nothing else asks "are you sure" — not accepting, not redirecting, not parking, not reversing within the grace period. The design system enforces this by not providing a general confirmation pattern: there is exactly one, and it belongs to abandonment.
+
+6.5 Hover reveals, never conceals
+
+Nothing essential hides behind hover. Pointer proximity may gently surface secondary affordances (rank 5, §2.1), but the situation is always fully legible with the pointer untouched — the glance (§1.2) must work from across the room.
+
+6.6 No dead ends
+
+Every state of every surface offers a way forward: an action, a descent, or an honest sentence with its one suggested step. The developer is never presented with information they can do nothing about and no way to move.
+
+7. Keyboard-First Behavior
+
+7.1 The two-tier model
+
+Per locked decision 1:
+
+Direct shortcuts bind the loop's most frequent verbs: begin an effort, open the top waiting item, render each of the three verdicts, descend into evidence, return Home, summon the palette. These are the muscle-memory tier — few enough to be learned in a day, stable enough to be trusted for years.
+
+The palette is the universal tier: every action in the product, without exception, is reachable by summoning and typing what you want. Naming is discovery: the palette is also how the keyboard vocabulary is learned, because it displays the direct shortcut beside each verb it lists.
+
+7.2 Rules of the palette
+
+Summonable from anywhere with one constant gesture; dismissed with one; never opens on its own.
+
+Context-aware: with an effort focused, its verbs address that effort; on Home, they address the day. The palette speaks about where you are.
+
+Ranked by relevance to the current state — an effort waiting on you offers its verdicts first — never by promotion, novelty, or feature marketing.
+
+Text entered into it is interpreted as intent: typing a new sentence with no matching verb offers to begin an effort with that sentence (Workflow C's single keystroke, generalized).
+
+7.3 Focus is sovereign and visible
+
+At every moment exactly one element holds focus, and its indication is unambiguous at a glance. Focus follows the information hierarchy: on arrival, focus rests on the focal point (§5.2), so the most likely action is always zero navigations away — the top waiting effort is one keystroke from launch (Workflow B).
+
+7.4 The mouse is a first-class dialect, not a fallback
+
+Everything reachable by keyboard is reachable by pointer, in the same number of decisions. Nothing is keyboard-only as a badge of seriousness; nothing is pointer-only as a convenience. The two dialects express the same grammar.
+
+7.5 No chords beyond human memory
+
+The direct-shortcut tier stays small enough that no cheat sheet is ever needed. When a candidate verb cannot earn a memorable shortcut, it lives in the palette alone — this is the enforcement mechanism for "every feature must earn its keyboard shortcut."
+
+8. Motion Philosophy
+
+8.1 Motion is state made legible, nothing more
+
+Animation exists for exactly three purposes:
+
+Continuity — showing that a thing moved rather than teleported (an effort entering a new rank, a descent into evidence), so the developer's mental map survives the change.
+
+Causality — binding an action to its consequence (a verdict rendered, an effort dissolving), so the developer feels the system respond to them.
+
+Honest liveness — the quiet indication that an effort is Moving; truthful progress for genuinely long operations (§13).
+
+No motion for delight, branding, celebration, or attention. There are no entrance flourishes, no bouncing, no pulsing badges — pulsing is the visual grammar of interruption, and interruption does not exist here (Architecture §13).
+
+8.2 Fast enough to feel instant, slow enough to be seen
+
+Transitions are brief — long enough to carry continuity, short enough never to make the developer wait. Motion must never spend the response budget: the truth updates instantly; the motion merely accompanies it.
+
+8.3 Nothing moves uncaused
+
+The only motion not caused by the developer's own input is the honest-liveness indication (§8.1.3), which is designed to be steady and peripheral — visible when looked at, invisible when not. Content never animates in from background updates while the developer is present; changes composed while away are simply there at the next glance, per the silence rules.
+
+8.4 Motion respects the developer's constraints
+
+When the operating system signals reduced motion, continuity and causality are expressed through non-moving means (state cross-fade, emphasis) with no loss of information (§15).
+
+9. Color Philosophy
+
+9.1 The monochrome field
+
+Per locked decision 2, the interface is near-monochrome: surfaces, chrome, type, and structure are built from a single neutral ramp. This is not austerity for its own sake — it is what makes state color work. On a field with no competing hue, a single mark of color carries across the room.
+
+9.2 Hue is state, state is hue
+
+Color appears for exactly two families of meaning:
+
+Effort state — Waiting-on-you, Moving, and Done each own one hue, constant everywhere and forever. These three are the app's palette.
+
+Semantic status — the honest markers the workflows require: staleness, the weighted abandonment confirmation, the reason-tone of a failure sentence. These draw from the same small family, never introducing hues that compete with state.
+
+Nothing else is colored. Not links, not icons, not chrome, not emphasis, not branding. When a developer sees hue, it means state — this single association, never diluted, is the entire color system.
+
+9.3 Rules of application
+
+State color is applied sparingly per instance — a compact, consistent mark, not a flood. Large colored regions shout; this app does not shout.
+
+Waiting-on-you's hue is the most attention-forward of the three, because it marks rank 1 (§2.1); Moving is calm and peripheral; Done is quiet to the point of near-neutrality.
+
+Color is never the sole carrier of state: every state is simultaneously legible through position, wording, and symbol (§12, §15).
+
+No gradients, no glow, no color as texture or mood.
+
+9.4 Appearance modes
+
+Per locked decision 3: the app follows the operating system's appearance, with one override — the product's single appearance preference. Both appearances derive from the same neutral ramp and the same three state hues, tuned so meaning and hierarchy survive the switch exactly. The two modes are one design under two lights, not two designs.
+
+10. Typography Philosophy
+
+10.1 Type is the interface
+
+In a prose-first product (§1.1), typography does the work that panels, icons, and chrome do elsewhere. The type system is therefore the largest single investment of the design language, chosen and tuned for one duty above all: sentences read at a glance, comfortably, thousands of times a year.
+
+10.2 A small, absolute scale
+
+The scale has few steps — enough to distinguish the ranks of §2.1 and no more. Each step is decisively distinct from its neighbors; if two steps can be confused, one is removed. Weight follows the same discipline: a small number of weights with assigned meanings, never used decoratively.
+
+10.3 Voice mapping
+
+The developer's intent sentences — the strongest reading voice on any surface; these are the product's headlines.
+
+The app's accounts — one clear body voice, plain and unitalicized: the voice of an honest clerk.
+
+Reasons and suggested actions (the failure shape) — the same body voice; failures are ordinary sentences, not typographic alarms.
+
+Chrome and affordances — a visibly quieter voice (§5.3).
+
+The work itself, under review — where the evidence is code or code-like, it is set in a form appropriate to its nature, distinct from the prose voices, so that "the app's words" and "the work" are never confusable.
+
+10.4 Reading measure governs width
+
+Line length on both surfaces is governed by comfortable reading measure, not by window width. Wide windows earn more calm margin, never longer lines. Truncation is a last resort and is always honest — visibly marked, with the full sentence one gesture away; a sentence is never silently cut into a lie.
+
+11. Spacing Philosophy
+
+11.1 One rhythm
+
+All spacing derives from a single modular rhythm — one base interval and a small set of multiples. Every gap in the product is a deliberate step of this rhythm; arbitrary distances do not exist. Consistent rhythm is subliminal order: it is a large fraction of why an interface feels intentional rather than assembled.
+
+11.2 Space encodes structure
+
+Relationship is expressed by proximity before any other means: what belongs together sits together; what is distinct is separated. Rules, boxes, and background fills are escalations permitted only where space alone genuinely fails — and each such escalation must justify itself against the calm it spends.
+
+11.3 Generosity above, economy within
+
+The intervals between ranks and around the focal point are generous — silence framing what matters. The intervals within a unit (an effort row, a sentence and its mark) are economical, binding each unit into one glanceable object.
+
+11.4 Space is never reclaimed by growth
+
+As features and volume grow, the temptation is to spend the margins. Forbidden: the rhythm and its generosity are fixed assets of the product's calm. Growth is absorbed by compression (§4.2), never by crowding.
+
+12. Icons and Symbolism
+
+12.1 Words first
+
+This product's medium is the sentence. Icons never replace words for anything a developer must understand — no icon-only toolbars, no symbol grammar to memorize. An unlabeled icon is a small riddle, and riddles cost calm.
+
+12.2 The permitted symbols
+
+Symbols exist in exactly three roles:
+
+State marks — one compact, constant mark per effort state, paired with its hue (§9.2), so state is legible in monochrome contexts and to color-impaired vision (§15).
+
+Identity anchors — minimal marks that help the eye re-find known objects (a project, an assistant) across glances. Assistants' marks are rendered with strict visual equality — same size, same treatment — as neutrality made visible (Architecture §9.3).
+
+Affordance glyphs — the tiny conventional signs of descent and return, always adjacent to their target, never alone.
+
+12.3 One family, one weight, no theater
+
+All symbols share one formal family and one visual weight, quiet by construction (§5.3). No illustration, no mascots, no emoji in the app's own voice, no decorative iconography. The symbol set is closed: adding a symbol requires retiring the need for it in words first — and most candidates fail that test.
+
+13. Empty States and Loading States
+
+13.1 Emptiness is a success state
+
+The empty Home — everything Done, or a fresh first run — is designed with the same care as the full one. It states the truth plainly ("nothing needs you"), offers the one meaningful action (begin an effort), and otherwise holds its silence. No illustrations of empty boxes, no motivational copy, no feature tours. Per Workflow B: a calm empty state is a success state.
+
+13.2 First-contact emptiness teaches by form
+
+On first run (Workflow A), the empty or sparsely-populated Home is the onboarding: one possible action, self-evidently presented. The design system permits no tutorial layer, no coach marks, no progressive tooltips — if the surface needs annotation to be obvious in ten seconds, the surface is wrong.
+
+13.3 Loading is truth in progress
+
+Per the architecture, surfaces render instantly from the last projection and refresh beneath. Therefore the product has almost no loading states — it has staleness states, marked honestly (§6.5 of the architecture, rendered per §9.2).
+
+Where genuine waiting exists (preparing ground on a huge project, settling large work):
+
+The state is described in words — what is happening, whether it is safe to leave — not by an anonymous spinner.
+
+Progress indication is shown only when it reflects real progress; indeterminate theater is forbidden. An honest "this is proceeding; safe to leave" outranks a fake percentage.
+
+Waiting never blocks the surface: the developer can always glance elsewhere, act elsewhere, or leave.
+
+14. Error Presentation
+
+14.1 One shape, rendered one way
+
+The architecture mandates a single failure form: the affected effort in Waiting-on-you, one plain sentence about reality, one suggested action. The design system renders this form identically everywhere:
+
+The failure is the effort's current sentence — set in the ordinary body voice, in place, in rank. Not a banner, not a toast, not a modal, not a red slab.
+
+The suggested action is presented as the effort's one offered gesture.
+
+Severity is carried by words, not by escalating visual alarm. The design system contains no error-styling ladder — no warning-yellow-versus-danger-red taxonomy — because the product's failure grammar has no severity levels, only reasons.
+
+14.2 No blame, no drama, no jargon
+
+Failure sentences are written in the same honest-clerk voice as all accounts: what was attempted, where it stopped, what can be done. Never exception text, never codes, never another tool's vocabulary (Workflow G framing rule), never exclamation. The developer should be able to read a failure aloud to a colleague without translating.
+
+14.3 Unknown is presented as unknown
+
+When truth cannot be determined (Architecture §18.4), the presentation says so with composure: what is known, what is not, what would resolve it. The design system never dresses uncertainty as normality, and never dresses it as emergency.
+
+15. Accessibility Principles
+
+The glance must survive every body. The product's atomic unit (§1.2) is redesigned, not degraded, for assistive access: the ranks of §2.1 are exposed as a coherent reading order, so a screen-reader user hears the situation in the same priority a sighted user sees it — what waits, what moves, what changed.
+
+Color is never sole meaning (§9.3). Every state is triply encoded: hue, mark, and word.
+
+Contrast floors are constitutional. All text — including the whispering chrome of §5.3 — meets comfortable legibility floors in both appearances. Quiet is achieved within accessible contrast, never beneath it.
+
+The keyboard tier is the accessibility tier. Because every action is keyboard-reachable by design (§7), no separate accessible pathway needs inventing; focus visibility (§7.3) and sane traversal order are the same feature as keyboard-first.
+
+Motion, size, and appearance follow the person. Reduced-motion is honored with full informational parity (§8.4); type respects system-level size preferences without breaking layout (compression absorbs growth, §4.2); appearance follows the OS by default (§9.4).
+
+Time pressure does not exist. Nothing in the interface expires, times out, or demands response within a window — a structural accessibility property inherited from silence-by-default.
+
+16. Progressive Disclosure
+
+16.1 The three depths
+
+Every unit of information offers at most three depths, uniform across the product:
+
+The sentence — the one-line account. Sufficient for most glances.
+
+The story — the effort's history: intents, directions, transitions, arrivals, verdicts, in order. Sufficient for orientation before judgment.
+
+The work — the evidence itself, legible and in context. Sufficient for consequential judgment.
+
+Descent is one gesture per depth; return is one gesture entire. Depth never opens uninvited — pulled, never pushed.
+
+16.2 Disclosure is not accumulation
+
+Descending does not stack panels or spawn windows; each depth replaces the shallower view within the Effort view, and returning restores it exactly. The developer is always at exactly one depth, and always knows which.
+
+16.3 Growth ships at depth, never at surface
+
+New capability (richer accounts, better evidence rendering — the extension paths of Architecture §19) may deepen depths 2 and 3. It may not add elements to depth 1, add ranks to Home, or add affordances to the resting surfaces. This is the design system's enforcement of "minimal even as features grow": the surface area of the product is closed; only its depth is open.
+
+17. Review Experience
+
+The review (Workflow E) is the product's most consequential experience and receives the design system's finest attention.
+
+17.1 Judgment posture, not editing posture
+
+The review is read-only by design conviction (anti-goal: not an IDE). The developer reads, descends, and renders one of three verdicts. The absence of editing affordances is what makes judgment feel light: nothing invites tinkering, so attention stays on deciding.
+
+17.2 The reviewing eye is led, never dropped
+
+The Effort view under review opens at depth 1: intent above (the developer's own words — the standard against which all work is judged), the account of what happened beneath. Descent to the work (depth 3) presents evidence pre-organized for comprehension — grouped by meaning, ordered for narrative sense, summarized where trivial and full where consequential. The archaeology was done in advance (Architecture: Summarizer, effect description); the surface's job is to present its results in reading order.
+
+17.3 The work is shown in its own nature
+
+Evidence rendering honors what the work is: code-like work is shown in a code-appropriate voice (§10.3), prose as prose, structure as structure — always distinguishing three registers without ambiguity: what existed, what changed, and what the app says about the change. The app's commentary never visually intrudes into the work itself.
+
+17.4 The verdicts are always at hand
+
+Accept, redirect, and abandon are reachable at every depth by the same three gestures — judgment never requires surfacing first. Redirect opens the product's simplest input: a place for one sentence, in the developer's voice, costing no more than the original delegation (Workflow E). Accept completes without ceremony. Abandon invokes the one weighted confirmation (§6.4).
+
+17.5 Partial judgment without new grammar
+
+Where work is separable, pieces can be individually marked for acceptance or redirection within the same review — presented as a natural extension of reading (judging as you go), not as a new mode. The effort remains one effort in one state throughout (Workflow E.4).
+
+17.6 The review must lower dread measurably
+
+The review experience is the design system's chief instrument against review dread (Constitution, user psychology). Its acceptance test: a developer facing a large overnight effort should feel invited to read, not braced for excavation. Any review design change is evaluated against decision latency (success metric 3) and this felt test.
+
+18. Consistency Rules
+
+The grammar that keeps a thousand future decisions coherent:
+
+One meaning, one form. Each state, each verdict, each depth, each failure has exactly one visual form, everywhere, forever. Nothing is restyled for context or emphasis.
+
+One form, one meaning. No visual form is reused for a second meaning. The mark that means Waiting-on-you may never also decorate, and the gesture that means descend may never also expand something else.
+
+The vocabulary is closed at the surface. Surfaces speak only the constitutional lexicon — effort, moving, waiting on you, done, arrived, accept, redirect, let go — plus the developer's own words. New terms require a constitution-level decision, not a design decision.
+
+Positions are permanent. Once an element's place is established (§4.4), moving it requires demonstrating that the move sharpens the glance for existing users, not merely that it pleases a redesign.
+
+The rhythm is law. All new work composes from the established type scale (§10.2), spacing rhythm (§11.1), symbol family (§12.3), and state hues (§9.2). A design that needs a new step, gap, symbol, or hue is presumed wrong until proven otherwise.
+
+Both appearances, always. No design is complete until it holds meaning, hierarchy, and calm in both light and dark appearances (§9.4).
+
+Every pixel re-earns its place. Additions to any resting surface are audited against §16.3. The default answer to "where does this go" is depth or the palette — the surface is the last resort, not the first.
+
+19. Design Acceptance Test
+
+A change to the interface ships only if all answers are yes:
+
+Would a first-time user still understand the product within ten seconds?
+
+Does the change sharpen, or at worst preserve, the glance?
+
+Is the situation on Home still fully legible without scrolling, hovering, or interacting?
+
+Does hue still mean state, and nothing else?
+
+Is the change reachable by keyboard and pointer in equal decisions, and legible to assistive access in the same rank order?
+
+Does it add zero elements to resting surfaces — or justify each against §16.3 and §18.7?
+
+Does every new sentence it displays pass the vocabulary contract?
+
+Would the developer's heart rate be lower after the change than before it?
+
+When in doubt, we subtract.
+
+
+
+phase 4
+
+
+# 40_MVP_SPEC.md
+
+*MVP specification — derived from and subordinate to the Product Constitution, the Workflow Specification, the System Architecture, and the UI Design System.*
+
+---
+
+## 0. Purpose and Authority
+
+This document defines the smallest complete product that faithfully delivers the Product Constitution. "Smallest" and "complete" are both binding: nothing ships that the constitution does not require for its core promise, and nothing the core promise requires is deferred.
+
+**The core promise being proven.** The developer launches this app first, orients in under ten seconds, delegates efforts to AI assistants, returns, judges, and leaves calm — with total legibility, total reversibility, and zero interruptions. If the MVP delivers this loop convincingly for one developer on one machine, the product's thesis is proven.
+
+**Locked MVP scope decisions** (from design review):
+
+1. **Workflow G deferred.** The MVP covers Workflows A–F and H. The World Watcher ships only what first-run discovery and external-mutation honesty require. Arrival absorption (teammates, automated systems) is deferred.
+2. **Observation fallback + 2–3 rich adapters.** The universal integration is effect observation; rich adapters ship for a small named set of the most-used terminal assistants. IDE-embedded tools integrate through observation.
+3. **Repo projection included.** The app-owned local store is truth; the bounded repo projection ships as the portability and reinstall-survival mechanism, off by default. Multi-machine synchronization remains deferred.
+4. **One desktop operating system first.** Depth and polish on the platform where AI-assisted terminal developers concentrate; other platforms follow.
+
+**Deferral discipline.** Every deferral in this document must satisfy two tests: (a) the MVP is constitutionally complete without it, and (b) the locked architecture already contains its seam, so adding it later requires no rework of truth, grammar, or surfaces.
+
+---
+
+## 1. MVP Objectives
+
+In priority order:
+
+1. **Prove the home.** The app becomes the first thing opened in a development session for its early users — measured, not assumed (§11). Everything else in the MVP serves this.
+2. **Prove the loop.** The full core rhythm — orient → begin → delegate → return → review → judge → repeat → close the day — works end to end, feels instant, and requires no manual.
+3. **Prove the abstraction.** Developers adopt the effort/state grammar: no Git vocabulary is missed, isolation is trusted, reversal is used without fear.
+4. **Prove neutrality.** At least one assistant with no adapter works through observation alone, indistinguishably in capability from adapted tools.
+5. **Prove calm.** Zero interruption pathways exist; users report the heart-rate test passing (§11).
+
+Non-objectives of the MVP: growth mechanics, team features, multi-machine continuity, breadth of platform. The MVP optimizes for depth of conviction in a small number of users, not reach.
+
+---
+
+## 2. Required Capabilities
+
+The MVP developer can:
+
+1. **Open and orient** — launch to Home, see every live effort grouped by state in the fixed rank order, each with its intent sentence and one-sentence account, without scrolling or interacting.
+2. **Begin an effort** — one keystroke, one sentence, optional project correction; then delegate immediately or park it.
+3. **Delegate** — hand an effort to any assistant on the machine, with context intact, as one action; run any number of efforts in parallel with guaranteed isolation.
+4. **Return and absorb** — find machine activity compressed into honest sentences; discover state changes at glance-time only.
+5. **Review** — descend through the three depths (sentence → story → work); see evidence pre-organized, legible, and read-only.
+6. **Judge** — accept (settles work safely), redirect (one sentence, effort resumes with accumulated direction), or abandon (the product's single weighted confirmation; total restoration; grace-period recovery).
+7. **Reverse** — unwind a settled effort where it stands alone; receive the honest reframe where later work built upon it.
+8. **Close the day** — read Home in the evening direction; leave anything moving with confidence; park anything with one action.
+9. **Recover from anything** — every failure lands as Waiting-on-you + one sentence + one action; app restarts are indistinguishable from normal launches; dissolved efforts are recoverable within the grace period.
+10. **Carry truth in the repo (opt-in)** — enable the bounded projection per project; survive app reinstall by reconstructing effort truth from it; disable it and leave the repository normal.
+
+---
+
+## 3. Required Workflows
+
+| Workflow | MVP status | MVP notes |
+|---|---|---|
+| A — First run | **Full** | Discovery of projects and detectable in-progress work; zero mandatory decisions; empty state per design system §13.2 |
+| B — Opening the day | **Full** | Fixed rank order; compression under volume; unknown-state honesty |
+| C — Starting a new effort | **Full** | Both paths (delegate now / park); silent ground preparation; duplicate-intent notice; preparation-failure path |
+| D — Delegating and returning | **Full** | Handoff via adapter or observation; parallel efforts; all three failure paths including collision |
+| E — Reviewing and deciding | **Full** | Three verdicts; three depths; partial judgment (E.4); question-shaped waits; "make this reviewable" redirect |
+| F — Abandoning and reversing | **Full** | Grace period; partial-restoration honesty; reversal including the entangled-history reframe |
+| G — Absorbing arrived work | **Deferred** | Except: external mutation of a project by the developer's own other tools is detected and reported honestly (Architecture §10.5 escape hatch) — rendered as staleness/change facts, not full arrival interpretation |
+| H — Closing the day | **Full** | No new machinery required — H is B read in the evening direction plus parking; ships by construction |
+
+All cross-workflow rules (Workflow §3) and the workflow acceptance test (Workflow §4) apply to the MVP in full. There is no "MVP exemption" from any invariant.
+
+---
+
+## 4. Required Architecture Pieces
+
+Per the locked architecture's component map:
+
+**Shell** — full: both surfaces, palette overlay, projection rendering, intent capture, disposability.
+
+**Core** — full: this is the product and cannot be thinned.
+- Domain model: Effort, Project, Verdict, Chapter (Arrival as a modeled type exists but only external-mutation facts feed it).
+- Event log: append-only, deterministic replay, causal order, machine attribution, intent traceability — sync-readiness ships day one even though sync does not.
+- State machine: closed transition table; machine-authored Done unrepresentable; reason-carrying transitions with the one-sentence/one-action schema.
+- Summarizer: per-effort current sentence; activity-while-away compression.
+- Overlap analyst: effort-vs-effort footprints (effort-vs-arrival deferred with G).
+- Grace keeper: full.
+
+**Workspace Engine** — full sealed interface: prepare, derive, settle, restore, unwind, describe-effect, hold/release grace ground. One VCS backend behind the seam. The teammate invariant and escape-hatch honesty are MVP requirements, not future polish.
+
+**Assistant Gateway** — adapter registry, handoff duty, facts normalization, effect observer, observed-reality-wins reconciliation. Rich adapters: the named set of 2–3 terminal assistants. Everything else: observation.
+
+**World Watcher** — reduced: project discovery (first run and effort creation) and external-mutation detection on bound projects. Arrival detection, relevance filtering, and interpretation deferred.
+
+**Sync Carrier** — reduced to the projection writer: serializing durable truth into the bounded, opt-in, self-describing repo projection; read-back reconstruction on reinstall (log-merge semantics applied locally). No multi-machine reconciliation, no additional carriers.
+
+**Event fabric** — full three-tier taxonomy (facts / domain events / projection updates); no interruption pathway, structurally.
+
+---
+
+## 5. Required UI Surfaces
+
+Exactly the two surfaces and the overlay, per the design system, with no reductions:
+
+1. **Home** — fixed rank order; no-scroll comprehension; compression under volume; stable positions; the success-state and first-run empty states; staleness markers; single focal point.
+2. **Effort view** — three depths with replace-not-stack disclosure; the review experience in full (§17 of the design system), including read-only evidence rendering in its three registers, verdicts reachable at every depth, partial judgment, and the redirect sentence input.
+3. **The palette** — universal verb coverage, context awareness, state-relevant ranking, shortcut display, intent-sentence interpretation (typing a new sentence offers to begin an effort).
+
+Plus the design system's full obligations: direct-shortcut tier, focus sovereignty, both appearances with the single override preference, reduced-motion parity, accessibility principles §15 in full. Accessibility is an MVP requirement — the constitution's ten-second and keyboard-first guarantees are for every developer.
+
+The MVP contains no settings surface. Its total configuration: the appearance override, and the per-project projection toggle — both housed in the palette as verbs, per design system §18.7.
+
+---
+
+## 6. Required Background Services
+
+From the architecture's service table:
+
+| Service | MVP status |
+|---|---|
+| Effect observation | **Ships** — the universal integration depends on it |
+| Adapter sessions | **Ships** — for the named adapter set |
+| Summarization | **Ships** — continuous; glance-time deadline discipline |
+| World watching | **Reduced** — discovery + external-mutation detection only |
+| Overlap analysis | **Ships** — effort-vs-effort |
+| Projection writing | **Ships** — for projects with the projection enabled |
+| Grace keeping | **Ships** — hold, recover, silent expiry |
+| Health | **Ships** — honest staleness on service failure; the app degrades the way it asks the world to degrade |
+
+All three service laws (never interrupt, never block, die quietly) and the background-yields-to-foreground budget are MVP requirements.
+
+---
+
+## 7. Required Integrations
+
+1. **Rich adapters: 2–3 terminal assistants**, selected by observed usage among target developers at build time. Contract per Architecture §9.1 (presence, handoff, facts, account). Adapters are strictly first-party and individually removable.
+2. **Observation fallback: every other tool** — including IDE-embedded assistants and tools that do not yet exist. Coarser accounts, identical loop capability. This is the neutrality proof and is release-gating (§11).
+3. **One VCS backend** behind the Engine's sealed seam, covering the dominant version-control reality of the target developers' projects. Projects outside that reality are declined honestly at discovery — one sentence, no pretense — rather than half-supported.
+4. **The operating system** of the chosen platform: appearance signal, reduced-motion signal, type-size preference, process and filesystem observation. No other integrations: no accounts, no cloud services, no telemetry endpoints — there is nothing to integrate with, by design.
+
+---
+
+## 8. Required Persistence
+
+1. **The app-owned local store** — authoritative: the per-project event logs, project bindings, grace-period holdings, and the app's few preferences. Inspectable and documented form (Architecture §11.1). Derived state (projections, summary caches) is disposable and rebuilt from the log; corruption of derived state is a performance event, never a loss event.
+2. **Workspace ground** — per-effort isolated ground and grace-held ground, managed solely by the Engine, never synced, fully reclaimed on expiry.
+3. **The repo projection (opt-in, off by default)** — bounded, fenced, legible, self-describing, secret-free serialization of domain truth into the developer's repository. Duties in the MVP: reinstall survival and truth portability. Explicitly not duties in the MVP: multi-machine merge (no second machine exists in scope).
+4. **Durability contract** — every developer intent and verdict is durable before the process that acknowledged it would lose it; crash recovery replays the log and is indistinguishable from normal launch. Log history is never rewritten; schema evolution is append-only and versioned from the first release.
+
+---
+
+## 9. Required Local-First Behavior
+
+The MVP is fully functional with the network cable cut, permanently:
+
+1. Workflows A–F and H complete entirely offline. With G deferred, **the MVP has no networked feature at all** — offline is not a degraded mode but the product's whole envelope.
+2. Assistants that need the network fail as assistant failures (effort → Waiting-on-you, one sentence, one action); the app itself never fails for a tool's reason.
+3. No account, no sign-in, no identity issued by the app. First run to first effort requires zero network round-trips.
+4. Nothing leaves the machine: no telemetry, no phone-home, no silent traffic. The success-metric instrumentation of §11 is gathered through explicit, developer-visible means, never covert collection.
+5. Uninstalling the app leaves every repository normal, all settled work intact, and — where the projection was enabled — the effort story legible in the developer's own infrastructure.
+
+---
+
+## 10. Explicitly Excluded Features
+
+Each exclusion names its seam — the locked architecture's guarantee that later inclusion requires no rework.
+
+**Deferred (post-MVP, seam exists):**
+
+| Exclusion | Seam that awaits it |
+|---|---|
+| Workflow G: arrival absorption, relevance filtering, review-shaped arrivals, effort-vs-arrival overlap | World Watcher facts → Core interpretation; Arrival is already a modeled type |
+| Multi-machine synchronization | Log-merge semantics defined (Architecture §11.2); projection already carries truth |
+| Additional sync carriers beyond the repo projection | Sync Carrier seam (Architecture §15) |
+| Adapters beyond the initial set | Adapter contract (Architecture §9.1) |
+| Additional VCS backends | Engine's sealed seam (Architecture §10) |
+| Additional desktop platforms | No architectural coupling to platform beyond the substrate layer |
+| Richer evidence rendering and account quality | Depth-only growth (Design System §16.3) |
+
+**Excluded by constitution (never, regardless of demand):**
+
+- Any text-editing capability; any version-control vocabulary or controls; any chat surface; dashboards; project-management constructs (sprints, assignees, ordering, queues); notification or interruption pathways of any kind; accounts and proprietary backends; telemetry; third-party plugin surfaces (locked decision; internal seams only); assistant rankings, defaults, or privileged integrations; onboarding tours, coach marks, or tutorial layers; a settings surface.
+
+Requests for these are answered by better abstraction or by subtraction, per the constitution's anti-goals.
+
+---
+
+## 11. Release Acceptance Criteria
+
+The MVP ships only when every criterion below passes. Each is measurable or falsifiable; none is aspirational.
+
+**Loop completeness**
+
+1. A first-time user on a machine with existing projects reaches an oriented Home in under ten seconds, with zero mandatory decisions, and can state unprompted what the app is for.
+2. The full loop — begin, delegate, leave, return, review, each of the three verdicts — completes end to end with each of the shipped adapters **and** with at least one assistant integrated purely by observation.
+3. Three or more efforts run in parallel with zero entanglement; an induced overlap is detected and lands both efforts in Waiting-on-you with human-language notices and human-sized choices.
+4. Abandonment of a mid-Moving effort stops machine activity, restores everything touched, and leaves all other efforts untouched; recovery within the grace period restores the effort to its prior state with one action.
+5. Reversal of a settled effort unwinds cleanly where it stands alone, and produces the honest reframe where later work built upon it.
+
+**Constitutional invariants**
+
+6. Every input on every surface acknowledges within the perceived-response bound on the slowest supported hardware, including under full background load.
+7. Home requires no scrolling, hovering, or interaction to convey the complete situation at any effort volume achievable in the MVP.
+8. A full-product vocabulary audit finds zero version-control terms on any surface, in any sentence, including every failure path.
+9. Silence holds structurally: code inspection confirms no interruption pathway exists; a week of real use produces zero notifications, badges, sounds, or uninvited motion.
+10. Every failure path — induced deliberately across preparation, delegation, settling, restoration, and app crash — lands in exactly the one shape: affected effort in Waiting-on-you, one plain sentence, one suggested action.
+11. Killing any process at any moment loses no acknowledged intent or verdict; relaunch is indistinguishable from a normal launch.
+
+**Data sovereignty**
+
+12. With the projection enabled: uninstall, reinstall, and full reconstruction of effort truth from the repository succeeds; teammates without the app see a normal repository throughout, projection on or off.
+13. With the network disabled for the entire test period, every criterion above still passes.
+
+**Design-system conformance**
+
+14. Every action is reachable by keyboard and by pointer in equal decisions; the palette reaches every verb; focus order matches rank order; both appearances and reduced-motion parity pass the accessibility principles in full.
+15. The product passes all four locked acceptance tests: the Workflow test (Workflow §4), the Architecture test (Architecture §20), the Design test (Design System §19), and — for each shipped feature — the constitution's principle-citation rule.
+
+**The felt test**
+
+16. A panel of target developers (AI-assisted, previously unexposed) each uses the MVP as their real home for two weeks. Ship-gating thresholds, agreed before the panel begins: a majority open the app first in their working sessions by week two (north star); time-to-orientation stays under ten seconds throughout; review dread and the heart-rate question — "is opening it calming?" — trend affirmative in exit interviews. A panel that fails does not soften the criteria; it sends the MVP back.
+
+When in doubt, we subtract.
+
+
+
+
+

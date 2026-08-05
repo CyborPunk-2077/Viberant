@@ -1,0 +1,28 @@
+import { ulid, Clock } from './src/identity.mjs';
+import { Author, Developer, reason } from './src/events.mjs';
+import { Log, fold } from './src/log.mjs';
+let t = 1_000_000;
+const clock = new Clock(() => t);
+const author = new Author({ clock, machine: ulid(), project: ulid() });
+const dev = new Developer(author);
+const log = new Log();
+const { effort, event: begun } = dev.begin({ intent: 'fix the flaky auth test' });
+const delegated = author.delegated({ effort, assistant: 'claude-code', causedBy: begun.id });
+const moved = dev.transitioned({ effort, to: 'moving', causedBy: delegated.id });
+[begun, delegated, moved].forEach(e => log.append(e));
+t += 60000;
+const stopped = author.transitioned({ effort, to: 'waiting', actor: 'assistant',
+  reason: reason('review_ready', 'The auth test passes now, and nothing else changed.') });
+log.append(stopped);
+t += 1000;
+const verdict = dev.judge({ effort, verdict: 'accept' });
+log.append(verdict);
+const doneEv = dev.transitioned({ effort, to: 'done', causedBy: verdict.id });
+log.append(doneEv);
+console.log('order:', log.ordered().map(e => `${e.type}@${e.at.wall}.${e.at.counter}`).join('\n       '));
+console.log('\nverdict.id =', verdict.id);
+console.log('doneEv.causedBy =', doneEv.causedBy, ' actor=', doneEv.actor, ' to=', doneEv.to);
+console.log('found cause?', !!log.ordered().find(c => c.id === doneEv.causedBy));
+const r = fold(log);
+console.log('\nstate:', r.efforts.get(effort).state);
+console.log('refusals:', r.refusals);

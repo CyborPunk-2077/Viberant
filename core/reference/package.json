@@ -1,0 +1,13 @@
+{
+  "name": "viberant-core-reference",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Executable specification of the domain core. Not the product; the definition of correctness the product is held to.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "audit:vocabulary": "node tools/audit-vocabulary.mjs"
+  },
+  "dependencies": {}
+}
