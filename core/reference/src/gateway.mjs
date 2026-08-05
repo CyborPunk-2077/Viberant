@@ -91,7 +91,11 @@ export function observedOnly(name, argv) {
   return new Adapter({
     name,
     present: async () => true,
-    command: () => ({ file: argv[0], args: argv.slice(1) }),
+    // The context goes in on standard input. Every command-line tool can read
+    // it, including ones nobody has written yet, and it needs no knowledge of
+    // any particular tool's flags. Without this the assistant would start cold,
+    // which would defeat the entire point of handing an effort over.
+    command: (context) => ({ file: argv[0], args: argv.slice(1), input: context }),
   });
 }
 

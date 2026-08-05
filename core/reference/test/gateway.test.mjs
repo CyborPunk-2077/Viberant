@@ -108,6 +108,22 @@ describe('running an assistant', () => {
     assert.deepEqual(r.session.touched().sort(), ['billing.js', 'rates.js']);
   });
 
+  test('an unknown tool is still told what the developer asked for', async () => {
+    const where = await ground('run1b');
+    const tool = await assistant('reader', `cat > got.txt`);
+    const gateway = new Gateway().register(observedOnly('reader', [tool]));
+    const { session } = await gateway.delegate({
+      effort: 'E1b', assistant: 'reader', ground: where,
+      context: 'the export flow needs a progress indicator\nThen: use the existing spinner',
+    });
+    await session.start({ silence: 5000 });
+
+    const { readFile } = await import('node:fs/promises');
+    const got = await readFile(join(where, 'got.txt'), 'utf8');
+    assert.match(got, /progress indicator/, 'it starts oriented, not cold');
+    assert.match(got, /use the existing spinner/, 'every direction reaches it too');
+  });
+
   test('a tool that fails is reported as failing, not as finishing', async () => {
     const where = await ground('run2');
     const tool = await assistant('breaker', `printf 'half\\n' > partial.js\nexit 3`);
