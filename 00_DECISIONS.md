@@ -241,6 +241,32 @@ Keyboard-first, both appearances, and reduced-motion parity are **kept** — the
 
 ---
 
+### D-21 `[DECIDED]` — Silence of 180 seconds means the assistant has stopped
+
+**Decision.** An effort's ground going completely quiet for three minutes is taken as the assistant having stopped.
+
+**Why.** Measured, not chosen — `experiments/quiescence/FINDINGS.md`. At 30 seconds we would wrongly interrupt the developer nearly nine times per session; at 90 seconds, once every third session; at 180, once every hundred. Finding out twice as fast is not worth teaching the developer to disbelieve the picture, and the picture being believable is the entire product.
+
+**Alternatives considered.** 90 seconds (rejected: one false alarm every third session). An adaptive threshold that learns each effort's rhythm (deferred, not rejected — a fixed threshold that is honest beats a clever one that is unproven).
+
+---
+
+### D-22 `[DECIDED]` — Liveness and change are watched at different scopes
+
+**Decision.** Watch the *entire* ground — including build output, caches and dependencies — to decide whether anything is alive. Report only meaningful paths when saying what changed.
+
+**Why.** Also from the experiment. A test run may touch nothing but build output for minutes. Watching only source files would call that silence and be wrong. But build output is not a change any developer would want reported. Two questions, two scopes.
+
+---
+
+### D-23 `[DECIDED]` — Home shows seven efforts in full, then compresses
+
+**Decision.** Each rank shows up to seven efforts in full; the remainder becomes one honest sentence naming how many and how urgent.
+
+**Why.** The constitution forbids scrolling to understand the situation and forbids paginating the truth, which leaves compression — and compression needs a threshold that nobody had chosen. Seven is about as many distinct things as a person holds at a glance, and the whole product is built around a glance. The rule that matters more than the number: the most important effort is never the one compressed away, which is tested.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

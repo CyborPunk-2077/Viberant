@@ -2,83 +2,74 @@
 
 *The whole picture: what exists, what does not, and what stands between here and a product you open every morning. Updated at the end of every session.*
 
-**Last updated:** 5 August 2026
-**Tests:** 62 passing
+**Last updated:** 6 August 2026
+**Tests:** 106 passing
 **Target of v1:** you stop reaching for your old workflow.
 
 ---
 
 ## Where this stands, in one paragraph
 
-The permanent half of the product is built and proven: the record of what happens, the rules about who may change what, the machinery that keeps efforts from colliding, and the ability to follow you between machines. None of it is visible yet. There is no window, no assistant is actually launched, and nothing summarises anything. What exists is the part that would be expensive to get wrong later; what is missing is the part that makes it feel like an application.
+Every part of the loop now exists in working, tested form except the window. An effort can be begun, given to a real assistant, watched, summarised, judged, settled as one entry in your own words, sent onward, and followed to another machine. The largest unknown in the project — whether we can tell a working assistant from a stopped one — has been measured rather than argued about, and the answer is yes, at a cost of three minutes. What remains is a window, a Rust core, and Windows.
 
 ---
 
 ## Done
 
-### Foundations — `core/reference/`
+### The domain — `core/reference/`
 
-| Piece | What it does | Proven by |
+| Piece | What it does | Tests |
 |---|---|---|
-| Identity and clock | Identifiers that never collide across machines without coordination; a clock that keeps causality when two machines disagree about the time | 4 tests |
-| Event schema v1 | The permanent record format. Seven fields on every event; who caused it and what caused that, always | conformance suite |
-| Vocabulary contract | Refuses version-control words, shouting, error text, and sentences that lead with a file count — as running code, not a style guide | 5 tests |
-| Failure shape | One plain sentence plus one action, required by the schema. A failure reason that needs an action cannot be built without one | 4 tests |
-| State machine | Three states, closed transition table. **No machine can settle work** — enforced by which code can reach a `Developer` object | 6 tests, including every machine-authored path through the table |
-| Append-only store | Plain text, one event per line, openable in any editor. A crash mid-write loses nothing that was acknowledged | 3 tests |
-| Multi-machine sync | Union the logs, replay, done. Two machines converge on byte-identical truth. No server exists anywhere in it | 6 tests |
-| Workspace Engine | Isolated ground per effort; settling as one entry titled in your own words; letting go; the grace period; sending to the shared copy | 21 tests against real projects on real disk |
-| The loop | Begin, delegate, leave, return, read, accept, send — end to end | 2 tests |
+| Identity and clock | Identifiers that never collide across machines without coordination; a clock that keeps causality when two machines disagree about the time | 4 |
+| Event schema v1 | The permanent record format. Who caused it and what caused that, on every event, always | — |
+| Vocabulary contract | Refuses version-control words, shouting, error text, and sentences leading with a file count. Running code, not a style guide | 5 |
+| Failure shape | One plain sentence plus one action, required by the schema | 4 |
+| State machine | Three states, closed table. **No machine can settle work** — enforced by which code can reach a `Developer` object | 6 |
+| Append-only store | Plain text, one event per line. A crash mid-write loses nothing acknowledged | 3 |
+| Multi-machine sync | Union the logs, replay, done. Byte-identical truth on both machines, no server | 6 |
+| Workspace Engine | Isolated ground; settling as one entry in your own words; letting go; grace; sending to the shared copy | 21 |
+| Assistant Gateway | Launches real tools, watches their ground, normalises facts. Observation is the universal path; adapters only enrich it | 11 |
+| Summarizer | Core owns the prompt and validates every sentence, so a borrowed assistant cannot make the product speak badly | 19 |
+| Home projection | Rank order, compression above seven, time said the way a person says it | 14 |
+| The loop | Begin, delegate, leave, return, read, accept, send — end to end | 2 |
 
-### Decisions and measurement
+### Measured, not guessed
 
-- 20 decisions recorded with reasoning and alternatives (`00_DECISIONS.md`)
-- Design review of the original specification: 12 contradictions, 12 ambiguities, 12 missing decisions (`DESIGN_REVIEW_REPORT.md`)
-- Ground cost measured, not guessed: **0.15 ms per file, and 100% of the project's size per effort.** A monorepo with dependencies costs ~22 seconds and 1.5 GB per effort. This changed the design — ground is now prepared at first delegation, never at creation
+**Ground costs 0.15 ms per file and 100% of the project's size, per effort.** A monorepo with dependencies is ~22 seconds and 1.5 GB each. This changed the design: ground is prepared at first delegation, never at creation, so parking an idea is free.
 
-### Things that were cut, deliberately
+**Silence of 180 seconds means stopped.** Below that, false alarms make the picture untrustworthy. Owning the assistant's process makes *finishing* instant and does nothing at all for an assistant that stopped to ask you something — worth knowing before building process ownership expecting it to solve the harder case. Three honest tiers, identical loop in all of them. `experiments/quiescence/FINDINGS.md`.
 
-Overlap detection · partial judgement · reversing settled work · pre-organised evidence rendering · full assistive-technology support *(this one is a debt, not a decision — it returns before anyone outside sees this)*
+### Decided
+
+23 decisions recorded with reasoning and alternatives. The design review of the original specification stands: 12 contradictions, 12 ambiguities, 12 missing decisions, most now closed.
 
 ---
 
 ## Not done
 
-Ordered by what stands between here and you opening it every morning.
+### 1. There is no window
 
-### 1. Nothing launches an assistant yet — **the biggest gap**
+The only thing you cannot do yet is look at it. Home exists as a projection and renders as text; there is no Home you can open, no effort view, no palette, no keyboard shortcuts, no taskbar presence.
 
-The Engine prepares ground and the record knows an effort was delegated, but no code starts Claude Code, Codex, or anything else. Until this exists there is no product, only bookkeeping.
+This is now the top of the list. Everything it needs already exists behind it.
 
-Needs: launching a tool in an effort's ground with the intent carried in; noticing when it stops; capturing what it did so the next tool starts warm.
+### 2. Nothing is in Rust yet
 
-**Unresolved inside this:** whether we own the assistant's process or hand off to your terminal. Owning it gives us a much better picture of what happened but needs somewhere to show an interactive session — and the design allows only two surfaces. I will prototype both and let the feel decide.
+The domain is specified and proven in dependency-free JavaScript as an executable definition of correctness. The real core is Rust behind a Tauri window. That transcription has not started, and it is correct when it passes the 106 tests that exist.
 
-### 2. Nothing knows when an assistant has finished — **the biggest risk**
+**Worth reconsidering:** the reference implementation is further along than expected and runs everywhere Node runs. Rewriting it in Rust buys compile-time guarantees and a smaller memory footprint; it costs weeks during which nothing improves for you. I lean towards shipping something you use daily first and transcribing after — but it is a real trade and I will put numbers on it before choosing.
 
-Everything about working with any tool rests on inferring "it stopped" from watching files. Thinking, running tests, and waiting-for-permission may be indistinguishable from outside. Nobody has measured this.
+### 3. It has never run on Windows
 
-**This needs ten minutes of your time.** I will write a small recorder; you run it while working normally; it tells us whether this is achievable or whether the promise needs rethinking.
+Everything was proven on Linux. Windows will be slower — antivirus scans every file written into an effort's ground — and paths are longer and more fragile. Unmeasured.
 
-### 3. No summaries
+### 4. No project discovery
 
-Forty actions still read as forty actions. The decision is made — borrow whichever assistant you already have — but nothing calls it, and the prompt, the quality bar, and how an uncertain summary admits it are all unwritten.
+Nothing scans for your projects, notices when you change files yourself, or marks the picture stale when it loses track.
 
-### 4. No window
+### 5. No real adapter
 
-No Home, no effort view, no palette, no keyboard shortcuts, no taskbar presence. Nothing to look at.
-
-### 5. Nothing watches your machine
-
-No project discovery, no noticing when you change files yourself, no honest staleness when we lose track.
-
-### 6. Nothing is in Rust yet
-
-The core is specified and proven in JavaScript as an executable definition of correctness. The real core is Rust behind a Tauri window (decision D-6). That transcription has not started, and it is correct when it passes the 62 tests that exist.
-
-### 7. It does not run on Windows yet
-
-Everything so far was proven on Linux. Windows will be slower — antivirus scans every file written into an effort's ground — and paths are longer and more fragile. Unmeasured.
+Claude Code, Codex and the rest currently work through observation alone, which the experiment shows costs three minutes of latency. A real adapter for the tool you use most makes that instant. Small, and high value for you specifically.
 
 ---
 
@@ -86,21 +77,21 @@ Everything so far was proven on Linux. Windows will be slower — antivirus scan
 
 | | Question | Who | Blocking? |
 |---|---|---|---|
-| **R-1** | **Where do your repositories actually live?** If they are inside WSL rather than on a Windows drive, the current scope excludes them — and Windows-first was chosen so you could use this daily. This one contradiction could undo two decisions | You | **Ask now** |
-| O-2 | Can we reliably tell when an assistant has finished? | Me, with 10 min of yours | Gates gap 1 and 2 |
-| O-3 | What makes a summary good enough, and how does an uncertain one say so? | Both | Gates gap 3 |
+| **R-1** | **Where do your repositories actually live?** If inside WSL rather than on a Windows drive, current scope excludes them — and Windows-first was chosen so you could use this daily. Asked twice now; it could undo two decisions | You | **Ask now** |
+| ~~O-2~~ | ~~Can we tell when an assistant has finished?~~ **Closed.** Yes, at 180 seconds | — | Done |
+| ~~O-6~~ | ~~Event schema~~ **Closed** | — | Done |
+| O-3 | What makes a summary good enough? The machinery is built and validated; the quality bar needs a real assistant answering real prompts | Both | Before you rely on it |
 | O-1 | How much disk is too much, and what do we say when it is? | Me | Before real use |
-| O-7 | Grace period length; how long settled efforts stay on Home; when we call the picture stale | Both | Before real use |
+| O-7 | Grace period length; how long settled efforts stay on Home | Both | Before real use |
 | O-8 | Business model. Untouched. Every conventional route is closed by the constitution | You | Not blocking |
 
 ---
 
 ## What I would do next, in order
 
-1. **Ask you where your repositories live.** Cheapest possible action; could invalidate two decisions.
-2. **The quiescence recorder.** Ten minutes of your time, and it answers the largest unknown in the project. If it fails, better now than in month six.
-3. **Launch an assistant for real.** Take one effort from your own work, all the way through, with Claude Code actually running. The first moment this stops being a specification.
-4. **A window, however plain.** Home, listing your real efforts, in rank order. Ugly is fine; the point is to look at your own work in it and see whether the glance works.
-5. **Summaries.**
+1. **A window you can open.** Home, listing your real efforts, in rank order. Plain is fine — the point is to look at your own work in it and find out whether the glance works. Everything behind it is built.
+2. **A real adapter for the assistant you use most**, so stopping is noticed instantly rather than in three minutes.
+3. **Project discovery**, so it finds your work instead of being told about it.
+4. **Run it on Windows and measure**, then decide about Rust with numbers rather than instinct.
 
-Nothing before step 3 makes you want to open this. Everything before step 3 makes step 3 possible without regret.
+The first item is now the only thing between you and using this.
