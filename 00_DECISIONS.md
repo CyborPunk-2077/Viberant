@@ -223,6 +223,24 @@ Keyboard-first, both appearances, and reduced-motion parity are **kept** — the
 
 ---
 
+### D-19 `[DECIDED]` — Settling refuses while the developer has work of their own in progress
+
+**Decision.** Accepting an effort is refused, kindly, if the developer has uncommitted work of their own sitting in the project. One sentence, one action: put your own work somewhere safe first.
+
+**Why.** Found by a test rather than by reasoning, which is the honest way to report it. Recovering from a collision means putting the project back exactly as it was — and doing that on top of the developer's own in-flight work would destroy it. The constitution says the app never silently acts on the developer's work; this is the one place where an unguarded implementation would have done exactly that.
+
+**Alternatives considered.** Setting the developer's work aside automatically before settling (rejected: acting on their work without their intent). Settling anyway and hoping (rejected outright).
+
+---
+
+### D-20 `[DECIDED]` — The Engine's six operations, and no seventh
+
+**Decision.** The sealed interface is: `prepare`, `describe`, `settle`, `publish`, `abandon`/`recover`/`release`. Reversal of settled work (`unwind`) is not implemented, per the D-14 cut.
+
+**Why.** Architecture §10 specifies the operations as "exactly the domain's needs and nothing more." With reversal cut and overlap analysis cut, the domain needs six. Every argument in is a domain object; every value out is a domain object; every sentence out has passed the vocabulary contract before it leaves. There is a test that drives every refusal path and fails if any sentence leaks — which is how the constitution's hardest promise stops being a matter of discipline.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
