@@ -1,67 +1,60 @@
 # Viberant
 
-The place you open before you start working.
-
-It holds what you are building, what each AI assistant is doing, what changed while you were away, and what needs you — without making you think about version control, terminals, or which conversation was in which window.
+One place to open your project, then start whichever AI app you feel like — already pointed at that folder. No adding the folder again in each app. No signing out and back in to switch accounts. One button to save your work and send it to GitHub.
 
 ---
 
-## Try it
+## Run it
 
-You need Node 22 or newer. Nothing else, and nothing to install.
+You need Node 22 or newer. Nothing to install.
 
 ```
-node app/server.mjs  C:\path\to\one\of\your\projects
+node app/server.mjs
 ```
 
 Then open `http://localhost:7777`.
 
-Everything it records goes in `~/.viberant`. Delete that folder and it is as if this never ran. Your project is never touched except when you accept work.
+Everything it remembers lives in `%USERPROFILE%\.viberant`. Delete that folder and it is as if this never ran.
 
-### Keys
+---
 
-| | |
-|---|---|
-| `n` | begin an effort — type what needs doing, press enter |
-| `shift+enter` | ...or set it aside instead of starting it now |
-| `↑ ↓` | move between efforts |
-| `d` | send the current one to an assistant |
-| `a` | accept it |
-| `r` | send it back with new direction |
-| `x` | let it go |
-| `esc` | dismiss whatever you are typing |
+## What it does
+
+**Pick a project once.** Type a folder path, or point it at the folder that holds all your projects and it will find them. It remembers the ones you use, so next time it is one click.
+
+**Start any AI app in that folder.** Claude Code, Codex, Gemini, Aider, Cursor, Windsurf, Antigravity, VS Code — whichever are installed. Command-line ones open in a terminal already in the folder. Desktop ones open with the folder loaded. You never add the folder by hand again.
+
+**Keep more than one account per app, and switch without signing out.** Click `accounts` next to an app. Save the account you are signed in to under a name. Switch to another one whenever. Under the hood it swaps the folder each tool keeps your sign-in in — the same idea as browser profiles.
+
+Two things it refuses to do, on purpose: it will not swap an account while that app is open (you would be signed out mid-sentence), and it will not throw away the account you are using.
+
+**Save and send in one press.** Type what you did, press the button. It saves everything and sends it to GitHub. If the project has never been on GitHub it offers to put it there, so you never leave to make a repository by hand.
+
+If GitHub cannot be reached, your work is still saved on your computer and it says so — it will never tell you something is sent when it is not.
 
 ---
 
 ## What is in here
 
 ```
-app/          the thing you run — a local server and one page
-core/         the domain: efforts, states, verdicts, and the record of them
-experiments/  questions we answered by measuring rather than arguing
-VIBE.txt      the original specification
-00_DECISIONS.md   every decision, why it was made, what else was considered
-STATUS.md     what is done and what is left
-DESIGN_REVIEW_REPORT.md   the review the specification was put through
+app/          the thing you run
+core/         the record of what happened, and the rules about it
+experiments/  questions answered by measuring rather than arguing
+STATUS.md     what is done and what is left, in plain language
+00_DECISIONS.md   every decision, why, and what else was considered
 ```
 
-Run everything:
+Run the tests:
 
 ```
 node --test "core/reference/test/*.test.mjs"
-node --test "app/test/app.test.mjs"
+node --test "app/test/*.test.mjs"
 ```
 
 ---
 
-## How it works, briefly
+## A note about accounts
 
-**An effort** is something you want done, in your own words. It is always in exactly one of three states: moving, waiting on you, or done.
+This exists so someone with a work account and a personal account stops signing in and out all day. That is what it is for and that is what it is good at.
 
-**Each effort works in its own copy of your project**, so several assistants can run at once without touching each other's work, and letting one go costs nothing — your project was never involved.
-
-**Accepting an effort** puts its work into your project as a single entry, titled with the sentence you originally typed. Forty machine steps become one line a person wrote.
-
-**Everything that happens is written to a plain text file**, one line at a time, in `~/.viberant`. You can open it in any editor. Because it is a list of what happened rather than a picture of how things are now, two machines can be brought together by simply putting their files side by side — which is how this follows you between computers with no server anywhere.
-
-**Nothing interrupts you.** There is no notification anywhere in it. You find things out by looking.
+Using it to get past what one account is allowed to do is against most AI providers' terms, and the person doing it risks losing the accounts. Worth knowing before relying on it.

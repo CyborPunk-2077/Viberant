@@ -1,191 +1,200 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Home</title>
+<title>Projects</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
-    --ink: #1a1a19; --quiet: #6b6a66; --faint: #9a9994;
-    --page: #faf9f7; --line: #e6e4df;
-    --waiting: #b5760f; --moving: #1d7a5f; --settled: #a8a6a1;
-    --measure: 34rem;
+    --ink:#1a1a19; --quiet:#6b6a66; --faint:#9a9994;
+    --page:#faf9f7; --card:#fff; --line:#e6e4df; --hover:#f2f0ec;
+    --live:#1d7a5f; --attention:#b5760f;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --ink: #edecea; --quiet: #9d9b96; --faint: #6e6c68;
-      --page: #171715; --line: #2c2b28;
-      --waiting: #e0a33f; --moving: #57bb98; --settled: #55534f;
-    }
+    :root { --ink:#edecea; --quiet:#9d9b96; --faint:#6e6c68;
+            --page:#171715; --card:#1f1e1c; --line:#2c2b28; --hover:#262522;
+            --live:#57bb98; --attention:#e0a33f; }
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
-  body {
-    background: var(--page); color: var(--ink);
-    font: 16px/1.55 ui-sans-serif, -apple-system, "Segoe UI", system-ui, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    padding: 5rem 2rem 6rem;
-  }
-  main { max-width: var(--measure); margin: 0 auto; }
-
-  .situation { color: var(--quiet); font-size: .9rem; margin: 0 0 3.25rem; }
-
-  .rank { margin: 0 0 3rem; }
-  .rank-name {
-    font-size: .68rem; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--faint); margin: 0 0 1.1rem;
-    display: flex; align-items: center; gap: .55rem;
-  }
-  .mark { width: 6px; height: 6px; border-radius: 50%; flex: none; }
-  .waiting .mark { background: var(--waiting); }
-  .moving  .mark { background: var(--moving); }
-  .settled .mark { background: var(--settled); }
-
-  .effort {
-    padding: .15rem 0 .15rem 1rem; margin: 0 0 1.6rem;
-    border-left: 2px solid transparent; cursor: default;
-    outline: none;
-  }
-  .waiting .effort { border-left-color: var(--waiting); }
-  .moving  .effort { border-left-color: color-mix(in srgb, var(--moving) 45%, transparent); }
-  .settled .effort { border-left-color: transparent; padding-left: 1rem; }
-
-  .effort:focus-visible, .effort[data-here="1"] {
-    background: color-mix(in srgb, var(--ink) 4%, transparent);
-    border-radius: 0 3px 3px 0;
-  }
-
-  .intent { margin: 0; font-weight: 500; }
-  .settled .intent { font-weight: 400; color: var(--quiet); }
-  .says { margin: .2rem 0 0; color: var(--quiet); font-size: .92rem; }
-  .ours { color: var(--faint); }
-  .under { margin: .35rem 0 0; color: var(--faint); font-size: .8rem; }
-  .folded { margin: 0; padding-left: 1rem; color: var(--faint); font-size: .88rem; }
-
-  .empty { margin: 6rem 0 0; }
-  .empty p { margin: 0 0 1.5rem; color: var(--quiet); }
-
-  .hint { color: var(--faint); font-size: .78rem; }
-  kbd {
-    font: inherit; font-size: .72rem; color: var(--faint);
-    border: 1px solid var(--line); border-radius: 3px; padding: 0 .3rem;
-  }
-
-  #speak {
-    position: fixed; inset: 0; display: none; place-items: start center;
-    padding-top: 22vh; background: color-mix(in srgb, var(--page) 82%, transparent);
-    backdrop-filter: blur(3px);
-  }
-  #speak[data-open="1"] { display: grid; }
-  #speak form { width: min(var(--measure), calc(100vw - 4rem)); }
-  #speak input {
-    width: 100%; font: inherit; font-size: 1.05rem; color: var(--ink);
-    background: transparent; border: none; border-bottom: 2px solid var(--line);
-    padding: .5rem 0; outline: none;
-  }
-  #speak input:focus { border-bottom-color: var(--quiet); }
-  #speak .hint { margin-top: .8rem; display: block; }
-
-  #footer { position: fixed; left: 0; right: 0; bottom: 0; padding: 1rem 2rem;
-            text-align: center; background: linear-gradient(transparent, var(--page) 55%); }
+  *{box-sizing:border-box} html,body{margin:0;min-height:100%}
+  body{background:var(--page);color:var(--ink);padding:3.5rem 1.5rem 4rem;
+       font:15px/1.5 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  main{max-width:44rem;margin:0 auto}
+  h1{font-size:1.15rem;font-weight:500;margin:0 0 .25rem}
+  .sub{color:var(--quiet);font-size:.85rem;margin:0 0 2.25rem}
+  .group{font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
+         margin:2.5rem 0 .9rem}
+  .row{display:flex;align-items:center;gap:.85rem;padding:.7rem .9rem;border-radius:8px;
+       border:1px solid var(--line);background:var(--card);margin-bottom:.5rem;cursor:pointer}
+  .row:hover{background:var(--hover)}
+  .row .grow{flex:1;min-width:0}
+  .row .name{font-weight:500}
+  .row .note{color:var(--quiet);font-size:.82rem;margin-top:.1rem;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none;background:var(--faint)}
+  .dot.live{background:var(--live)} .dot.attention{background:var(--attention)}
+  button{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);
+         border-radius:7px;padding:.4rem .8rem;cursor:pointer}
+  button:hover{background:var(--hover)}
+  button.plain{border-color:transparent;color:var(--quiet);padding:.25rem .5rem;font-size:.82rem}
+  button.go{border-color:var(--ink)}
+  .bar{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0 0 1rem}
+  input{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);
+        border-radius:7px;padding:.45rem .7rem;outline:none;min-width:0}
+  input:focus{border-color:var(--quiet)}
+  .accounts{position:relative}
+  .menu{position:absolute;right:0;top:calc(100% + 4px);z-index:5;min-width:12rem;
+        background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.3rem;
+        box-shadow:0 6px 24px rgba(0,0,0,.12)}
+  .menu[hidden]{display:none}
+  .menu div{padding:.4rem .6rem;border-radius:5px;cursor:pointer;font-size:.88rem}
+  .menu div:hover{background:var(--hover)}
+  .menu .on{color:var(--live)}
+  .menu hr{border:none;border-top:1px solid var(--line);margin:.3rem 0}
+  .said{margin:1rem 0 0;padding:.7rem .9rem;border-radius:8px;background:var(--card);
+        border:1px solid var(--line);font-size:.88rem}
+  .said b{font-weight:500;display:block}
+  .said span{color:var(--quiet)}
+  .back{color:var(--quiet);font-size:.85rem;cursor:pointer;margin:0 0 1.5rem;display:inline-block}
+  .empty{color:var(--quiet);margin:1rem 0 0}
 </style>
 
-<main id="home" aria-live="polite"></main>
-
-<div id="speak"><form><input autocomplete="off" spellcheck="false"><span class="hint"></span></form></div>
-
-<div id="footer"><span class="hint">
-  <kbd>n</kbd> begin &nbsp; <kbd>↑↓</kbd> move &nbsp; <kbd>a</kbd> accept &nbsp;
-  <kbd>r</kbd> redirect &nbsp; <kbd>x</kbd> let go &nbsp; <kbd>d</kbd> send to an assistant
-</span></div>
+<main id="view"></main>
 
 <script type="module">
-const $ = (s) => document.querySelector(s);
-const api = async (path, body) => (await fetch(path, body
-  ? { method: 'POST', body: JSON.stringify(body) } : undefined)).json();
+const $ = (s)=>document.querySelector(s);
+const api = async (p,b)=>(await fetch(p,b?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(b)}:undefined)).json();
+const esc = (s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-let picture = null;
-let here = 0;
+let said = null;
+const say = (r)=>{ said = r && r.sentence ? r : null; };
 
-const flat = () => picture ? picture.ranks.flatMap((r) => r.efforts) : [];
-
-function draw() {
-  const m = $('#home');
-  if (!picture || picture.empty) {
-    m.innerHTML = `<div class="empty"><p>${picture ? picture.situation : ''}</p>
-      <span class="hint">press <kbd>n</kbd> to begin an effort</span></div>`;
-    return;
-  }
-
-  const all = flat();
-  here = Math.max(0, Math.min(here, all.length - 1));
-  let i = -1;
-
-  m.innerHTML = `<p class="situation">${esc(picture.situation)}</p>` + picture.ranks.map((r) => {
-    const cls = r.name === 'waiting on you' ? 'waiting' : r.name === 'moving' ? 'moving' : 'settled';
-    const rows = r.efforts.map((e) => {
-      i++;
-      const said = e.says ?? e.account;
-      return `<div class="effort" tabindex="0" data-i="${i}" data-id="${e.id}"
-                   data-here="${i === here ? 1 : 0}">
-        <p class="intent">${esc(e.intent)}</p>
-        ${said ? `<p class="says${e.accountIsOurs ? ' ours' : ''}">${esc(said)}</p>` : ''}
-        <p class="under">${[e.action, e.assistant, e.ago].filter(Boolean).map(esc).join(' &nbsp;·&nbsp; ')}</p>
-      </div>`;
-    }).join('');
-    const folded = r.compressed ? `<p class="folded">${esc(r.compressed.sentence)}</p>` : '';
-    return `<section class="rank ${cls}">
-      <p class="rank-name"><span class="mark"></span>${esc(r.name)}</p>${rows}${folded}</section>`;
-  }).join('');
+function saidHtml(){
+  if(!said) return '';
+  return `<div class="said"><b>${esc(said.sentence)}</b>${said.action?`<span>${esc(said.action)}</span>`:''}</div>`;
 }
 
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
-  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// ---------------------------------------------------------------- projects
 
-async function refresh() { picture = await api('/home'); draw(); }
+async function showProjects(){
+  const d = await api('/projects');
+  $('#view').innerHTML = `
+    <h1>Your projects</h1>
+    <p class="sub">${d.github ? `Signed in to GitHub as ${esc(d.github)}` : 'Not signed in to GitHub on this computer'}</p>
+    <div class="bar">
+      <input id="path" placeholder="D:\\path\\to\\a\\folder" style="flex:1">
+      <button class="go" id="add">Open</button>
+      <button id="scan">Look in a folder</button>
+    </div>
+    ${saidHtml()}
+    ${d.projects.length?`<p class="group">Recent</p>`:'<p class="empty">Nothing yet. Put a folder path above and open it.</p>'}
+    ${d.projects.map(p=>`
+      <div class="row" data-path="${esc(p.path)}">
+        <span class="dot ${p.unsaved?'attention':''}"></span>
+        <div class="grow"><div class="name">${esc(p.name)}</div>
+          <div class="note">${esc(p.says)} &nbsp;·&nbsp; ${esc(p.path)}</div></div>
+      </div>`).join('')}`;
+  said = null;
 
-// Speaking to the current surface. Never a place; summoned, spoken to, dismissed.
-function ask(prompt, hint, done) {
-  const box = $('#speak'), input = box.querySelector('input');
-  box.querySelector('.hint').textContent = hint ?? '';
-  input.placeholder = prompt; input.value = '';
-  box.dataset.open = '1'; input.focus();
-  box.querySelector('form').onsubmit = async (ev) => {
-    ev.preventDefault();
-    const said = input.value.trim();
-    box.dataset.open = '0';
-    if (said) await done(said);
+  $('#add').onclick = ()=>openProject($('#path').value.trim());
+  $('#path').onkeydown = (e)=>{ if(e.key==='Enter') openProject($('#path').value.trim()); };
+  $('#scan').onclick = async ()=>{
+    const r = await api('/look?in='+encodeURIComponent($('#path').value.trim()));
+    if(!r.found.length){ say({sentence:'No projects in there.',action:'Try the folder that holds your projects.'}); return showProjects(); }
+    for(const f of r.found) await api('/open',{path:f.path});
+    await api('/open',{path:r.found[0].path});
+    showProjects();
   };
+  for(const row of document.querySelectorAll('.row[data-path]'))
+    row.onclick = ()=>openProject(row.dataset.path);
 }
-$('#speak').addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') { $('#speak').dataset.open = '0'; e.stopPropagation(); }
-});
 
-const current = () => flat()[here] ?? null;
-const act = async (path, body) => { picture = (await api(path, body)).home; draw(); };
+async function openProject(path){
+  if(!path) return;
+  const r = await api('/open',{path});
+  if(r.ok===false){ say(r); return showProjects(); }
+  showProject();
+}
 
-addEventListener('keydown', async (e) => {
-  if ($('#speak').dataset.open === '1') return;
-  const it = current();
+// ---------------------------------------------------------------- one project
 
-  switch (e.key) {
-    case 'n':
-      return ask('what needs doing?', 'enter to hand it to an assistant · shift-enter to set it aside',
-        (intent) => act('/begin', { intent, then: e.shiftKey ? 'park' : 'claude' }));
+async function showProject(){
+  const p = await api('/project');
+  if(!p.open) return showProjects();
+  const t = await api('/tools');
 
-    case 'ArrowDown': case 'j': here++; draw(); return;
-    case 'ArrowUp':   case 'k': here--; draw(); return;
+  const efforts = p.home.ranks.flatMap(r=>r.efforts.map(e=>({...e,rank:r.name})));
 
-    case 'a': if (it) return act('/accept', { effort: it.id }); return;
-    case 'x': if (it) return ask(`let go of "${it.intent}"?`, 'type yes to discard this work',
-        (said) => said.toLowerCase() === 'yes' ? act('/abandon', { effort: it.id }) : null); return;
-    case 'r': if (it) return ask('what should change?', '',
-        (direction) => act('/redirect', { effort: it.id, direction })); return;
-    case 'd': if (it) return ask('which assistant?', 'claude · codex · gemini · aider',
-        (assistant) => act('/delegate', { effort: it.id, assistant })); return;
-    case 'p': if (it) return act('/park', { effort: it.id }); return;
-  }
-});
+  $('#view').innerHTML = `
+    <span class="back" id="back">← all projects</span>
+    <h1>${esc(p.name)}</h1>
+    <p class="sub">${esc(p.says)} &nbsp;·&nbsp; ${esc(p.dir)}</p>
 
-await refresh();
-// The picture catches up quietly. Nothing here ever asks for attention.
-setInterval(refresh, 4000);
+    <div class="bar">
+      <input id="msg" placeholder="What did you do?" style="flex:1">
+      <button class="go" id="pub">Save and send to GitHub</button>
+    </div>
+    ${saidHtml()}
+
+    <p class="group">Open this project in</p>
+    ${t.tools.length ? t.tools.map(x=>`
+      <div class="row" data-tool="${esc(x.id)}">
+        <span class="dot"></span>
+        <div class="grow"><div class="name">${esc(x.name)}</div>
+          <div class="note">${x.active?`Using ${esc(x.active)}`:(x.signedIn?'Signed in':'Not signed in yet')}</div></div>
+        ${x.config?`<div class="accounts">
+          <button class="plain" data-menu="${esc(x.id)}">accounts ▾</button>
+          <div class="menu" hidden id="m-${esc(x.id)}">
+            ${x.profiles.map(pr=>`<div data-use="${esc(x.id)}" data-name="${esc(pr.name)}"
+                 class="${pr.active?'on':''}">${pr.active?'✓ ':''}${esc(pr.name)}</div>`).join('')
+              || '<div style="color:var(--faint)">none saved yet</div>'}
+            <hr><div data-save="${esc(x.id)}">Save the one I'm signed in to…</div>
+          </div></div>`:''}
+      </div>`).join('')
+      : '<p class="empty">None of the AI apps were found on this computer.</p>'}
+
+    ${efforts.length?`<p class="group">Going on here</p>`:''}
+    ${efforts.map(e=>`
+      <div class="row">
+        <span class="dot ${e.rank==='moving'?'live':(e.rank==='waiting on you'?'attention':'')}"></span>
+        <div class="grow"><div class="name">${esc(e.intent)}</div>
+          <div class="note">${esc(e.says||e.account||e.rank)} &nbsp;·&nbsp; ${esc(e.ago)}</div></div>
+        ${e.rank!=='settled'?`<button class="plain" data-done="${esc(e.id)}">done</button>
+        <button class="plain" data-drop="${esc(e.id)}">drop</button>`:''}
+      </div>`).join('')}`;
+  said = null;
+
+  $('#back').onclick = showProjects;
+  $('#pub').onclick = async ()=>{ say(await api('/publish',{message:$('#msg').value.trim()})); showProject(); };
+  $('#msg').onkeydown = (e)=>{ if(e.key==='Enter') $('#pub').click(); };
+
+  for(const row of document.querySelectorAll('.row[data-tool]'))
+    row.onclick = async (e)=>{
+      if(e.target.closest('.accounts')) return;
+      say(await api('/launch',{tool:row.dataset.tool})); showProject();
+    };
+
+  for(const b of document.querySelectorAll('[data-menu]'))
+    b.onclick = (e)=>{ e.stopPropagation();
+      const m = $('#m-'+b.dataset.menu);
+      for(const o of document.querySelectorAll('.menu')) if(o!==m) o.hidden=true;
+      m.hidden = !m.hidden; };
+
+  for(const d of document.querySelectorAll('[data-use]'))
+    d.onclick = async (e)=>{ e.stopPropagation();
+      say(await api('/profile/use',{tool:d.dataset.use,name:d.dataset.name})); showProject(); };
+
+  for(const d of document.querySelectorAll('[data-save]'))
+    d.onclick = async (e)=>{ e.stopPropagation();
+      const name = prompt('Call this account what?');
+      if(name){ say(await api('/profile/save',{tool:d.dataset.save,name})); showProject(); } };
+
+  for(const b of document.querySelectorAll('[data-done]'))
+    b.onclick = async (e)=>{ e.stopPropagation(); await api('/done',{effort:b.dataset.done}); showProject(); };
+  for(const b of document.querySelectorAll('[data-drop]'))
+    b.onclick = async (e)=>{ e.stopPropagation(); await api('/drop',{effort:b.dataset.drop}); showProject(); };
+}
+
+addEventListener('click',()=>{ for(const m of document.querySelectorAll('.menu')) m.hidden=true; });
+
+const start = await api('/project');
+start.open ? showProject() : showProjects();
 </script>

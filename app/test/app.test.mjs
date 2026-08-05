@@ -1,9 +1,10 @@
 /**
- * The application, driven the way a person drives it.
+ * The manager, driven the way a person drives it.
  *
- * Starts the real server against a real project, with a real assistant on the
- * path, and walks a whole day through it over HTTP. If this passes, the thing
- * works end to end — not the parts, the thing.
+ * Starts the real server, points it at a real project with a real tool on the
+ * path, and walks the whole errand through: find the project, open it, start an
+ * app in it, save and send. If this passes, the thing works — not the parts,
+ * the thing.
  */
 
 import { test, describe, before, after } from 'node:test';
@@ -11,6 +12,7 @@ import assert from 'node:assert/strict';
 import { spawn, execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, rm, writeFile, mkdir, chmod, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,50 +20,49 @@ import { fileURLToPath } from 'node:url';
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
 const SERVER = join(here, '..', 'server.mjs');
-const PORT = 7799;
+const PORT = 7802;
 const at = (p) => `http://127.0.0.1:${PORT}${p}`;
 
-let root, project, house, bin, server;
+let root, projectDir, house, bin, server, shared;
 
 const get = async (p) => (await fetch(at(p))).json();
-const post = async (p, body) =>
-  (await fetch(at(p), { method: 'POST', body: JSON.stringify(body) })).json();
+const post = async (p, body) => (await fetch(at(p), {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+})).json();
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
 before(async () => {
-  root = await mkdtemp(join(tmpdir(), 'viberant-app-'));
-  project = join(root, 'exporter');
-  house = join(root, 'house');
+  root = await mkdtemp(join(tmpdir(), 'viberant-mgr-e2e-'));
+  house = join(root, 'home');
   bin = join(root, 'bin');
-  await mkdir(project, { recursive: true });
+  const workspace = join(root, 'code');
+  projectDir = join(workspace, 'exporter');
+  shared = join(root, 'shared.git');
+  await mkdir(projectDir, { recursive: true });
   await mkdir(bin, { recursive: true });
+  await mkdir(house, { recursive: true });
 
-  const git = (...a) => run('git', a, { cwd: project });
+  const git = (...a) => run('git', a, { cwd: projectDir });
   await git('init', '--quiet', '-b', 'main');
   await git('config', 'user.email', 'dev@local');
   await git('config', 'user.name', 'Developer');
-  await writeFile(join(project, 'export.js'), 'export function exportAll() {}\n');
+  await writeFile(join(projectDir, 'export.js'), 'export function exportAll() {}\n');
   await git('add', '-A');
   await git('commit', '--quiet', '-m', 'Set up the project');
+  await run('git', ['init', '--quiet', '--bare', '-b', 'main', shared]);
+  await git('remote', 'add', 'origin', shared);
 
-  // An "assistant": it reads its instructions, does some work, and says so.
-  const tool = join(bin, 'claude');
-  await writeFile(tool, [
-    '#!/bin/bash',
-    'cat > /tmp/last-context.txt',
-    "printf 'export function exportAll(onProgress) {\\n  onProgress?.(0);\\n}\\n' > export.js",
-    "printf 'export const bar = () => {};\\n' > progress.js",
-    'echo "Added a progress callback and a small bar."',
-  ].join('\n'));
+  // A stand-in for a desktop AI app: it records the folder it was opened in.
+  const tool = join(bin, 'cursor');
+  await writeFile(tool, `#!/bin/bash\necho "$1" > ${join(root, 'opened-at.txt')}\n`);
   await chmod(tool, 0o755);
 
-  server = spawn(process.execPath, [SERVER, project], {
+  server = spawn(process.execPath, [SERVER], {
     env: { ...process.env, HOME: house, PORT: String(PORT), PATH: `${bin}:${process.env.PATH}` },
     stdio: 'ignore',
   });
-
-  for (let i = 0; i < 60; i++) {
-    try { await get('/home'); break; } catch { await settle(100); }
+  for (let i = 0; i < 80; i++) {
+    try { await get('/projects'); break; } catch { await settle(100); }
   }
 });
 
@@ -71,123 +72,115 @@ after(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-const logOf = async () =>
-  (await run('git', ['log', '--format=%s'], { cwd: project })).stdout.trim().split('\n');
-const lanesOf = async () =>
-  (await run('git', ['branch', '--format=%(refname:short)'], { cwd: project }))
-    .stdout.trim().split('\n');
-
 // ---------------------------------------------------------------------------
 
-describe('a day, through the actual application', () => {
-  test('it opens calm and says so', async () => {
-    const h = await get('/home');
-    assert.equal(h.empty, true);
-    assert.equal(h.situation, 'Nothing needs you.');
-    assert.equal(h.project, 'exporter');
+describe('the errand, start to finish', () => {
+  test('it opens with nothing, and does not pretend otherwise', async () => {
+    const d = await get('/projects');
+    assert.deepEqual(d.projects, []);
+    assert.equal(d.current, null);
   });
 
-  test('a thought can be set aside without costing anything', async () => {
-    const { home } = await post('/begin', {
-      intent: 'rename the settings screen', then: 'park',
-    });
-    assert.equal(home.empty, false);
-    const card = home.ranks[0].efforts[0];
-    assert.equal(card.intent, 'rename the settings screen');
-    assert.equal(card.reason, 'parked');
-    assert.equal(card.says, 'You set this aside for later.');
+  test('pointing it at a folder of folders finds the projects in it', async () => {
+    const { found } = await get('/look?in=' + encodeURIComponent(join(root, 'code')));
+    assert.deepEqual(found.map((f) => f.name), ['exporter']);
   });
 
-  test('an effort handed to an assistant starts moving, and does not hold you', async () => {
-    const began = Date.now();
-    const { effort, home } = await post('/begin', {
-      intent: 'the export flow needs a progress indicator', then: 'claude',
-    });
-    assert.ok(Date.now() - began < 3000, 'handing off never makes the developer wait on the machine');
-
-    const moving = home.ranks.find((r) => r.name === 'moving');
-    assert.ok(moving, 'it is moving straight away');
-    assert.equal(moving.efforts[0].id, effort);
-
-    // The assistant was given the developer's own words to start from.
-    await settle(1500);
-    const context = await readFile('/tmp/last-context.txt', 'utf8').catch(() => '');
-    assert.match(context, /progress indicator/);
+  test('a folder that is not there is declined, not crashed on', async () => {
+    const r = await post('/open', { path: join(root, 'nowhere') });
+    assert.equal(r.ok, false);
+    assert.ok(r.sentence && r.action);
   });
 
-  test('when the assistant stops, the picture catches up on its own', async () => {
-    let h, waited = 0;
-    do {
-      await settle(400); waited += 400;
-      h = await get('/home');
-    } while (waited < 12_000 && !h.ranks.find((r) => r.name === 'waiting on you')
-      ?.efforts.some((e) => e.intent.includes('export')));
-
-    const card = h.ranks[0].efforts.find((e) => e.intent.includes('export'));
-    assert.ok(card, 'it came back by itself, without being asked');
-    assert.equal(card.reason, 'review_ready');
-    assert.ok(card.account, 'and it brought a sentence with it');
+  test('opening a project says plainly where it stands', async () => {
+    const r = await post('/open', { path: projectDir });
+    assert.equal(r.ok, true);
+    assert.equal(r.name, 'exporter');
+    assert.equal(r.says, 'Everything here is saved.');
   });
 
-  test('what waits on you is what the keyboard is already on', async () => {
-    const h = await get('/home');
-    assert.equal(h.ranks[0].name, 'waiting on you');
-    assert.equal(h.focus, h.ranks[0].efforts[0].id);
+  test('and it is remembered, so next time is one click', async () => {
+    const d = await get('/projects');
+    assert.deepEqual(d.projects.map((p) => p.name), ['exporter']);
+    assert.equal(d.current, projectDir);
   });
 
-  test('you can read what actually changed', async () => {
-    const h = await get('/home');
-    const it = h.ranks[0].efforts.find((e) => e.intent.includes('export'));
-    const view = await get(`/effort?id=${it.id}`);
-
-    assert.equal(view.intent, 'the export flow needs a progress indicator');
-    assert.deepEqual(view.touched.map((t) => t.path).sort(), ['export.js', 'progress.js']);
-    assert.ok(view.story.some((s) => s.kind === 'delegated'));
+  test('unsaved work is noticed and said in plain words', async () => {
+    await writeFile(join(projectDir, 'progress.js'), 'export const bar = 1\n');
+    const p = await get('/project');
+    assert.equal(p.says, 'One file changed since you last saved.');
   });
 
-  test('accepting settles it as one entry in your own words, and tidies up after itself', async () => {
-    const h = await get('/home');
-    const it = h.ranks[0].efforts.find((e) => e.intent.includes('export'));
-    const after = await post('/accept', { effort: it.id });
+  test('the apps on this computer are offered, with no favourite among them', async () => {
+    const { tools } = await get('/tools');
+    const names = tools.map((t) => t.name);
+    assert.ok(names.includes('Cursor'), 'it found the app that is installed');
+    assert.ok(!tools.some((t) => t.recommended || t.default),
+      'nothing here is marked as the one you should use');
+  });
 
-    assert.ok(!after.refused, after.refused);
-    assert.deepEqual(await logOf(), [
-      'the export flow needs a progress indicator', 'Set up the project',
-    ]);
-    assert.deepEqual(await lanesOf(), ['main'], 'nothing of ours is left behind');
-    assert.match(await readFile(join(project, 'export.js'), 'utf8'), /onProgress/);
+  test('starting an app opens it already in the project folder', async () => {
+    const r = await post('/launch', { tool: 'cursor' });
+    assert.equal(r.ok, true, r.sentence);
+    assert.equal(r.at, projectDir);
 
+    await settle(400);
+    const openedAt = (await readFile(join(root, 'opened-at.txt'), 'utf8')).trim();
+    assert.equal(openedAt, projectDir, 'the app was handed the folder — no adding it by hand');
+  });
+
+  test('and that is remembered as something going on here', async () => {
+    const p = await get('/project');
+    const going = p.home.ranks.flatMap((r) => r.efforts);
+    assert.equal(going.length, 1);
+    assert.match(going[0].intent, /Cursor/);
+    assert.equal(going[0].assistant, 'cursor');
+  });
+
+  test('an app that is not installed is declined plainly', async () => {
+    const r = await post('/launch', { tool: 'windsurf' });
+    assert.equal(r.ok, false);
+    assert.match(r.sentence, /not seem to be installed/);
+    assert.ok(r.action);
+  });
+
+  test('saving and sending is one press', async () => {
+    const r = await post('/publish', { message: 'Added a progress bar' });
+    assert.equal(r.ok, true, r.sentence);
+    assert.equal(r.sent, true);
+
+    const { stdout } = await run('git', ['log', '--format=%s'], { cwd: shared });
+    assert.equal(stdout.trim().split('\n')[0], 'Added a progress bar');
+  });
+
+  test('and afterwards it says so', async () => {
+    const p = await get('/project');
+    assert.equal(p.says, 'Everything here is saved and sent.');
+  });
+
+  test('you can mark something finished, or drop it', async () => {
+    const before = await get('/project');
+    const it = before.home.ranks.flatMap((r) => r.efforts)[0];
+
+    const after = await post('/done', { effort: it.id });
+    assert.equal(after.ok, true);
     const settled = after.home.ranks.find((r) => r.name === 'settled');
-    assert.ok(settled.efforts.some((e) => e.intent.includes('export')));
+    assert.ok(settled.efforts.some((e) => e.id === it.id));
   });
 
-  test('letting one go leaves everything else exactly where it was', async () => {
-    const { effort } = await post('/begin', { intent: 'a bad idea', then: 'park' });
-    const before = await logOf();
-
-    const after = await post('/abandon', { effort });
-    const ids = after.home.ranks.flatMap((r) => r.efforts).map((e) => e.id);
-    assert.ok(!ids.includes(effort), 'it is gone from the picture');
-    assert.deepEqual(await logOf(), before, 'the project never knew about it');
-    assert.ok(after.home.ranks.flatMap((r) => r.efforts).some((e) => e.intent.includes('settings')),
-      'the other effort is untouched');
-  });
-
-  test('everything that happened survives being closed and opened again', async () => {
-    const before = await get('/home');
+  test('everything that happened is on disk, in a file you can open', async () => {
     const store = join(house, '.viberant', 'projects', 'exporter.jsonl');
+    assert.ok(existsSync(store));
     const lines = (await readFile(store, 'utf8')).trim().split('\n');
-
-    assert.ok(lines.length > 8, 'the record is on disk, in a file you can open');
     for (const line of lines) assert.doesNotThrow(() => JSON.parse(line));
 
-    // Everything the developer did is attributable to them, forever.
     const events = lines.map((l) => JSON.parse(l));
-    const verdicts = events.filter((e) => e.type === 'effort.judged');
-    assert.ok(verdicts.length >= 2);
-    assert.ok(verdicts.every((v) => v.actor === 'developer'));
-    assert.ok(events.every((e) => e.id && e.at && e.machine && e.project));
+    assert.ok(events.some((e) => e.type === 'effort.judged' && e.actor === 'developer'));
+    assert.ok(events.every((e) => e.id && e.at && e.machine));
+  });
 
-    assert.ok(before.ranks.length > 0);
+  test('nothing about the project itself was left behind by us', async () => {
+    const { stdout } = await run('git', ['branch', '--format=%(refname:short)'], { cwd: projectDir });
+    assert.deepEqual(stdout.trim().split('\n'), ['main']);
   });
 });

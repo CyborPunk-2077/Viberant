@@ -1,192 +1,175 @@
 /**
- * The application.
+ * The manager.
  *
- * A local server and a page. Nothing leaves this machine, no account exists, and
- * there is no service anywhere — the whole thing is a process on your computer
- * that reads a text file and draws it.
+ * A local server and a page. Nothing leaves this machine, no account exists
+ * here, and there is no service anywhere — it is a process on your computer that
+ * opens folders, starts the apps you already have, and keeps a note of what
+ * happened.
  *
- * This is not a stand-in for the real shell. The real shell is a web view, so
- * the page this serves is the actual surface, and the work put into it carries
- * forward rather than being thrown away.
- *
- * Run:  node app/server.mjs [path-to-a-project]
+ * Run:  node app/server.mjs
  */
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, basename } from 'node:path';
-import { homedir } from 'node:os';
-import { existsSync } from 'node:fs';
 
 import { ulid, Clock } from '../core/reference/src/identity.mjs';
 import { Author, Developer, reason } from '../core/reference/src/events.mjs';
 import { Store } from '../core/reference/src/store.mjs';
 import { Engine } from '../core/reference/src/engine.mjs';
-import { Gateway, observedOnly, contextFor } from '../core/reference/src/gateway.mjs';
-import { summarize } from '../core/reference/src/summarizer.mjs';
 import { home } from '../core/reference/src/home.mjs';
 
+import * as projects from './projects.mjs';
+import * as tools from './tools.mjs';
+import * as profiles from './profiles.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
+const HOUSE = projects.HOUSE;
 
 // ---------------------------------------------------------------------------
-// Where things live. All of it under one folder you can delete.
+// One open project at a time, remembered between runs.
 // ---------------------------------------------------------------------------
 
-const HOUSE = join(homedir(), '.viberant');
-const projectPath = resolve(process.argv[2] ?? process.cwd());
-const projectName = basename(projectPath);
-
-/** A stable identity for this machine, so its events are attributable forever. */
 async function machineId() {
   const path = join(HOUSE, 'machine');
   if (existsSync(path)) return (await readFile(path, 'utf8')).trim();
   const id = ulid();
-  const { writeFile, mkdir } = await import('node:fs/promises');
   await mkdir(HOUSE, { recursive: true });
   await writeFile(path, id, 'utf8');
   return id;
 }
-
 const machine = await machineId();
-const projectId = ulid();
-const clock = new Clock();
-const author = new Author({ clock, machine, project: projectId });
-const dev = new Developer(author);
 
-const store = new Store(join(HOUSE, 'projects', `${projectName}.jsonl`));
-await store.load();
+/** Everything to do with one project, made once and kept. */
+const opened = new Map();
+async function open(path) {
+  const dir = resolve(path);
+  if (opened.has(dir)) return opened.get(dir);
 
-const engine = new Engine({
-  project: projectId,
-  location: projectPath,
-  groundRoot: join(HOUSE, 'ground', projectName),
-});
+  const name = basename(dir);
+  const projectId = ulid();
+  const author = new Author({ clock: new Clock(), machine, project: projectId });
+  const store = new Store(join(HOUSE, 'projects', `${name}.jsonl`));
+  await store.load();
+  if (!store.state().project.bound) await store.append(author.bindProject(name, dir));
 
-const gateway = new Gateway();
-for (const tool of ['claude', 'codex', 'gemini', 'aider']) {
-  gateway.register(observedOnly(tool, [tool]));
+  const it = {
+    dir, name, author,
+    dev: new Developer(author),
+    store,
+    engine: new Engine({ project: projectId, location: dir, groundRoot: join(HOUSE, 'ground', name) }),
+  };
+  opened.set(dir, it);
+  await projects.remember(dir);
+  return it;
 }
 
-if (!store.state().project.bound) {
-  await store.append(author.bindProject(projectName, projectPath));
-}
-
-// ---------------------------------------------------------------------------
-// Intents. Everything the developer can do, and nothing else.
-// ---------------------------------------------------------------------------
-
-const intents = {
-  async begin({ intent, then }) {
-    const { effort, event } = dev.begin({ intent });
-    await store.append(event);
-
-    if (then === 'park') {
-      await store.append(dev.transitioned({
-        effort, to: 'waiting', causedBy: event.id,
-        reason: reason('parked', 'You set this aside for later.'),
-      }));
-      return { effort };
-    }
-    return intents.delegate({ effort, assistant: then ?? 'claude', causedBy: event.id });
-  },
-
-  async delegate({ effort, assistant, causedBy = null }) {
-    const ready = await engine.prepare(effort);
-    if (!ready.ok) {
-      await store.append(dev.transitioned({
-        effort, to: 'waiting', causedBy,
-        reason: reason('failed', ready.sentence, ready.action),
-      }));
-      return { effort };
-    }
-
-    const delegated = author.delegated({ effort, assistant, ground: ready.ground, causedBy });
-    await store.append(delegated, dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
-
-    const run = await gateway.delegate({
-      effort, assistant, ground: ready.ground,
-      context: contextFor(store.state().efforts.get(effort)),
-    });
-
-    if (run.ok) {
-      // Nothing waits on this. The assistant works; the picture catches up when
-      // it catches up; the developer is never held.
-      run.session.start().then(async (finished) => {
-        const described = await engine.describe(effort);
-        const account = await summarize({
-          effort: store.state().efforts.get(effort),
-          touched: described.touched,
-          account: finished.said,
-          inference: await gateway.inferenceFor(effort),
-        });
-        await store.append(
-          author.accountCaptured({ effort, assistant, kind: 'transcript', ref: 'session' }),
-          author.summarized({ effort, sentence: account.sentence, source: account.source }),
-          author.transitioned({
-            effort, to: 'waiting', actor: 'assistant',
-            reason: finished.code === 0
-              ? reason('review_ready', 'The work is finished and ready for you to read.')
-              : reason('failed', 'The assistant stopped before it was done.', 'Send it back with more direction.'),
-          }),
-        );
-      }).catch(() => {});
-    }
-    return { effort };
-  },
-
-  async park({ effort }) {
-    await store.append(dev.transitioned({
-      effort, to: 'waiting',
-      reason: reason('parked', 'You set this aside for later.'),
-    }));
-    return { effort };
-  },
-
-  async accept({ effort }) {
-    const it = store.state().efforts.get(effort);
-    const verdict = dev.judge({ effort, verdict: 'accept' });
-    await store.append(verdict);
-
-    const settled = await engine.settle(effort, it.intent);
-    if (!settled.ok) {
-      await store.append(dev.transitioned({
-        effort, to: 'waiting', causedBy: verdict.id,
-        reason: reason('failed', settled.sentence, settled.action),
-      }));
-      return { effort, refused: settled.sentence };
-    }
-    await store.append(dev.transitioned({ effort, to: 'done', causedBy: verdict.id }));
-    return { effort };
-  },
-
-  async redirect({ effort, direction }) {
-    gateway.stop(effort);
-    const verdict = dev.judge({ effort, verdict: 'redirect' });
-    const said = dev.addDirection({ effort, direction, causedBy: verdict.id });
-    await store.append(verdict, said);
-    const it = store.state().efforts.get(effort);
-    return intents.delegate({ effort, assistant: it.assistant ?? 'claude', causedBy: said.id });
-  },
-
-  async abandon({ effort }) {
-    gateway.stop(effort);
-    const verdict = dev.judge({ effort, verdict: 'abandon' });
-    await engine.abandon(effort);
-    await store.append(
-      verdict,
-      dev.transitioned({ effort, to: 'dissolved', causedBy: verdict.id }),
-      dev.dissolved({ effort, graceUntil: Date.now() + 24 * 3600_000, causedBy: verdict.id }),
-    );
-    return { effort };
-  },
-};
+let current = null;
 
 // ---------------------------------------------------------------------------
 
 const json = (res, body, code = 200) => {
   res.writeHead(code, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
+};
+
+const routes = {
+  async 'GET /projects'() {
+    const list = await projects.remembered();
+    const out = [];
+    for (const p of list) {
+      if (!existsSync(p.path)) continue;
+      const s = await projects.situation(p.path);
+      out.push({ ...p, says: projects.inWords(s), unsaved: s.unsaved, shared: !!s.shared });
+    }
+    return { projects: out, current: current?.dir ?? null, github: await projects.githubAccount() };
+  },
+
+  async 'GET /look'({ url }) {
+    return { found: await projects.lookIn(url.searchParams.get('in') ?? '') };
+  },
+
+  async 'POST /open'({ body }) {
+    if (!existsSync(body.path)) {
+      return { ok: false, sentence: 'That folder is not there.', action: 'Pick another one.' };
+    }
+    current = await open(body.path);
+    return { ok: true, ...(await routes['GET /project']()) };
+  },
+
+  async 'GET /project'() {
+    if (!current) return { open: false };
+    const s = await projects.situation(current.dir);
+    return {
+      open: true, name: current.name, dir: current.dir,
+      says: projects.inWords(s), situation: s,
+      home: home(current.store.state()),
+    };
+  },
+
+  async 'GET /tools'() {
+    const found = await tools.installed();
+    const withAccounts = [];
+    for (const t of found) {
+      const full = tools.find(t.id);
+      withAccounts.push({ ...t, ...(await profiles.list(full)) });
+    }
+    return { tools: withAccounts };
+  },
+
+  async 'POST /launch'({ body }) {
+    if (!current) return { ok: false, sentence: 'No project is open.', action: 'Pick one first.' };
+    const tool = tools.find(body.tool);
+
+    if (body.profile) {
+      const swapped = await profiles.use(tool, body.profile);
+      if (!swapped.ok) return swapped;
+    }
+
+    const started = await tools.launch({ tool, dir: current.dir });
+    if (started.ok) {
+      const { effort, event } = current.dev.begin({ intent: body.intent || `work in ${tool.name}` });
+      const delegated = current.author.delegated({ effort, assistant: tool.id, causedBy: event.id });
+      await current.store.append(event, delegated,
+        current.dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
+    }
+    return { ...started, ...(await routes['GET /project']()) };
+  },
+
+  async 'POST /publish'({ body }) {
+    if (!current) return { ok: false, sentence: 'No project is open.', action: 'Pick one first.' };
+    const r = await projects.publish(current.dir, { message: body.message });
+    return { ...r, ...(await routes['GET /project']()) };
+  },
+
+  async 'POST /profile/save'({ body }) {
+    return { ...(await profiles.save(tools.find(body.tool), body.name)), ...(await routes['GET /tools']()) };
+  },
+  async 'POST /profile/use'({ body }) {
+    return { ...(await profiles.use(tools.find(body.tool), body.name)), ...(await routes['GET /tools']()) };
+  },
+  async 'POST /profile/forget'({ body }) {
+    return { ...(await profiles.forget(tools.find(body.tool), body.name)), ...(await routes['GET /tools']()) };
+  },
+
+  async 'POST /done'({ body }) {
+    if (!current) return { ok: false };
+    const verdict = current.dev.judge({ effort: body.effort, verdict: 'accept' });
+    await current.store.append(verdict,
+      current.dev.transitioned({ effort: body.effort, to: 'done', causedBy: verdict.id }));
+    return { ok: true, ...(await routes['GET /project']()) };
+  },
+
+  async 'POST /drop'({ body }) {
+    if (!current) return { ok: false };
+    const verdict = current.dev.judge({ effort: body.effort, verdict: 'abandon' });
+    await current.store.append(verdict,
+      current.dev.transitioned({ effort: body.effort, to: 'dissolved', causedBy: verdict.id }),
+      current.dev.dissolved({ effort: body.effort, graceUntil: Date.now() + 86400_000, causedBy: verdict.id }));
+    return { ok: true, ...(await routes['GET /project']()) };
+  },
 };
 
 const server = createServer(async (req, res) => {
@@ -198,41 +181,23 @@ const server = createServer(async (req, res) => {
       return res.end(await readFile(join(here, 'shell.html'), 'utf8'));
     }
 
-    if (url.pathname === '/home') {
-      return json(res, home(store.state()));
-    }
+    const route = routes[`${req.method} ${url.pathname}`];
+    if (!route) { res.writeHead(404); return res.end(); }
 
-    if (url.pathname === '/effort') {
-      const it = store.state().efforts.get(url.searchParams.get('id'));
-      if (!it) return json(res, { missing: true }, 404);
-      return json(res, {
-        id: it.id, intent: it.intent, directions: it.directions, state: it.state,
-        reason: it.reason, account: it.summary, assistants: it.assistants,
-        story: it.story.slice(-40),
-        touched: (await engine.describe(it.id)).touched,
-      });
-    }
-
-    if (url.pathname === '/assistants') {
-      return json(res, { available: await gateway.available() });
-    }
-
-    if (req.method === 'POST' && intents[url.pathname.slice(1)]) {
-      const body = await new Promise((r) => {
+    let body = {};
+    if (req.method === 'POST') {
+      const raw = await new Promise((r) => {
         let s = ''; req.on('data', (c) => { s += c; }); req.on('end', () => r(s));
       });
-      const result = await intents[url.pathname.slice(1)](JSON.parse(body || '{}'));
-      return json(res, { ...result, home: home(store.state()) });
+      body = raw ? JSON.parse(raw) : {};
     }
-
-    res.writeHead(404); res.end();
+    return json(res, await route({ url, body }));
   } catch (e) {
-    json(res, { sentence: 'Something went wrong here.', action: 'Try that again.', detail: String(e) }, 500);
+    json(res, { ok: false, sentence: 'Something went wrong here.', action: 'Try that again.', detail: String(e) }, 500);
   }
 });
 
 const port = Number(process.env.PORT ?? 7777);
 server.listen(port, '127.0.0.1', () => {
-  console.log(`\n  ${projectName}  —  ${projectPath}`);
-  console.log(`  open  http://localhost:${port}\n`);
+  console.log(`\n  open  http://localhost:${port}\n`);
 });
