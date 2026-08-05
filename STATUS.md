@@ -1,97 +1,75 @@
 # STATUS
 
-*The whole picture: what exists, what does not, and what stands between here and a product you open every morning. Updated at the end of every session.*
+*What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 6 August 2026
-**Tests:** 106 passing
-**Target of v1:** you stop reaching for your old workflow.
+**Tests:** 141 passing
+**What it is now:** a manager for opening one project across several AI apps.
 
 ---
 
-## Where this stands, in one paragraph
+## Run it
 
-Every part of the loop now exists in working, tested form except the window. An effort can be begun, given to a real assistant, watched, summarised, judged, settled as one entry in your own words, sent onward, and followed to another machine. The largest unknown in the project — whether we can tell a working assistant from a stopped one — has been measured rather than argued about, and the answer is yes, at a cost of three minutes. What remains is a window, a Rust core, and Windows.
+```
+node app/server.mjs
+```
 
----
-
-## Done
-
-### The domain — `core/reference/`
-
-| Piece | What it does | Tests |
-|---|---|---|
-| Identity and clock | Identifiers that never collide across machines without coordination; a clock that keeps causality when two machines disagree about the time | 4 |
-| Event schema v1 | The permanent record format. Who caused it and what caused that, on every event, always | — |
-| Vocabulary contract | Refuses version-control words, shouting, error text, and sentences leading with a file count. Running code, not a style guide | 5 |
-| Failure shape | One plain sentence plus one action, required by the schema | 4 |
-| State machine | Three states, closed table. **No machine can settle work** — enforced by which code can reach a `Developer` object | 6 |
-| Append-only store | Plain text, one event per line. A crash mid-write loses nothing acknowledged | 3 |
-| Multi-machine sync | Union the logs, replay, done. Byte-identical truth on both machines, no server | 6 |
-| Workspace Engine | Isolated ground; settling as one entry in your own words; letting go; grace; sending to the shared copy | 21 |
-| Assistant Gateway | Launches real tools, watches their ground, normalises facts. Observation is the universal path; adapters only enrich it | 11 |
-| Summarizer | Core owns the prompt and validates every sentence, so a borrowed assistant cannot make the product speak badly | 19 |
-| Home projection | Rank order, compression above seven, time said the way a person says it | 14 |
-| The loop | Begin, delegate, leave, return, read, accept, send — end to end | 2 |
-
-### Measured, not guessed
-
-**Ground costs 0.15 ms per file and 100% of the project's size, per effort.** A monorepo with dependencies is ~22 seconds and 1.5 GB each. This changed the design: ground is prepared at first delegation, never at creation, so parking an idea is free.
-
-**Silence of 180 seconds means stopped.** Below that, false alarms make the picture untrustworthy. Owning the assistant's process makes *finishing* instant and does nothing at all for an assistant that stopped to ask you something — worth knowing before building process ownership expecting it to solve the harder case. Three honest tiers, identical loop in all of them. `experiments/quiescence/FINDINGS.md`.
-
-### Decided
-
-23 decisions recorded with reasoning and alternatives. The design review of the original specification stands: 12 contradictions, 12 ambiguities, 12 missing decisions, most now closed.
+Open `http://localhost:7777`. Node 22 or newer, nothing to install.
 
 ---
 
-## Not done
+## What works
 
-### 1. There is no window
+**Picking a project.** Type a folder path, or point it at the folder that holds all your projects and it finds them. It remembers the ones you use, so next time is one click. Each one shows in plain words where it stands — how many files changed since you last saved, whether anything is waiting to be sent.
 
-The only thing you cannot do yet is look at it. Home exists as a projection and renders as text; there is no Home you can open, no effort view, no palette, no keyboard shortcuts, no taskbar presence.
+**Starting any AI app in that project.** It looks for Claude Code, Codex, Gemini, Aider, Cursor, Windsurf, Antigravity and VS Code, and offers whichever are installed. Command-line ones open a terminal already in the folder. Desktop ones open with the folder loaded. **You never add the folder by hand again.** It has no favourite among them and never suggests one.
 
-This is now the top of the list. Everything it needs already exists behind it.
+**More than one account per app, switched without signing out.** Save the account you are signed in to under a name, then switch whenever. It swaps the folder each tool keeps your sign-in in — the same idea as browser profiles. It refuses to swap while that app is open, because that would sign you out mid-sentence. It refuses to throw away the account you are using. Nothing is ever replaced without being kept first.
 
-### 2. Nothing is in Rust yet
+**Save and send in one press.** Type what you did, press the button. It saves everything and sends it to GitHub, creating the copy on GitHub if there is none. If GitHub cannot be reached it still saves your work and tells you exactly that — it will never claim something is sent when it is not.
 
-The domain is specified and proven in dependency-free JavaScript as an executable definition of correctness. The real core is Rust behind a Tauri window. That transcription has not started, and it is correct when it passes the 106 tests that exist.
-
-**Worth reconsidering:** the reference implementation is further along than expected and runs everywhere Node runs. Rewriting it in Rust buys compile-time guarantees and a smaller memory footprint; it costs weeks during which nothing improves for you. I lean towards shipping something you use daily first and transcribing after — but it is a real trade and I will put numbers on it before choosing.
-
-### 3. It has never run on Windows
-
-Everything was proven on Linux. Windows will be slower — antivirus scans every file written into an effort's ground — and paths are longer and more fragile. Unmeasured.
-
-### 4. No project discovery
-
-Nothing scans for your projects, notices when you change files yourself, or marks the picture stale when it loses track.
-
-### 5. No real adapter
-
-Claude Code, Codex and the rest currently work through observation alone, which the experiment shows costs three minutes of latency. A real adapter for the tool you use most makes that instant. Small, and high value for you specifically.
+**A record of what happened.** Everything is written to a plain text file in `%USERPROFILE%\.viberant`, one line at a time. You can open it in Notepad. Delete the folder and it is as if this never ran.
 
 ---
 
-## Open questions
+## What is left
 
-| | Question | Who | Blocking? |
-|---|---|---|---|
-| **R-1** | **Where do your repositories actually live?** If inside WSL rather than on a Windows drive, current scope excludes them — and Windows-first was chosen so you could use this daily. Asked twice now; it could undo two decisions | You | **Ask now** |
-| ~~O-2~~ | ~~Can we tell when an assistant has finished?~~ **Closed.** Yes, at 180 seconds | — | Done |
-| ~~O-6~~ | ~~Event schema~~ **Closed** | — | Done |
-| O-3 | What makes a summary good enough? The machinery is built and validated; the quality bar needs a real assistant answering real prompts | Both | Before you rely on it |
-| O-1 | How much disk is too much, and what do we say when it is? | Me | Before real use |
-| O-7 | Grace period length; how long settled efforts stay on Home | Both | Before real use |
-| O-8 | Business model. Untouched. Every conventional route is closed by the constitution | You | Not blocking |
+**It has never run on Windows.** Everything was tested on Linux. Windows will be slower because antivirus checks every file, long paths can break things, and the way terminals open is different code that has not been exercised. **This is the biggest unknown and only you can settle it** — run it and tell me what breaks.
+
+**Account switching has never been tried on a real tool.** The mechanism works and is well tested, but against a made-up tool. Whether Claude Code and Codex actually keep everything they need in the folder we swap is unverified. If one of them also keeps something in the Windows credential store, switching will half-work. Needs one careful try with a throwaway account before you trust it.
+
+**It runs in a browser tab, not a real window.** Making it a proper app you launch from the taskbar, and can put in startup, is a later step. It works fine as a tab in the meantime.
+
+**It does not notice when you change the folder from inside an app.** You asked for this. Right now the page refreshes what it knows when you look at it, but it does not watch. Straightforward to add.
+
+**No custom apps yet.** The list of AI apps is fixed. Adding your own — anything with a command — is small and worth doing.
+
+**It does not know your accounts are running low.** Nothing tracks usage, so it cannot tell you which account has room left. That would take each provider's own reporting, which not all of them expose.
 
 ---
 
-## What I would do next, in order
+## Things I built earlier that are now sitting quietly underneath
 
-1. **A window you can open.** Home, listing your real efforts, in rank order. Plain is fine — the point is to look at your own work in it and find out whether the glance works. Everything behind it is built.
-2. **A real adapter for the assistant you use most**, so stopping is noticed instantly rather than in three minutes.
-3. **Project discovery**, so it finds your work instead of being told about it.
-4. **Run it on Windows and measure**, then decide about Rust with numbers rather than instinct.
+These work and are tested, but the app does not lean on them yet. Worth knowing they are there rather than assuming we start from nothing.
 
-The first item is now the only thing between you and using this.
+**Following you between computers.** Because the record is a list of what happened rather than a picture of how things stand, two computers merge by putting their files side by side. Tested, no server involved. Not wired into the manager yet.
+
+**Running assistants in their own private copy of your project** so several can work at once without touching each other, and throwing one away costs nothing. This was the heart of the earlier design. It is intact and may matter again later; for now the manager just opens apps in the real folder, which is what you asked for.
+
+**Writing one honest sentence about what changed**, by borrowing whichever assistant you already have and checking what it says before showing you.
+
+---
+
+## Measured, not guessed
+
+**Giving each effort its own copy of a project costs about the full size of that project.** A big project with dependencies is over a gigabyte each time.
+
+**Telling "still working" from "stopped and waiting" takes three minutes.** Assistants pause to think, and thinking looks exactly like stopping. Guessing faster means interrupting you for nothing several times an hour.
+
+---
+
+## The one thing I still need from you
+
+**Run it on Windows and tell me what breaks.** Everything above is untested on the machine it is for. That is the single largest risk in the project and one evening of yours removes it.
+
+Also still unanswered from two sessions ago: **do your projects live on a normal Windows drive, or inside the Linux environment?** It changes what I build next.
