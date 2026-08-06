@@ -40,6 +40,8 @@ Six places, and the number keys 1 to 6 go straight to them. Your GitHub account 
 
 **Shared workspace.** Joined and working on this computer. A private project called `viberant-workspace` on your own GitHub account is the meeting point: every computer signed in to that account appears here, with what it is working on and whether it is about. You can leave notes between computers.
 
+**The same project, on two computers at once.** Each computer keeps a short fingerprint of every project it shares and answers for it on the network; the others ask every few seconds. When your laptop has newer work, a strip appears within seconds saying so — without a single file having moved to find out. Nothing ever syncs by itself. Unsaved work is never walked over. Your copy is moved aside before it is replaced, and put straight back if anything fails on the way. When both computers have changed the same project, it says so and makes you choose rather than merging behind your back. Four rules, locked, in D-55.
+
 **Folders move across your own network, never through the cloud.** GitHub says which computers are yours — joining puts one random key in that private project, and holding it is the proof. The files themselves go straight from one computer to the other over the local network. One computer offers a folder; the other sees it, picks where it goes, and asks for it. **Nothing arrives without being asked for**, and a transfer cut off half way leaves nothing that looks finished.
 
 **Settings.** Eight of them, and a rule keeping the list short: nothing here changes what the manager tells you is true, only how it behaves while telling you.

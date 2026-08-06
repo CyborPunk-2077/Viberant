@@ -259,6 +259,109 @@ export function around() {
 }
 
 // ---------------------------------------------------------------------------
+// What this computer has, for the others to compare against
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the list of shareable projects comes from.
+ *
+ * Set by the server, because deciding which projects are yours to share is the
+ * server's business and not this file's. Left unset, this computer says it has
+ * nothing, which is the safe answer.
+ */
+let whatToShare = async () => [];
+export function shares(fn) { whatToShare = fn; }
+
+/** Held briefly: the others ask every few seconds and folders do not change that fast. */
+let held = { at: 0, projects: [] };
+const HOLD_FOR = 2500;
+
+async function whatIHave({ fresh = false } = {}) {
+  if (!fresh && Date.now() - held.at < HOLD_FOR) return held.projects;
+  const projects = await whatToShare().catch(() => []);
+  held = { at: Date.now(), projects };
+  return projects;
+}
+
+/** Say it again now, because something here just changed. */
+export async function refresh() {
+  return whatIHave({ fresh: true });
+}
+
+/** What one of your computers has, and what state it is in. */
+export async function stateOf(machine) {
+  const peer = seen.get(machine);
+  if (!peer) return null;
+  const res = await ask(peer, '/state');
+  if (!res) return null;
+  let body = '';
+  for await (const chunk of res) body += chunk;
+  try { return JSON.parse(body); } catch { return null; }
+}
+
+/** Everything every computer on this network has, asked all at once. */
+export async function whatEveryoneHas() {
+  const peers = around();
+  const answers = await Promise.all(peers.map(async (p) => ({ peer: p, state: await stateOf(p.machine) })));
+  return answers.filter((a) => a.state?.ok);
+}
+
+/**
+ * Ask a computer for one project, by name rather than by offer.
+ *
+ * Syncing is not the same errand as offering: an offer is something you put up
+ * on purpose, while a sync is one computer asking another for a project they
+ * both already have. The name is the handle, because that is what makes them
+ * the same project on both.
+ */
+export async function takeProject({ machine, name, into, job, jobs }) {
+  const peer = seen.get(machine);
+  if (!peer) {
+    return jobs.end(job, {
+      ok: false,
+      sentence: 'That computer is not on this network at the moment.',
+      action: 'Check it is turned on with Viberant open, on the same network as this one.',
+    });
+  }
+
+  jobs.step(job, `Asking ${peer.name} for ${name}.`);
+  const res = await ask(peer, `/project?name=${encodeURIComponent(name)}`);
+  if (!res) {
+    return jobs.end(job, {
+      ok: false,
+      sentence: `${peer.name} did not send ${name}.`,
+      action: 'It may have stopped sharing it. Look again at what it has.',
+    });
+  }
+
+  const expected = Number(res.headers['x-viberant-bytes']) || 0;
+  jobs.step(job, `Bringing it in to ${into}.`);
+
+  let last = 0;
+  const out = await parcel.unwrap(res, into, {
+    onProgress: ({ files, bytes }) => {
+      if (bytes - last < 4_000_000) return;
+      last = bytes;
+      jobs.write(job, `${files} files, ${parcel.inWords(bytes)}${expected ? ` of ${parcel.inWords(expected)}` : ''}`);
+    },
+  }).catch((e) => ({
+    ok: false,
+    sentence: 'That folder could not be put together on this computer.',
+    action: String(e.message ?? e),
+  }));
+
+  if (!out.ok) return jobs.end(job, out);
+
+  await refresh();
+  return jobs.end(job, {
+    ok: true,
+    at: out.at,
+    sentence: `${name} now matches ${peer.name} — ${out.files} files, ${parcel.inWords(out.bytes)}.`,
+    action: 'Your own copy was kept aside first, in case you want anything back out of it.',
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Answering the others
 // ---------------------------------------------------------------------------
 
@@ -281,6 +384,29 @@ async function handle(req, res) {
 
   if (url.pathname === '/offers') {
     return say(200, { ok: true, name: me.name, offers: await offers() });
+  }
+
+  // What this computer has, and what state each of it is in. Asked often, so
+  // the answer is held for a few seconds rather than recomputed per question.
+  if (url.pathname === '/state') {
+    return say(200, { ok: true, machine: me.machine, name: me.name, projects: await whatIHave() });
+  }
+
+  // One project by name, for a computer that already has it and wants ours.
+  if (url.pathname === '/project') {
+    const wanted = url.searchParams.get('name');
+    const one = (await whatIHave()).find((p) => p.name === wanted);
+    if (!one || !existsSync(one.path)) return say(404, { ok: false });
+
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'x-viberant-files': String(one.state?.files ?? 0),
+      'x-viberant-bytes': String(one.state?.bytes ?? 0),
+      'x-viberant-name': one.name,
+    });
+    return parcel.wrap(one.path, { everything: false })
+      .on('error', () => res.destroy())
+      .pipe(res);
   }
 
   if (url.pathname === '/parcel') {

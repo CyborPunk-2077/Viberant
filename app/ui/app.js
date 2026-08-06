@@ -219,10 +219,12 @@ function followThePointer() {
 
 async function openWhoPanel() {
   const panel = $('#who-panel');
-  if (!panel.hidden) { panel.hidden = true; return; }
+  const wasOpen = !panel.hidden;
   closePanels();
-  panel.hidden = false;
+  if (wasOpen) return;
   panel.innerHTML = '<div class="head">GitHub</div><div class="pick"><span class="spin"></span> looking…</div>';
+  panel.hidden = true;
+  openPanel(panel);
 
   const g = await get('/github');
   panel.innerHTML = `
@@ -300,10 +302,36 @@ async function go(tab, { keepSaid = false } = {}) {
 
 async function draw() {
   await SCREENS[at.tab]?.();
+  // Every screen replaces the view, so the strip is hung again afterwards. It
+  // belongs to the app rather than to any one page.
+  paintNews();
 }
 
 function closePanels() {
-  for (const p of document.querySelectorAll('.panel')) p.hidden = true;
+  for (const p of document.querySelectorAll('.panel')) {
+    p.hidden = true;
+    p.classList.remove('above', 'leftward');
+  }
+}
+
+/**
+ * Open a hanging panel where there is actually room for it.
+ *
+ * A menu that opens downward off the bottom of the window, or rightward off the
+ * edge, is a menu you cannot use — and it happens to whichever card lands near
+ * an edge, so it looks random. Measured once at the moment of opening, because
+ * that is the only moment the answer is knowable.
+ */
+function openPanel(panel) {
+  const wasOpen = !panel.hidden;
+  closePanels();
+  if (wasOpen) return;
+
+  panel.hidden = false;
+  const room = panel.getBoundingClientRect();
+
+  if (room.bottom > innerHeight - 8) panel.classList.add('above');
+  if (room.left < 8) panel.classList.add('leftward');
 }
 
 addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels(); });
@@ -1334,7 +1362,8 @@ function accountPanel(x, t) {
       <div class="services">
         ${services.map((s) => `
           <button class="service" data-service="${esc(x.id)}|${esc(s.id)}|${esc(s.at)}">
-            <span class="badge" style="background:${esc(s.tint)}">${esc(s.initial)}</span>
+            <span class="badge" style="background:${s.mark ? 'transparent' : esc(s.tint)}">${
+  s.mark === 'google' ? GOOGLE_MARK : s.mark === 'github' ? GITHUB_MARK : esc(s.initial)}</span>
             ${esc(s.name)}
           </button>`).join('')}
       </div>` : ''}
@@ -1391,10 +1420,7 @@ function wireAppCards(t, p) {
   for (const b of document.querySelectorAll('[data-account]')) {
     b.onclick = (e) => {
       e.stopPropagation();
-      const panel = $(`#acct-${CSS.escape(b.dataset.account)}`);
-      const wasOpen = !panel.hidden;
-      closePanels();
-      panel.hidden = wasOpen;
+      openPanel($(`#acct-${CSS.escape(b.dataset.account)}`));
     };
   }
 
@@ -2178,6 +2204,129 @@ SCREENS.feedback = async () => {
 };
 
 // ---------------------------------------------------------------------------
+// The same project, on two computers at once
+// ---------------------------------------------------------------------------
+
+/**
+ * What the other computers are doing to the projects you also have.
+ *
+ * Asked every few seconds while the app is open, because the whole value of it
+ * is that "your laptop has newer work" appears while you still care. Comparing
+ * two short fingerprints costs nothing on either side — no files move to find
+ * out whether any file should.
+ *
+ * It never syncs anything. It raises things; you decide.
+ */
+let liveTimer = null;
+let liveNews = [];
+let liveSeen = '';
+
+async function watchTheOthers() {
+  clearTimeout(liveTimer);
+  const again = (ms) => { liveTimer = setTimeout(watchTheOthers, ms); };
+
+  if (document.hidden || !me.sharingHere) return again(8000);
+
+  const r = await get('/live');
+  liveNews = r.news ?? [];
+
+  // Only redraw when what it says has actually changed. A strip that rebuilds
+  // itself every three seconds is a strip nobody can click.
+  const now = JSON.stringify(liveNews.map((n) => `${n.from}|${n.name}|${n.kind}|${n.theirs?.mark ?? ''}`));
+  if (now !== liveSeen) {
+    liveSeen = now;
+    paintNews();
+  }
+  again(3500);
+}
+
+function newsHtml() {
+  if (!liveNews.length) return '';
+  return `<div id="news">${liveNews.map((n, i) => `
+    <div class="news ${esc(n.kind)}">
+      <span class="spine ${n.kind === 'collision' ? 'unsaved' : n.kind === 'behind' ? 'published' : 'clean'}"></span>
+      <div class="grow">
+        <b>${esc(n.sentence)}</b>
+        <span>${esc(n.action ?? '')}</span>
+      </div>
+      <div class="acts">
+        ${(n.may ?? []).includes('takeTheirs')
+    ? `<button class="go small" data-sync="${i}">Bring theirs across</button>` : ''}
+        ${(n.may ?? []).includes('bring')
+    ? `<button class="go small" data-fetch="${i}">Bring it here…</button>` : ''}
+        ${(n.may ?? []).includes('save')
+    ? `<button class="small" data-savefirst="${i}">Save mine first</button>` : ''}
+        <button class="quiet small" data-hush="${i}">Leave it</button>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
+/** Put the strip at the top of whatever is on screen, without redrawing it. */
+function paintNews() {
+  const hold = $('#view');
+  if (!hold) return;
+  const there = $('#news');
+  if (!liveNews.length) { there?.remove(); return; }
+
+  if (there) there.outerHTML = newsHtml();
+  else hold.insertAdjacentHTML('afterbegin', newsHtml());
+  wireNews();
+}
+
+function wireNews() {
+  for (const b of document.querySelectorAll('[data-sync]')) {
+    b.onclick = async () => {
+      const n = liveNews[Number(b.dataset.sync)];
+      const sure = await confirmThat({
+        title: `Bring ${n.name} across from ${n.fromName}`,
+        what: `Your copy of ${n.name} is replaced with the one on ${n.fromName}.`,
+        why: 'Your copy is moved aside first, not deleted, and the sentence afterwards says exactly where it went. If anything goes wrong on the way, it is put straight back.',
+        confirm: 'Bring theirs across',
+      });
+      if (!sure) return;
+      const r = await post('/live/sync', { name: n.name, from: n.from, path: n.path });
+      if (r.ok) watchJob(r.job); else { say(r); draw(); }
+    };
+  }
+  for (const b of document.querySelectorAll('[data-fetch]')) {
+    b.onclick = async () => {
+      const n = liveNews[Number(b.dataset.fetch)];
+      const into = await pickFolder({
+        title: `Where should ${n.name} go on this computer?`,
+        confirm: 'Put it in here',
+        startAt: me.settings?.workFolder,
+      });
+      if (!into) return;
+      const r = await post('/live/sync', { name: n.name, from: n.from, path: `${into}\\${n.name}` });
+      if (r.ok) watchJob(r.job); else { say(r); draw(); }
+    };
+  }
+  for (const b of document.querySelectorAll('[data-savefirst]')) {
+    b.onclick = async () => {
+      const n = liveNews[Number(b.dataset.savefirst)];
+      await post('/open', { path: n.path });
+      at.inside = true;
+      await refreshMe();
+      go('projects');
+      say({
+        ok: true,
+        sentence: `${n.name} is open. Save what you have, then bring theirs across.`,
+        action: 'Nothing of yours can be walked over while it is unsaved.',
+      });
+    };
+  }
+  for (const b of document.querySelectorAll('[data-hush]')) {
+    b.onclick = async () => {
+      const n = liveNews[Number(b.dataset.hush)];
+      await post('/live/leave', { from: n.from, name: n.name, mark: n.theirs?.mark });
+      liveNews.splice(Number(b.dataset.hush), 1);
+      liveSeen = '';
+      paintNews();
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Noticing the folder changed underneath us
 // ---------------------------------------------------------------------------
 
@@ -2354,6 +2503,7 @@ const start = async () => {
     // is where you go, and nothing stands in front of the app again.
     if (!me.github && !me.askedToSignIn) showGate();
     $('#sheen')?.classList.add('up');
+    watchTheOthers();
   }, skip ? 120 : 1600);
 };
 

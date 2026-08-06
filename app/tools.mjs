@@ -52,8 +52,8 @@ const SERVICE = {
   anthropicKey: { id: 'anthropicKey', name: 'Anthropic key', initial: 'A', tint: '#d97757', at: 'https://console.anthropic.com/settings/keys' },
   openai: { id: 'openai', name: 'OpenAI', initial: 'O', tint: '#10a37f', at: 'https://chatgpt.com/' },
   openaiKey: { id: 'openaiKey', name: 'OpenAI key', initial: 'O', tint: '#10a37f', at: 'https://platform.openai.com/api-keys' },
-  google: { id: 'google', name: 'Google', initial: 'G', tint: '#4285f4', at: 'https://accounts.google.com/' },
-  github: { id: 'github', name: 'GitHub', initial: 'G', tint: '#6e7681', at: 'https://github.com/login' },
+  google: { id: 'google', name: 'Google', initial: 'G', tint: '#4285f4', at: 'https://accounts.google.com/', mark: 'google' },
+  github: { id: 'github', name: 'GitHub', initial: 'G', tint: '#6e7681', at: 'https://github.com/login', mark: 'github' },
   openrouter: { id: 'openrouter', name: 'OpenRouter', initial: 'R', tint: '#8b5cf6', at: 'https://openrouter.ai/keys' },
 };
 
@@ -119,7 +119,7 @@ export const KNOWN = [
     config: '.gemini',
     ways: { terminal: { bin: 'gemini' } },
     services: [SERVICE.google],
-    signIn: { way: 'terminal', command: 'gemini', then: 'Choose how you want to sign in.' },
+    signIn: { way: 'terminal', command: 'gemini', then: 'Choose Google when it asks, and your browser will open.' },
     install: 'https://github.com/google-gemini/gemini-cli',
   },
   {
@@ -198,9 +198,9 @@ export const KNOWN = [
     ways: {
       desktop: { bin: 'antigravity', at: [[local, 'Programs', 'antigravity', 'Antigravity.exe']] },
     },
-    services: [],
+    services: [SERVICE.google],
     newWindow: true,
-    signIn: { way: 'inside', then: 'Antigravity signs you in inside its own window.' },
+    signIn: { way: 'inside', then: 'Antigravity signs you in with Google, inside its own window.' },
     install: 'https://antigravity.google/download',
   },
   {

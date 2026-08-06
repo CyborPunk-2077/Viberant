@@ -1,95 +1,122 @@
 /*
  * How Viberant looks.
  *
- * Prose-first and quiet by default: the loudest thing on any screen should be
- * the sentence telling you where you stand. Colour is used for meaning only —
- * green means something is alive, amber means something wants you, and the one
- * gradient in the product belongs to the name and to nothing else.
+ * Written as one sheet, once. The version before this was six rounds of
+ * appending, which left `nav { flex-direction: column }` still winning over a
+ * top bar that had been added later — the navigation stacked itself down the
+ * left and the content landed on top of it. Contradictory rules in one file are
+ * not a style problem, they are a correctness problem, and the fix is a single
+ * coherent sheet rather than one more override.
  *
- * Every animation in here is either at the moment you open the app or a direct
- * answer to something you just pressed. Nothing moves to get your attention.
+ * The look: a dark terminal-adjacent surface with one gradient — violet into
+ * cyan — used for the mark, the primary action, and nothing else. Everything
+ * else is grey with meaning-coloured accents. Interactive where interaction
+ * tells you something; still everywhere else.
+ *
+ * Rules that hold across every theme:
+ *   A theme changes colours. It may not change a layout, hide a control, or
+ *   alter a sentence.
+ *   Motion answers something you did, except the one light that follows the
+ *   pointer and the opening, which happen once.
  */
+
+/* ========================================================================= */
+/* Palette                                                                   */
+/* ========================================================================= */
 
 :root {
-  --page: #faf9f7;
-  --card: #ffffff;
-  --raised: #ffffff;
-  --line: #e5e2dc;
-  --line-strong: #d3cfc7;
-  --hover: #f2f0ec;
-  --ink: #191917;
-  --quiet: #6a6862;
-  --faint: #9a9791;
+  --page: #0d0d12;
+  --deep: #08080c;
+  --card: #14141c;
+  --raised: #191922;
+  --line: #24242f;
+  --line-strong: #33333f;
+  --hover: #1d1d27;
 
-  --live: #12795d;
-  --attention: #a96a08;
-  --trouble: #b3402f;
-  --cool: #2f6fb5;
+  --ink: #e8e8f0;
+  --quiet: #9a9aae;
+  --faint: #66667a;
 
-  --vibe-a: #7b5cff;
-  --vibe-b: #17b8c9;
-  --vibe-c: #ff6ba9;
+  --live: #3ddc97;
+  --attention: #f5a524;
+  --trouble: #ff6b81;
+  --cool: #5cc8ff;
 
-  --shadow: 0 1px 2px rgba(24, 22, 18, .05), 0 8px 24px -12px rgba(24, 22, 18, .18);
-  --shadow-lift: 0 2px 4px rgba(24, 22, 18, .06), 0 18px 44px -18px rgba(24, 22, 18, .3);
+  --vibe-a: #8b5cf6;
+  --vibe-b: #22d3ee;
+  --vibe-c: #f472b6;
+
+  --glow: color-mix(in srgb, var(--vibe-a) 26%, transparent);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -14px rgba(0, 0, 0, .8);
+  --shadow-lift: 0 2px 8px rgba(0, 0, 0, .55), 0 24px 56px -24px rgba(0, 0, 0, .9);
+
   --radius: 12px;
-  --sidebar: 232px;
+  --bar: 52px;
+  --hold: 68rem;
 }
 
-/*
- * Light or dark. Following the computer is the default; choosing one and
- * staying in it is a setting, and a setting has to win over the computer in
- * both directions, which is why the choice is written twice.
- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --page: #121211;
-    --card: #1a1a18;
-    --raised: #201f1d;
-    --line: #2b2a27;
-    --line-strong: #3a3835;
-    --hover: #242320;
-    --ink: #edece9;
-    --quiet: #a09d97;
-    --faint: #6f6c67;
+:root[data-theme="light"] {
+  --page: #f7f7fa; --deep: #eeeef4; --card: #ffffff; --raised: #ffffff;
+  --line: #e3e3ec; --line-strong: #cfcfdd; --hover: #f0f0f6;
+  --ink: #16161d; --quiet: #5c5c70; --faint: #8b8ba0;
+  --live: #0f9d63; --attention: #b47207; --trouble: #d13c52; --cool: #1f7fc4;
+  --vibe-a: #7c3aed; --vibe-b: #0891b2; --vibe-c: #db2777;
+  --shadow: 0 1px 2px rgba(20, 20, 40, .06), 0 8px 24px -14px rgba(20, 20, 40, .2);
+  --shadow-lift: 0 2px 8px rgba(20, 20, 40, .08), 0 24px 56px -24px rgba(20, 20, 40, .3);
+}
 
-    --live: #4fc39c;
-    --attention: #e0a33f;
-    --trouble: #e8735f;
-    --cool: #6fa8e8;
+:root[data-theme="neon"] {
+  --page: #07060f; --deep: #04030a; --card: #0f0d1c; --raised: #151228;
+  --line: #241d45; --line-strong: #362a63; --hover: #1a1533;
+  --ink: #eee9ff; --quiet: #a79ed4; --faint: #6f66a3;
+  --live: #39ff9e; --attention: #ffd24a;
+  --trouble: #ff4d8d; --cool: #4de3ff;
+  --vibe-a: #a855f7; --vibe-b: #00e5ff; --vibe-c: #ff2d95;
+  --glow: color-mix(in srgb, var(--vibe-b) 34%, transparent);
+}
 
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .7);
-    --shadow-lift: 0 2px 6px rgba(0, 0, 0, .5), 0 24px 60px -20px rgba(0, 0, 0, .8);
+:root[data-theme="steam"] {
+  --page: #10161f; --deep: #0a0f16; --card: #16202d; --raised: #1b2838;
+  --line: #2a3f57; --line-strong: #3c5876; --hover: #1f3044;
+  --ink: #c9d8e4; --quiet: #8d9aa8; --faint: #63707e;
+  --live: #a4d007; --attention: #e5a33f; --trouble: #ff7a68; --cool: #66c0f4;
+  --vibe-a: #1a9fff; --vibe-b: #66c0f4; --vibe-c: #4b8ec4;
+}
+
+:root[data-theme="fire"] {
+  --page: #120b08; --deep: #0c0705; --card: #1b110d; --raised: #221611;
+  --line: #38221a; --line-strong: #543328; --hover: #281a14;
+  --ink: #f7e8e0; --quiet: #bb9285; --faint: #866560;
+  --live: #7bd47b; --attention: #ffb03a; --trouble: #ff5a3c; --cool: #ffa06b;
+  --vibe-a: #ff6b2c; --vibe-b: #ffc73a; --vibe-c: #ff2d55;
+}
+
+:root[data-theme="crimson"] {
+  --page: #100810; --deep: #0a050b; --card: #190d19; --raised: #20111f;
+  --line: #371c33; --line-strong: #532a4b; --hover: #271528;
+  --ink: #f6e3f0; --quiet: #c08fb0; --faint: #8b6480;
+  --live: #7ad19a; --attention: #f0a94b; --trouble: #ff6b6b; --cool: #ff8fc4;
+  --vibe-a: #e0219c; --vibe-b: #7c3aed; --vibe-c: #ff5f7e;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --page: #f7f7fa; --deep: #eeeef4; --card: #ffffff; --raised: #ffffff;
+    --line: #e3e3ec; --line-strong: #cfcfdd; --hover: #f0f0f6;
+    --ink: #16161d; --quiet: #5c5c70; --faint: #8b8ba0;
+    --live: #0f9d63; --attention: #b47207; --trouble: #d13c52; --cool: #1f7fc4;
+    --vibe-a: #7c3aed; --vibe-b: #0891b2; --vibe-c: #db2777;
+    --shadow: 0 1px 2px rgba(20, 20, 40, .06), 0 8px 24px -14px rgba(20, 20, 40, .2);
+    --shadow-lift: 0 2px 8px rgba(20, 20, 40, .08), 0 24px 56px -24px rgba(20, 20, 40, .3);
   }
 }
 
-:root[data-theme="dark"] {
-    --page: #121211;
-    --card: #1a1a18;
-    --raised: #201f1d;
-    --line: #2b2a27;
-    --line-strong: #3a3835;
-    --hover: #242320;
-    --ink: #edece9;
-    --quiet: #a09d97;
-    --faint: #6f6c67;
-
-    --live: #4fc39c;
-    --attention: #e0a33f;
-    --trouble: #e8735f;
-    --cool: #6fa8e8;
-
-    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .7);
-    --shadow-lift: 0 2px 6px rgba(0, 0, 0, .5), 0 24px 60px -20px rgba(0, 0, 0, .8);
-  }
-
+/* ========================================================================= */
+/* Ground                                                                    */
+/* ========================================================================= */
 
 * { box-sizing: border-box; }
-
-html, body {
-  margin: 0;
-  height: 100%;
-}
+html, body { margin: 0; height: 100%; }
 
 body {
   background: var(--page);
@@ -99,302 +126,316 @@ body {
   overflow: hidden;
 }
 
-::selection { background: color-mix(in srgb, var(--vibe-a) 30%, transparent); }
+::selection { background: color-mix(in srgb, var(--vibe-a) 35%, transparent); }
 
-/* ------------------------------------------------------------------ opening */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 99px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--quiet); background-clip: content-box; }
 
-/*
- * The one flourish in the product, and it happens once, before there is
- * anything to read. After this the app never moves on its own again.
- */
-#opening {
+/* The one light that moves. Depth, not a cursor. */
+#sheen {
   position: fixed;
   inset: 0;
-  z-index: 999;
-  display: grid;
-  place-items: center;
-  background: var(--page);
-  overflow: hidden;
-}
-
-#opening .glow {
-  position: absolute;
-  width: 900px;
-  height: 900px;
-  border-radius: 50%;
-  filter: blur(90px);
+  z-index: 0;
+  pointer-events: none;
   opacity: 0;
+  transition: opacity 1200ms ease;
   background:
-    radial-gradient(circle at 35% 40%, color-mix(in srgb, var(--vibe-a) 55%, transparent), transparent 60%),
-    radial-gradient(circle at 65% 60%, color-mix(in srgb, var(--vibe-b) 50%, transparent), transparent 60%),
-    radial-gradient(circle at 50% 75%, color-mix(in srgb, var(--vibe-c) 35%, transparent), transparent 60%);
-  animation: bloom 2100ms cubic-bezier(.22, 1, .36, 1) forwards;
+    radial-gradient(38rem 38rem at var(--px, 50%) var(--py, 35%), var(--glow), transparent 60%),
+    radial-gradient(22rem 22rem at calc(var(--px, 50%) + 12rem) calc(var(--py, 35%) + 8rem),
+      color-mix(in srgb, var(--vibe-b) 16%, transparent), transparent 58%);
 }
+#sheen.up { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #sheen { display: none; } }
 
-#opening .mark {
-  position: relative;
-  text-align: center;
-}
-
-#opening .word {
-  display: flex;
-  gap: .02em;
-  font-size: clamp(2.6rem, 9vw, 5rem);
-  font-weight: 600;
-  letter-spacing: -.035em;
-  line-height: 1;
-}
-
-#opening .word span {
-  display: inline-block;
-  opacity: 0;
-  transform: translateY(.42em) scale(.94);
-  filter: blur(9px);
-  background: linear-gradient(115deg, var(--vibe-a), var(--vibe-b) 55%, var(--vibe-c));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: rise 900ms cubic-bezier(.19, 1, .22, 1) forwards;
-}
-
-#opening .rule {
-  height: 2px;
-  margin: 1.1rem auto 0;
-  width: 0;
-  border-radius: 2px;
-  background: linear-gradient(90deg, transparent, var(--vibe-a), var(--vibe-b), transparent);
-  animation: sweep 1200ms cubic-bezier(.65, 0, .35, 1) 420ms forwards;
-}
-
-#opening .line {
-  margin-top: .9rem;
-  color: var(--quiet);
-  font-size: .9rem;
-  opacity: 0;
-  animation: fade 700ms ease 900ms forwards;
-}
-
-#opening.going { animation: leave 420ms ease forwards; }
-
-@keyframes rise {
-  to { opacity: 1; transform: none; filter: blur(0); }
-}
-@keyframes sweep {
-  40% { width: min(420px, 70vw); opacity: 1; }
-  to { width: min(420px, 70vw); opacity: .55; }
-}
-@keyframes bloom {
-  35% { opacity: .55; transform: scale(1); }
-  to { opacity: .22; transform: scale(1.15); }
-}
-@keyframes fade { to { opacity: 1; } }
-@keyframes leave { to { opacity: 0; visibility: hidden; } }
-
-@media (prefers-reduced-motion: reduce) {
-  #opening .glow { animation: none; opacity: .2; }
-  #opening .word span { animation: none; opacity: 1; transform: none; filter: none; }
-  #opening .rule { animation: none; width: min(420px, 70vw); }
-  #opening .line { animation: none; opacity: 1; }
-  #opening.going { animation: none; opacity: 0; visibility: hidden; }
-}
-
-/* ------------------------------------------------------------------- frame */
+/* ========================================================================= */
+/* The frame: a bar across the top, content beneath it                       */
+/* ========================================================================= */
 
 #frame {
+  position: relative;
+  z-index: 1;
   display: grid;
-  grid-template-columns: var(--sidebar) 1fr;
+  grid-template-rows: var(--bar) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   opacity: 0;
-  transition: opacity 260ms ease;
+  transition: opacity 320ms ease;
 }
 #frame.up { opacity: 1; }
 
-/*
- * The sidebar must not clip. The account menu opens upwards out of the corner,
- * and an `overflow` anywhere above it cuts it in half — which is exactly what
- * happened: the menu appeared sliced down its left edge and running off the
- * bottom of the screen. So the column itself never scrolls; only the list of
- * places inside it does, and the corner sits outside that list.
- */
-nav {
-  border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--card) 55%, var(--page));
-  padding: 1.1rem .7rem .8rem;
+.topnav {
   display: flex;
-  flex-direction: column;
-  gap: .15rem;
-  overflow: visible;
-  min-height: 0;
+  flex-direction: row;
+  align-items: stretch;
+  gap: .1rem;
+  min-width: 0;
+  padding: 0 1rem;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--deep) 82%, var(--vibe-a) 6%),
+    var(--deep));
+  border-bottom: 1px solid var(--line);
+  position: relative;
+  z-index: 30;
+}
+.topnav::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -1px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent,
+    color-mix(in srgb, var(--vibe-a) 45%, transparent),
+    color-mix(in srgb, var(--vibe-b) 45%, transparent), transparent);
+  opacity: .55;
 }
 
-nav .places {
-  display: flex;
-  flex-direction: column;
-  gap: .15rem;
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
-  margin: 0 -.2rem;
-  padding: 0 .2rem;
-}
-
-.brand {
+.logo {
   display: flex;
   align-items: center;
-  gap: .55rem;
-  padding: .2rem .55rem 1.25rem;
-  font-weight: 600;
-  letter-spacing: -.02em;
+  gap: .5rem;
+  padding-right: 1.5rem;
+  margin-right: .35rem;
+  font-weight: 700;
+  font-size: .95rem;
+  letter-spacing: .06em;
+  flex: none;
 }
-.brand .bead {
-  width: 15px;
-  height: 15px;
-  border-radius: 5px;
-  background: linear-gradient(135deg, var(--vibe-a), var(--vibe-b));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--vibe-a) 12%, transparent);
+.logo svg { display: block; filter: drop-shadow(0 0 8px color-mix(in srgb, var(--vibe-a) 45%, transparent)); }
+.logo .word {
+  background: linear-gradient(100deg, var(--vibe-a), var(--vibe-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-nav button.tab {
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  width: 100%;
-  text-align: left;
+.topnav .tab {
   font: inherit;
+  font-size: .78rem;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
   color: var(--quiet);
   background: transparent;
   border: 0;
-  border-radius: 9px;
-  padding: .5rem .55rem;
+  border-radius: 0;
+  padding: 0 .95rem;
   cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+  transition: color 140ms ease;
 }
-nav button.tab:hover { background: var(--hover); color: var(--ink); }
-nav button.tab.on {
-  background: var(--raised);
-  color: var(--ink);
-  box-shadow: var(--shadow);
-  font-weight: 500;
+.topnav .tab::after {
+  content: "";
+  position: absolute;
+  left: .7rem; right: .7rem; bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, var(--vibe-a), var(--vibe-b));
+  transform: scaleX(0);
+  transition: transform 180ms cubic-bezier(.22, 1, .36, 1);
 }
-nav button.tab .key {
-  margin-left: auto;
-  font-size: .68rem;
-  color: var(--faint);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  padding: 0 .3rem;
-}
-nav button.tab.on .key { border-color: var(--line-strong); }
+.topnav .tab:hover { color: var(--ink); background: transparent; }
+.topnav .tab:hover::after { transform: scaleX(.5); }
+.topnav .tab.on { color: var(--ink); }
+.topnav .tab.on::after { transform: scaleX(1); }
 
-nav .sep { flex: 1; }
+.topnav .spacer { flex: 1 1 auto; min-width: .5rem; }
 
-nav .foot {
-  border-top: 1px solid var(--line);
-  padding: .8rem .55rem .2rem;
-  font-size: .78rem;
-  color: var(--faint);
-  line-height: 1.5;
+.topnav .icon {
+  align-self: center;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--quiet);
+  padding: .32rem .5rem;
+  font-size: .95rem;
+  line-height: 1;
+  border-radius: 8px;
+  flex: none;
 }
-nav .foot b { color: var(--quiet); font-weight: 500; display: block; }
+.topnav .icon:hover { color: var(--ink); background: var(--hover); border-color: var(--line); }
+.topnav .icon.on { color: var(--vibe-b); }
 
 main {
   overflow-y: auto;
-  padding: 2.6rem 2.4rem 5rem;
+  overflow-x: hidden;
+  padding: 2.2rem 2rem 6rem;
+  min-width: 0;
 }
-.hold { max-width: 60rem; margin: 0 auto; }
+.hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
+
+@media (max-width: 62rem) {
+  .topnav { padding: 0 .6rem; overflow-x: auto; }
+  .topnav .tab { padding: 0 .55rem; font-size: .7rem; letter-spacing: .05em; }
+  .logo { padding-right: .8rem; }
+  .logo .word { display: none; }
+  main { padding: 1.6rem 1.1rem 5rem; }
+}
+
+/* ========================================================================= */
+/* Type                                                                      */
+/* ========================================================================= */
 
 h1 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  letter-spacing: -.025em;
-  margin: 0 0 .3rem;
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -.028em;
+  line-height: 1.2;
+  margin: 0 0 .35rem;
 }
-.sub { color: var(--quiet); margin: 0 0 2rem; font-size: .93rem; }
-.sub a { color: var(--cool); }
-
+.sub {
+  color: var(--quiet);
+  margin: 0 0 1.8rem;
+  font-size: .93rem;
+  line-height: 1.6;
+  max-width: 48rem;
+}
 h2 {
-  font-size: .72rem;
-  letter-spacing: .11em;
+  font-size: .7rem;
+  letter-spacing: .13em;
   text-transform: uppercase;
   color: var(--faint);
-  font-weight: 600;
-  margin: 2.4rem 0 .9rem;
+  font-weight: 700;
+  margin: 2.1rem 0 .8rem;
 }
 h2:first-of-type { margin-top: 0; }
+.field { display: block; font-size: .8rem; color: var(--quiet); margin: 0 0 .3rem; }
 
-/* ------------------------------------------------------------------- parts */
+/* ========================================================================= */
+/* Surfaces                                                                  */
+/* ========================================================================= */
 
 .card {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 1rem 1.1rem;
+  padding: 1.05rem 1.15rem;
   box-shadow: var(--shadow);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
-  gap: .8rem;
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
+  gap: .75rem;
+  align-items: start;
 }
 
+.stack, .lane { display: flex; flex-direction: column; gap: .55rem; min-width: 0; }
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+@media (max-width: 62rem) { .split { grid-template-columns: 1fr; } }
+
+/* A tile: one app, one terminal, one computer. */
 .tile {
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: .95rem 1rem;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease;
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: .35rem;
+  gap: .3rem;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1rem 1.05rem;
+  box-shadow: var(--shadow);
+  min-width: 0;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
 .tile:hover {
+  border-color: color-mix(in srgb, var(--vibe-a) 32%, var(--line-strong));
+  box-shadow: var(--shadow-lift), 0 0 0 1px color-mix(in srgb, var(--vibe-a) 12%, transparent);
   transform: translateY(-1px);
-  box-shadow: var(--shadow-lift);
-  border-color: var(--line-strong);
 }
 .tile.flat { cursor: default; }
-.tile.flat:hover { transform: none; box-shadow: var(--shadow); border-color: var(--line); }
-.tile.away { opacity: .55; }
+.tile.away { opacity: .62; }
+.tile.away:hover { transform: none; }
+.tile .top { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.tile .title { font-size: 1rem; font-weight: 620; letter-spacing: -.012em; overflow-wrap: anywhere; }
+.tile .note { font-size: .86rem; color: var(--quiet); line-height: 1.45; }
+.tile .doing { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; margin-top: .6rem; }
 
-.tile .top { display: flex; align-items: center; gap: .5rem; }
-.tile .title { font-weight: 550; letter-spacing: -.01em; }
-.tile .where {
-  font-size: .78rem;
+/* A slab: one project, one row, room for the four things worth knowing. */
+.slab {
+  position: relative;
+  display: flex;
+  gap: .85rem;
+  align-items: flex-start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .9rem 1rem;
+  box-shadow: var(--shadow);
+  min-width: 0;
+  cursor: pointer;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+.slab:hover {
+  border-color: color-mix(in srgb, var(--vibe-a) 30%, var(--line-strong));
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-1px);
+}
+.slab .grow { flex: 1; min-width: 0; }
+.slab .line1 {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  flex-wrap: wrap;
+  margin-bottom: .2rem;
+  min-width: 0;
+}
+.slab .line1 b { font-weight: 640; font-size: 1.02rem; letter-spacing: -.014em; overflow-wrap: anywhere; }
+.slab .fact { font-size: .87rem; color: var(--quiet); line-height: 1.5; }
+.slab .fact em { font-style: normal; color: var(--ink); }
+.slab .did {
+  font-size: .84rem;
   color: var(--faint);
+  margin-top: .12rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  direction: rtl;
-  text-align: left;
 }
-.tile .note { font-size: .86rem; color: var(--quiet); }
-.tile .foot {
+.slab .path {
+  font: .74rem/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color: var(--faint);
+  margin-top: .35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slab .acts {
   display: flex;
-  gap: .4rem;
+  gap: .35rem;
   align-items: center;
-  margin-top: .4rem;
   flex-wrap: wrap;
+  justify-content: flex-end;
+  flex: none;
+  max-width: 22rem;
+}
+@media (max-width: 62rem) {
+  .slab { flex-wrap: wrap; }
+  .slab .acts { max-width: none; width: 100%; justify-content: flex-start; margin-top: .55rem; }
 }
 
+/* A row: a compact line inside a panel. */
 .row {
   display: flex;
   align-items: center;
-  gap: .85rem;
-  padding: .75rem .95rem;
+  gap: .8rem;
+  padding: .7rem .9rem;
   border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--card);
-  margin-bottom: .5rem;
-  box-shadow: var(--shadow);
+  min-width: 0;
 }
 .row.pick { cursor: pointer; }
 .row.pick:hover { background: var(--hover); border-color: var(--line-strong); }
 .row .grow { flex: 1; min-width: 0; }
-.row .name { font-weight: 550; }
+.row .name { font-weight: 560; }
 .row .note {
   color: var(--quiet);
   font-size: .84rem;
@@ -403,6 +444,91 @@ h2:first-of-type { margin-top: 0; }
   white-space: nowrap;
 }
 
+/* The counts across the top of the workspace. */
+.tally {
+  display: flex;
+  gap: 1.8rem;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--vibe-a) 7%, var(--card)), var(--card) 55%);
+  box-shadow: var(--shadow);
+  margin-bottom: 1.5rem;
+}
+.tally .one b {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -.03em;
+  line-height: 1.15;
+}
+.tally .one span { font-size: .78rem; color: var(--quiet); }
+.tally .one.warn b { color: var(--attention); }
+.tally .grow { flex: 1 1 auto; }
+
+.empty {
+  color: var(--quiet);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 2rem 1.6rem;
+  text-align: center;
+  line-height: 1.6;
+  background: color-mix(in srgb, var(--card) 40%, transparent);
+}
+.empty b { display: block; font-weight: 600; color: var(--ink); font-size: 1rem; margin-bottom: .3rem; }
+
+/* ========================================================================= */
+/* Status                                                                    */
+/* ========================================================================= */
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: .38rem;
+  font-size: .74rem;
+  font-weight: 600;
+  padding: .18rem .5rem .18rem .42rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--deep);
+  color: var(--quiet);
+  white-space: nowrap;
+  flex: none;
+}
+.state .pip { width: 6px; height: 6px; border-radius: 2px; background: currentColor; flex: none; }
+.state.notStarted { color: var(--faint); }
+.state.working {
+  color: var(--cool);
+  border-color: color-mix(in srgb, var(--cool) 34%, var(--line));
+  background: color-mix(in srgb, var(--cool) 10%, var(--deep));
+}
+.state.finished {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 34%, var(--line));
+  background: color-mix(in srgb, var(--live) 10%, var(--deep));
+}
+.state.published {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b));
+}
+.state.published .pip { background: rgba(255, 255, 255, .92); }
+
+/* The bar down the left of a slab. A spine, not a dot. */
+.spine {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 3px;
+  background: var(--line-strong);
+  flex: none;
+}
+.spine.clean { background: color-mix(in srgb, var(--live) 60%, var(--line-strong)); }
+.spine.unsaved { background: var(--attention); }
+.spine.published { background: linear-gradient(var(--vibe-a), var(--vibe-b)); }
+
 .dot {
   width: 8px;
   height: 8px;
@@ -410,145 +536,327 @@ h2:first-of-type { margin-top: 0; }
   flex: none;
   background: var(--faint);
 }
-.dot.live { background: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 18%, transparent); }
-.dot.attention { background: var(--attention); box-shadow: 0 0 0 3px color-mix(in srgb, var(--attention) 18%, transparent); }
+.dot.live { background: var(--live); box-shadow: 0 0 0 3px color-mix(in srgb, var(--live) 20%, transparent); }
+.dot.attention { background: var(--attention); box-shadow: 0 0 0 3px color-mix(in srgb, var(--attention) 20%, transparent); }
 .dot.trouble { background: var(--trouble); }
 .dot.off { background: var(--line-strong); }
 
 .chip {
-  font-size: .74rem;
-  padding: .12rem .5rem;
+  font-size: .73rem;
+  padding: .13rem .5rem;
   border-radius: 999px;
   border: 1px solid var(--line);
   color: var(--quiet);
-  background: var(--page);
+  background: var(--deep);
   white-space: nowrap;
+  line-height: 1.5;
+  flex: none;
 }
-.chip.live { color: var(--live); border-color: color-mix(in srgb, var(--live) 35%, var(--line)); }
-.chip.attention { color: var(--attention); border-color: color-mix(in srgb, var(--attention) 35%, var(--line)); }
-.chip.cool { color: var(--cool); border-color: color-mix(in srgb, var(--cool) 35%, var(--line)); }
+.chip.live { color: var(--live); border-color: color-mix(in srgb, var(--live) 32%, var(--line)); }
+.chip.attention { color: var(--attention); border-color: color-mix(in srgb, var(--attention) 32%, var(--line)); }
+.chip.cool { color: var(--cool); border-color: color-mix(in srgb, var(--cool) 32%, var(--line)); }
 .chip.vibe {
-  border-color: transparent;
   color: #fff;
+  border-color: transparent;
   background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b));
 }
 
-/* ----------------------------------------------------------------- buttons */
+/* ========================================================================= */
+/* Controls                                                                  */
+/* ========================================================================= */
 
 button {
   font: inherit;
   color: var(--ink);
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
   border-radius: 9px;
   padding: .42rem .8rem;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, transform 90ms ease;
+  white-space: nowrap;
+  transition: background 130ms ease, border-color 130ms ease, transform 90ms ease, color 130ms ease;
 }
-button:hover:not(:disabled) { background: var(--hover); border-color: var(--line-strong); }
+button:hover:not(:disabled) { background: var(--hover); border-color: var(--quiet); }
 button:active:not(:disabled) { transform: translateY(1px); }
-button:disabled { opacity: .45; cursor: default; }
-button:focus-visible, input:focus-visible, textarea:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--vibe-a) 60%, transparent);
-  outline-offset: 1px;
+button:disabled { opacity: .42; cursor: default; }
+
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--vibe-b) 70%, transparent);
+  outline-offset: 2px;
 }
 
 button.go {
   border-color: transparent;
   color: #fff;
-  background: linear-gradient(120deg, var(--vibe-a), color-mix(in srgb, var(--vibe-b) 70%, var(--vibe-a)));
-  font-weight: 500;
+  font-weight: 560;
+  background: linear-gradient(120deg, var(--vibe-a), color-mix(in srgb, var(--vibe-b) 62%, var(--vibe-a)));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 0 18px -6px var(--glow);
 }
-button.go:hover:not(:disabled) { filter: brightness(1.07); background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b)); }
+button.go:hover:not(:disabled) {
+  background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b));
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 0 26px -6px var(--glow);
+  border-color: transparent;
+}
 
 button.quiet {
   border-color: transparent;
   background: transparent;
   color: var(--quiet);
-  padding: .3rem .5rem;
+  padding: .3rem .55rem;
   font-size: .84rem;
 }
-button.quiet:hover:not(:disabled) { background: var(--hover); color: var(--ink); }
-button.small { padding: .25rem .6rem; font-size: .82rem; }
-button.wide { width: 100%; justify-content: center; }
-button.danger:hover:not(:disabled) { color: var(--trouble); border-color: color-mix(in srgb, var(--trouble) 40%, var(--line)); }
+button.quiet:hover:not(:disabled) { background: var(--hover); color: var(--ink); border-color: transparent; }
 
-.bar {
-  display: flex;
-  gap: .5rem;
-  align-items: center;
-  flex-wrap: wrap;
-  margin: 0 0 1.2rem;
+button.small { padding: .3rem .68rem; font-size: .83rem; border-radius: 8px; }
+button.wide { width: 100%; }
+button.danger:hover:not(:disabled) {
+  color: var(--trouble);
+  border-color: color-mix(in srgb, var(--trouble) 45%, var(--line));
+}
+
+/* Two buttons that are one control. */
+.pair { display: inline-flex; }
+.pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pair > button:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+  padding-left: .5rem;
+  padding-right: .5rem;
 }
 
 input, textarea, select {
   font: inherit;
   color: var(--ink);
-  background: var(--card);
-  border: 1px solid var(--line);
+  background: var(--deep);
+  border: 1px solid var(--line-strong);
   border-radius: 9px;
-  padding: .45rem .7rem;
+  padding: .48rem .7rem;
   outline: none;
   min-width: 0;
 }
-input:focus, textarea:focus { border-color: color-mix(in srgb, var(--vibe-a) 45%, var(--line-strong)); }
-textarea { resize: vertical; }
-label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 0 .25rem; }
+input::placeholder, textarea::placeholder { color: var(--faint); }
+input:focus, textarea:focus { border-color: color-mix(in srgb, var(--vibe-b) 55%, var(--line-strong)); }
+textarea { resize: vertical; font-family: inherit; }
+select { cursor: pointer; }
 
-/* -------------------------------------------------------------- the saying */
+.bar { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; margin: 0 0 1.2rem; }
+
+.switch {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--deep);
+  position: relative;
+  padding: 0;
+  flex: none;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: transform 160ms cubic-bezier(.22, 1, .36, 1), background 160ms ease;
+}
+.switch.on {
+  border-color: transparent;
+  background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b));
+}
+.switch.on::after { transform: translateX(18px); background: #fff; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+
+.folderchip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .8rem;
+  color: var(--quiet);
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  border-radius: 999px;
+  padding: .24rem .7rem;
+  max-width: 100%;
+  overflow: hidden;
+}
+.folderchip:hover { border-style: solid; background: var(--hover); }
+.folderchip b { font-weight: 550; color: var(--ink); }
+
+/* ========================================================================= */
+/* Menus that hang off a control                                             */
+/* ========================================================================= */
+
+.drop { position: relative; flex: none; }
+
+.panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 60;
+  width: 19rem;
+  max-height: min(28rem, 70vh);
+  overflow-y: auto;
+  background: var(--raised);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+  padding: .65rem;
+  animation: pop 140ms cubic-bezier(.22, 1, .36, 1);
+}
+.panel[hidden] { display: none; }
+@keyframes pop { from { opacity: 0; transform: translateY(-4px); } }
+@media (prefers-reduced-motion: reduce) { .panel { animation: none; } }
+
+.panel .head {
+  font-size: .68rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--faint);
+  font-weight: 700;
+  margin: .25rem .25rem .45rem;
+}
+.panel .head + .head { margin-top: .85rem; }
+.panel hr { border: none; border-top: 1px solid var(--line); margin: .55rem 0; }
+
+.pick {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: .42rem .48rem;
+  font-size: .88rem;
+  color: var(--ink);
+}
+.pick:hover { background: var(--hover); border-color: transparent; }
+.pick.on { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); }
+.pick .grow { flex: 1; min-width: 0; }
+.pick .sub { font-size: .76rem; color: var(--faint); margin: 0; }
+
+.services { display: flex; gap: .35rem; flex-wrap: wrap; padding: 0 .2rem; }
+.service {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: .24rem .6rem .24rem .28rem;
+  font-size: .81rem;
+}
+.service:hover { background: var(--hover); border-color: var(--line-strong); }
+.service .badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  flex: none;
+  overflow: hidden;
+}
+.service .badge svg { display: block; }
+
+/* The account, at the end of the bar. */
+.who {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  align-self: center;
+  max-width: 15rem;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 9px;
+  padding: .3rem .55rem;
+  font-size: .82rem;
+}
+.who:hover { background: var(--hover); border-color: var(--line); }
+.who .grow { min-width: 0; flex: 1; }
+.who .name {
+  display: block;
+  font-weight: 570;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+.who .what {
+  display: block;
+  color: var(--faint);
+  font-size: .71rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 62rem) { .who .grow { display: none; } }
+
+/* ========================================================================= */
+/* The saying                                                                */
+/* ========================================================================= */
 
 .said {
-  margin: 0 0 1.2rem;
-  padding: .8rem 1rem;
+  margin: 0 0 1.3rem;
+  padding: .85rem 1.05rem;
   border-radius: 10px;
   background: var(--card);
   border: 1px solid var(--line);
   border-left: 3px solid var(--quiet);
   box-shadow: var(--shadow);
+  animation: pop 180ms cubic-bezier(.22, 1, .36, 1);
 }
 .said.good { border-left-color: var(--live); }
 .said.bad { border-left-color: var(--attention); }
-.said b { font-weight: 550; display: block; }
-.said span { color: var(--quiet); font-size: .89rem; }
+.said b { font-weight: 570; display: block; line-height: 1.45; }
+.said span { color: var(--quiet); font-size: .88rem; display: block; margin-top: .15rem; line-height: 1.45; }
+@media (prefers-reduced-motion: reduce) { .said { animation: none; } }
 
-.empty {
-  color: var(--quiet);
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--radius);
-  padding: 1.6rem;
-  text-align: center;
-}
-.empty b { display: block; font-weight: 550; color: var(--ink); margin-bottom: .25rem; }
+/* ========================================================================= */
+/* Overlays                                                                  */
+/* ========================================================================= */
 
-/* ------------------------------------------------------------------ layers */
+#layer { position: relative; z-index: 100; }
 
 .veil {
   position: fixed;
   inset: 0;
-  z-index: 50;
-  background: color-mix(in srgb, var(--page) 55%, rgba(0, 0, 0, .55));
-  backdrop-filter: blur(3px);
+  z-index: 100;
+  background: color-mix(in srgb, var(--deep) 62%, rgba(0, 0, 0, .6));
+  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   padding: 2rem;
-  animation: veilIn 140ms ease;
+  animation: fadein 140ms ease;
 }
-@keyframes veilIn { from { opacity: 0; } }
+@keyframes fadein { from { opacity: 0; } }
 
 .sheet {
   background: var(--raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 14px;
   box-shadow: var(--shadow-lift);
-  width: min(44rem, 100%);
-  max-height: 82vh;
+  width: min(46rem, 100%);
+  max-height: 84vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: sheetIn 180ms cubic-bezier(.22, 1, .36, 1);
+  animation: rise 200ms cubic-bezier(.22, 1, .36, 1);
 }
-@keyframes sheetIn { from { opacity: 0; transform: translateY(8px) scale(.99); } }
-.sheet.narrow { width: min(30rem, 100%); }
+.sheet.narrow { width: min(31rem, 100%); }
+@keyframes rise { from { opacity: 0; transform: translateY(10px) scale(.99); } }
+@media (prefers-reduced-motion: reduce) {
+  .veil, .sheet { animation: none; }
+}
 
 .sheet header {
   padding: 1rem 1.2rem;
@@ -556,10 +864,13 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
   display: flex;
   align-items: center;
   gap: .6rem;
+  flex: none;
 }
-.sheet header b { font-weight: 600; letter-spacing: -.01em; }
+.sheet header b { font-weight: 640; font-size: 1.02rem; letter-spacing: -.015em; }
 .sheet header .x { margin-left: auto; }
-.sheet .body { padding: 1.1rem 1.2rem; overflow-y: auto; }
+.sheet .body { padding: 1.15rem 1.25rem 1.35rem; overflow-y: auto; }
+.sheet .body > h2:first-child { margin-top: 0; }
+.sheet .body .sub { margin-bottom: 1rem; }
 .sheet footer {
   padding: .85rem 1.2rem;
   border-top: 1px solid var(--line);
@@ -567,15 +878,38 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
   gap: .5rem;
   justify-content: flex-end;
   align-items: center;
+  flex: none;
 }
-.sheet footer .left { margin-right: auto; color: var(--quiet); font-size: .84rem; }
+.sheet footer .left { margin-right: auto; color: var(--quiet); font-size: .83rem; }
 
+.menu { display: flex; flex-direction: column; gap: .35rem; }
+.menu .opt {
+  display: flex;
+  gap: .75rem;
+  align-items: center;
+  text-align: left;
+  padding: .7rem .85rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  width: 100%;
+}
+.menu .opt:hover:not(:disabled) { background: var(--hover); border-color: var(--line-strong); }
+.menu .opt.on {
+  border-color: color-mix(in srgb, var(--vibe-a) 50%, var(--line));
+  background: color-mix(in srgb, var(--vibe-a) 8%, var(--card));
+}
+.menu .opt .glyph { width: 1.6rem; flex: none; text-align: center; font-size: 1rem; opacity: .85; }
+.menu .opt .what { font-weight: 570; }
+.menu .opt .why { font-size: .84rem; color: var(--quiet); font-weight: 400; display: block; margin-top: .1rem; line-height: 1.45; }
+
+/* Walking down to a folder. */
 .walk { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
 .walk .here {
   padding: .5rem .75rem;
-  background: var(--page);
+  background: var(--deep);
   border-bottom: 1px solid var(--line);
-  font-size: .82rem;
+  font: .78rem/1.4 ui-monospace, "Cascadia Mono", Consolas, monospace;
   color: var(--quiet);
   display: flex;
   align-items: center;
@@ -593,43 +927,16 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
 }
 .walk .item:hover { background: var(--hover); }
 .walk .item:last-child { border-bottom: 0; }
+.walk .item .grow { flex: 1; min-width: 0; }
 .walk .item .leaf { color: var(--faint); }
 
-/* --------------------------------------------------------------- more menu */
-
-.menu {
-  display: flex;
-  flex-direction: column;
-  gap: .3rem;
-}
-.menu .opt {
-  display: flex;
-  gap: .75rem;
-  align-items: flex-start;
-  text-align: left;
-  padding: .7rem .8rem;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  cursor: pointer;
-  width: 100%;
-}
-.menu .opt:hover:not(:disabled) { background: var(--hover); border-color: var(--line-strong); }
-.menu .opt .what { font-weight: 550; }
-.menu .opt .why { font-size: .84rem; color: var(--quiet); font-weight: 400; }
-.menu .opt .glyph {
-  width: 1.6rem;
-  flex: none;
-  text-align: center;
-  font-size: 1rem;
-  opacity: .85;
-}
-
-/* -------------------------------------------------------------------- logs */
+/* ========================================================================= */
+/* Long errands                                                              */
+/* ========================================================================= */
 
 .log {
-  font: 12px/1.5 ui-monospace, "Cascadia Mono", Consolas, monospace;
-  background: color-mix(in srgb, var(--ink) 5%, var(--page));
+  font: 12px/1.55 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: var(--deep);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: .7rem .85rem;
@@ -647,487 +954,173 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--vibe-a) 30%, transparent);
-  border-top-color: var(--vibe-a);
+  border: 2px solid color-mix(in srgb, var(--vibe-b) 28%, transparent);
+  border-top-color: var(--vibe-b);
   animation: turn 700ms linear infinite;
   flex: none;
 }
 @keyframes turn { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2s; } }
+@media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
 
-/* --------------------------------------------------------------- the chat */
+/* ========================================================================= */
+/* Contents                                                                  */
+/* ========================================================================= */
 
-.talk {
-  display: flex;
-  flex-direction: column;
-  gap: .5rem;
-  max-height: 24rem;
-  overflow-y: auto;
-  padding: .3rem;
-}
-.talk .bubble {
-  max-width: 78%;
-  padding: .5rem .75rem;
-  border-radius: 12px;
-  background: var(--card);
-  border: 1px solid var(--line);
-  font-size: .9rem;
-}
-.talk .bubble .who { font-size: .74rem; color: var(--faint); margin-bottom: .1rem; }
-.talk .mine {
-  align-self: flex-end;
-  background: linear-gradient(120deg, color-mix(in srgb, var(--vibe-a) 16%, var(--card)), var(--card));
-  border-color: color-mix(in srgb, var(--vibe-a) 28%, var(--line));
-}
-
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
-@media (max-width: 60rem) {
-  .split { grid-template-columns: 1fr; }
-  #frame { grid-template-columns: 64px 1fr; }
-  nav button.tab span.label, nav .foot, .brand span { display: none; }
-  nav button.tab .key { display: none; }
-  main { padding: 1.6rem 1.1rem 4rem; }
-}
-
-/* ------------------------------------------------- opening the same app card */
-
-/*
- * An app card is one row of controls, in the order you use them: open it, or
- * open it in a terminal, or decide which account first. The account belongs
- * here, beside the button, rather than on a page of its own — you choose which
- * account at the moment you are about to open something, not an hour earlier.
- */
-.doing {
-  display: flex;
-  gap: .4rem;
-  align-items: center;
-  flex-wrap: wrap;
-  margin-top: .55rem;
-}
-
-.pair { display: flex; }
-.pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.pair > button:last-child {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  margin-left: -1px;
-  padding-left: .5rem;
-  padding-right: .5rem;
-}
-.pair > button.go:last-child { border-left: 1px solid rgba(255, 255, 255, .25); }
-
-.drop { position: relative; }
-.panel {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 6px);
-  z-index: 30;
-  width: 19rem;
-  background: var(--raised);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  box-shadow: var(--shadow-lift);
-  padding: .7rem;
-  animation: sheetIn 140ms cubic-bezier(.22, 1, .36, 1);
-}
-.panel[hidden] { display: none; }
-.panel .head {
-  font-size: .7rem;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: var(--faint);
-  margin: .2rem .2rem .45rem;
-}
-.panel .head + .head { margin-top: .8rem; }
-.panel .pick {
-  display: flex;
-  gap: .55rem;
-  align-items: center;
-  width: 100%;
-  text-align: left;
-  border: 1px solid transparent;
-  background: transparent;
-  border-radius: 8px;
-  padding: .4rem .45rem;
-  font-size: .88rem;
-}
-.panel .pick:hover { background: var(--hover); }
-.panel .pick.on { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); }
-.panel .pick .sub { font-size: .76rem; color: var(--faint); }
-.panel hr { border: none; border-top: 1px solid var(--line); margin: .55rem 0; }
-
-/* The badge standing in for a service. No pictures are fetched from anywhere. */
-.services { display: flex; gap: .4rem; flex-wrap: wrap; padding: 0 .2rem; }
-.service {
-  display: flex;
-  align-items: center;
-  gap: .4rem;
-  border: 1px solid var(--line);
-  background: var(--card);
-  border-radius: 999px;
-  padding: .25rem .6rem .25rem .28rem;
-  font-size: .82rem;
-}
-.service:hover { background: var(--hover); border-color: var(--line-strong); }
-.service .badge {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+.facts {
   display: grid;
-  place-items: center;
-  color: #fff;
-  font-size: .7rem;
-  font-weight: 700;
-  flex: none;
-}
-
-.folderchip {
-  display: inline-flex;
-  align-items: center;
-  gap: .35rem;
-  font-size: .78rem;
-  color: var(--quiet);
-  border: 1px dashed var(--line-strong);
-  background: transparent;
-  border-radius: 999px;
-  padding: .2rem .6rem;
-  max-width: 100%;
-}
-.folderchip:hover { border-style: solid; background: var(--hover); }
-.folderchip b { font-weight: 500; color: var(--ink); }
-
-/* ------------------------------------------------- the account, bottom left */
-
-.who {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  width: 100%;
-  text-align: left;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 1px;
   border: 1px solid var(--line);
-  background: var(--card);
   border-radius: 10px;
-  padding: .5rem .55rem;
-  font-size: .82rem;
-}
-.who:hover { background: var(--hover); border-color: var(--line-strong); }
-.who .grow { min-width: 0; flex: 1; }
-.who .name {
-  font-weight: 550;
-  color: var(--ink);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  background: var(--line);
+  margin-bottom: 1.3rem;
 }
-.who .what { color: var(--faint); font-size: .74rem; }
-/*
- * The corner menu opens upward and is allowed to be wider than the column it
- * comes out of — it lays over the page rather than being squeezed into 232px.
- * It also has a ceiling of its own, so a person with eight accounts gets a
- * menu that scrolls rather than one that runs off the top of the screen.
- *
- * Note the selector. The panel is the button's *sibling*, not its child, so
- * `.who .panel` matches nothing at all — which is why this menu spent a while
- * quietly using the ordinary drop-down rule instead: below the button and
- * right-aligned inside a 232px column, so it ran off two edges of the screen
- * at once.
- */
-.corner .panel {
-  right: auto;
-  left: 0;
-  bottom: calc(100% + 6px);
-  top: auto;
-  width: max(17rem, 100%);
-  max-height: min(26rem, 70vh);
-  overflow-y: auto;
-}
+.facts .one { background: var(--card); padding: .8rem .9rem; }
+.facts .one b { display: block; font-size: 1.2rem; font-weight: 640; letter-spacing: -.022em; line-height: 1.25; }
+.facts .one span { font-size: .74rem; color: var(--faint); }
 
-/* --------------------------------------------------------------- settings */
+.bars { display: flex; flex-direction: column; gap: .45rem; }
+.bars .bar1 { display: flex; align-items: center; gap: .6rem; font-size: .86rem; }
+.bars .bar1 .track { flex: 1; height: 6px; border-radius: 3px; background: var(--deep); overflow: hidden; }
+.bars .bar1 .fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--vibe-a), var(--vibe-b)); }
+.bars .bar1 .n { color: var(--faint); font-size: .78rem; min-width: 2.5rem; text-align: right; }
+
+.needs { display: flex; flex-direction: column; gap: .3rem; }
+.needs .need { display: flex; gap: .6rem; align-items: baseline; font-size: .87rem; padding: .38rem .1rem; }
+.needs .need .tick { color: var(--live); }
+.needs .need .cross { color: var(--faint); }
+.needs .need span { color: var(--quiet); }
+
+/* ========================================================================= */
+/* Settings                                                                  */
+/* ========================================================================= */
 
 .setting {
   display: flex;
   gap: 1rem;
-  align-items: flex-start;
+  align-items: center;
   padding: .95rem 0;
   border-bottom: 1px solid var(--line);
 }
 .setting:last-child { border-bottom: 0; }
 .setting .about { flex: 1; min-width: 0; }
-.setting .about b { font-weight: 550; display: block; }
-.setting .about span { color: var(--quiet); font-size: .86rem; }
+.setting .about b { font-weight: 570; display: block; }
+.setting .about span { color: var(--quiet); font-size: .86rem; line-height: 1.5; }
 .setting .set { flex: none; display: flex; gap: .4rem; align-items: center; }
 
-.switch {
-  width: 42px;
-  height: 24px;
-  border-radius: 999px;
-  border: 1px solid var(--line-strong);
-  background: var(--page);
-  position: relative;
-  padding: 0;
-  flex: none;
-}
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--faint);
-  transition: transform 140ms ease, background 140ms ease;
-}
-.switch.on { border-color: transparent; background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b)); }
-.switch.on::after { transform: translateX(18px); background: #fff; }
-@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+/* ========================================================================= */
+/* Notes between computers                                                   */
+/* ========================================================================= */
 
-/* ---------------------------------------------------------- a stack of them */
-
-/*
- * Projects are a stack, not a grid. Most recent on top, one per line, each with
- * room for the four things worth knowing at a glance — what state it is in,
- * when you last stopped, what you were doing, and where it is. A grid looked
- * tidier and told you less.
- */
-.stack { display: flex; flex-direction: column; gap: .5rem; }
-
-.slab {
+.talk {
   display: flex;
-  gap: .9rem;
-  align-items: flex-start;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: .9rem 1rem;
-  box-shadow: var(--shadow);
-  cursor: pointer;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
-}
-.slab:hover {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-lift);
-  transform: translateY(-1px);
-}
-.slab > .dot { margin-top: .45rem; }
-.slab .grow { flex: 1; min-width: 0; }
-
-.slab .line1 {
-  display: flex;
-  align-items: baseline;
-  gap: .5rem;
-  flex-wrap: wrap;
-  margin-bottom: .15rem;
-}
-.slab .line1 b { font-weight: 600; letter-spacing: -.012em; font-size: 1.02rem; }
-
-.slab .fact { font-size: .88rem; color: var(--quiet); }
-.slab .fact em { font-style: normal; color: var(--ink); }
-.slab .did {
-  font-size: .85rem;
-  color: var(--faint);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin-top: .1rem;
-}
-.slab .path {
-  font-size: .76rem;
-  color: var(--faint);
-  margin-top: .3rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.slab .acts {
-  display: flex;
-  gap: .35rem;
-  align-items: center;
-  flex: none;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  max-width: 20rem;
-}
-@media (max-width: 60rem) {
-  .slab { flex-wrap: wrap; }
-  .slab .acts { max-width: none; width: 100%; justify-content: flex-start; margin-top: .5rem; }
-}
-
-/* --------------------------------------------------- the workspace, tidied */
-
-.tally {
-  display: flex;
-  gap: 1.6rem;
-  flex-wrap: wrap;
-  padding: .9rem 1.1rem;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--card);
-  box-shadow: var(--shadow);
-  margin-bottom: 1.4rem;
-}
-.tally .one b { display: block; font-size: 1.5rem; font-weight: 600; letter-spacing: -.03em; line-height: 1.1; }
-.tally .one span { font-size: .8rem; color: var(--quiet); }
-.tally .one.warn b { color: var(--attention); }
-.tally .grow { flex: 1; }
-
-.lane { display: flex; flex-direction: column; gap: .5rem; }
-.lane .empty { padding: 1.1rem; }
-
-/* =========================================================================
- * Polish
- *
- * Nothing below changes what anything does. It is the pass over spacing,
- * weight and edges that decides whether a thing feels made or assembled —
- * which, for a product whose whole bet is feel, is not decoration.
- * ========================================================================= */
-
-/* --------------------------------------------------------- the corner */
-
-nav .corner {
-  flex: none;
-  border-top: 1px solid var(--line);
-  padding-top: .7rem;
-  margin-top: .5rem;
-}
-
-nav .corner .thisone {
-  display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: .45rem;
-  padding: .55rem .5rem .1rem;
-  font-size: .74rem;
-  color: var(--faint);
+  max-height: 24rem;
+  overflow-y: auto;
+  padding: .25rem .1rem;
 }
-nav .corner .thisone span:last-child {
+.talk .bubble {
+  max-width: 78%;
+  padding: .5rem .8rem;
+  border-radius: 12px;
+  background: var(--deep);
+  border: 1px solid var(--line);
+  font-size: .9rem;
+  line-height: 1.5;
+}
+.talk .mine {
+  align-self: flex-end;
+  background: linear-gradient(120deg, color-mix(in srgb, var(--vibe-a) 20%, var(--card)), var(--card));
+  border-color: color-mix(in srgb, var(--vibe-a) 32%, var(--line));
+}
+
+/* ========================================================================= */
+/* The opening                                                               */
+/* ========================================================================= */
+
+#opening {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: grid;
+  place-items: center;
+  background: var(--page);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-
-.who .what { display: block; }
-
-/* ------------------------------------------------------------ scrollbars */
-
-/*
- * A scrollbar is furniture. It should be there when you need it and invisible
- * when you do not, rather than a grey slab down the side of every panel.
- */
-* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
-::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb {
-  background: var(--line-strong);
-  border-radius: 999px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover { background: var(--quiet); background-clip: content-box; }
-
-/* ------------------------------------------------------------- rhythm */
-
-main { padding: 2.4rem 2.4rem 6rem; }
-.hold { max-width: 64rem; }
-
-h1 { font-size: 1.55rem; line-height: 1.2; }
-.sub { max-width: 46rem; line-height: 1.6; }
-h2 { margin: 2.2rem 0 .8rem; }
-
-/* Long paths and long names never widen a card past the page. */
-.slab, .tile, .row, .card { min-width: 0; overflow-wrap: anywhere; }
-.slab .line1 b, .tile .title { overflow-wrap: anywhere; }
-
-/* ------------------------------------------------------------- controls */
-
-button.small { padding: .3rem .65rem; font-size: .84rem; border-radius: 8px; }
-button.go { box-shadow: 0 1px 2px color-mix(in srgb, var(--vibe-a) 30%, transparent); }
-button.go:active:not(:disabled) { box-shadow: none; }
-
-/* A row of actions on a card should read as one group, not five loose items. */
-.acts button, .doing button { white-space: nowrap; }
-
-.chip { line-height: 1.5; }
-.chip.live { background: color-mix(in srgb, var(--live) 10%, var(--page)); }
-.chip.attention { background: color-mix(in srgb, var(--attention) 10%, var(--page)); }
-.chip.cool { background: color-mix(in srgb, var(--cool) 10%, var(--page)); }
-
-/* The dot carries meaning, so it gets a little more presence. */
-.dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--faint) 14%, transparent); }
-
-/* ------------------------------------------------------------- the sheet */
-
-.sheet header b { font-size: 1.02rem; }
-.sheet .body { padding: 1.15rem 1.25rem 1.35rem; }
-.sheet .body > h2:first-child { margin-top: 0; }
-.sheet .body .sub { margin-bottom: 1rem; }
-
-.menu .opt { align-items: center; }
-.menu .opt .why { line-height: 1.45; display: block; margin-top: .1rem; }
-
-/* ------------------------------------------------------------ the tiles */
-
-.grid { grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: .7rem; }
-.tile { padding: 1rem 1.05rem; gap: .3rem; }
-.tile .title { font-size: 1rem; font-weight: 600; letter-spacing: -.012em; }
-.tile .note { line-height: 1.45; }
-.tile.away .doing { margin-top: .65rem; }
-
-/* --------------------------------------------------------- empty states */
-
-.empty {
-  padding: 2rem 1.6rem;
-  line-height: 1.6;
-  background: color-mix(in srgb, var(--card) 45%, transparent);
-}
-.empty b { font-size: 1rem; margin-bottom: .35rem; }
-
-/* --------------------------------------------------------------- saying */
-
-.said { padding: .85rem 1.05rem; border-left-width: 3px; }
-.said b { line-height: 1.45; }
-.said span { display: block; margin-top: .15rem; line-height: 1.45; }
-
-/* ----------------------------------------------------------------- talk */
-
-.talk { padding: .2rem .1rem; gap: .45rem; }
-.talk .bubble { line-height: 1.5; padding: .5rem .8rem; }
-
-/* --------------------------------------------------------------- narrow */
-
-@media (max-width: 68rem) {
-  main { padding: 2rem 1.5rem 5rem; }
-}
-@media (max-width: 60rem) {
-  nav .corner .thisone { display: none; }
-  .who .grow { display: none; }
-  .who { justify-content: center; }
-  .corner .panel { width: 17rem; }
-}
-
-/* =========================================================================
- * The way in
- * ========================================================================= */
-
-/*
- * The opening, second pass. Less light, more intent: the glow settles rather
- * than blooms, the letters arrive on one gentle curve instead of eight, and the
- * whole thing is over in a second and a half. A launch animation is a handshake,
- * not a performance — the test is whether you would still like it on the
- * fortieth morning.
- */
 #opening .glow {
+  position: absolute;
   width: 720px;
   height: 720px;
+  border-radius: 50%;
   filter: blur(110px);
+  opacity: 0;
+  background:
+    radial-gradient(circle at 35% 40%, color-mix(in srgb, var(--vibe-a) 60%, transparent), transparent 60%),
+    radial-gradient(circle at 65% 60%, color-mix(in srgb, var(--vibe-b) 50%, transparent), transparent 60%),
+    radial-gradient(circle at 50% 75%, color-mix(in srgb, var(--vibe-c) 35%, transparent), transparent 60%);
   animation: settle 1900ms cubic-bezier(.16, 1, .3, 1) forwards;
 }
 @keyframes settle {
   0% { opacity: 0; transform: scale(.82); }
-  45% { opacity: .38; transform: scale(1.02); }
-  100% { opacity: .16; transform: scale(1); }
+  45% { opacity: .42; transform: scale(1.02); }
+  100% { opacity: .18; transform: scale(1); }
+}
+#opening .mark { position: relative; text-align: center; }
+#opening .word {
+  display: flex;
+  gap: .02em;
+  font-size: clamp(2.6rem, 9vw, 5rem);
+  font-weight: 680;
+  letter-spacing: -.038em;
+  line-height: 1;
+}
+#opening .word span {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(.4em) scale(.95);
+  filter: blur(9px);
+  background: linear-gradient(115deg, var(--vibe-a), var(--vibe-b) 55%, var(--vibe-c));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: rise-letter 760ms cubic-bezier(.19, 1, .22, 1) forwards;
+}
+@keyframes rise-letter { to { opacity: 1; transform: none; filter: blur(0); } }
+#opening .rule {
+  height: 2px;
+  margin: 1.1rem auto 0;
+  width: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--vibe-a), var(--vibe-b), transparent);
+  animation: sweep 1200ms cubic-bezier(.65, 0, .35, 1) 420ms forwards;
+}
+@keyframes sweep {
+  40% { width: min(420px, 70vw); opacity: 1; }
+  to { width: min(420px, 70vw); opacity: .55; }
+}
+#opening .line {
+  margin-top: .9rem;
+  color: var(--quiet);
+  font-size: .9rem;
+  opacity: 0;
+  animation: fadein 700ms ease 900ms forwards;
+}
+#opening.going { animation: leave 420ms ease forwards; }
+@keyframes leave { to { opacity: 0; visibility: hidden; } }
+
+@media (prefers-reduced-motion: reduce) {
+  #opening .glow { animation: none; opacity: .2; }
+  #opening .word span { animation: none; opacity: 1; transform: none; filter: none; }
+  #opening .rule { animation: none; width: min(420px, 70vw); }
+  #opening .line { animation: none; opacity: 1; }
+  #opening.going { animation: none; opacity: 0; visibility: hidden; }
 }
 
-#opening .word span { animation-duration: 760ms; }
+/* ========================================================================= */
+/* The way in                                                                */
+/* ========================================================================= */
 
 #gate {
   position: fixed;
@@ -1142,26 +1135,25 @@ button.go:active:not(:disabled) { box-shadow: none; }
 #gate[hidden] { display: none; }
 
 .welcome {
-  width: min(30rem, 100%);
+  width: min(31rem, 100%);
   text-align: center;
-  animation: welcomeIn 420ms cubic-bezier(.22, 1, .36, 1);
+  animation: rise 420ms cubic-bezier(.22, 1, .36, 1);
 }
-@keyframes welcomeIn { from { opacity: 0; transform: translateY(10px); } }
 @media (prefers-reduced-motion: reduce) { .welcome { animation: none; } }
 
 .welcome .bead {
-  width: 42px;
-  height: 42px;
-  border-radius: 13px;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
   margin: 0 auto 1.4rem;
   background: linear-gradient(135deg, var(--vibe-a), var(--vibe-b));
-  box-shadow: 0 0 0 8px color-mix(in srgb, var(--vibe-a) 8%, transparent);
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--vibe-a) 9%, transparent),
+              0 0 40px -6px var(--glow);
 }
-.welcome h1 { font-size: 1.7rem; margin-bottom: .5rem; }
+.welcome h1 { font-size: 1.75rem; margin-bottom: .5rem; }
 .welcome p { color: var(--quiet); line-height: 1.6; margin: 0 0 1.6rem; }
-.welcome .ways { display: flex; flex-direction: column; gap: .55rem; text-align: left; }
+.welcome .ways { display: flex; flex-direction: column; gap: .6rem; text-align: left; }
 .welcome .later { margin-top: 1.5rem; }
-.welcome .later button { color: var(--quiet); }
 
 .wayin {
   display: flex;
@@ -1170,331 +1162,81 @@ button.go:active:not(:disabled) { box-shadow: none; }
   width: 100%;
   padding: .85rem 1rem;
   border-radius: 11px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--card);
   text-align: left;
 }
-.wayin:hover:not(:disabled) { border-color: var(--line-strong); background: var(--hover); }
-.wayin .badge {
-  width: 30px;
-  height: 30px;
+.wayin:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--vibe-a) 40%, var(--line-strong));
+  background: var(--hover);
+}
+.wayin .mark {
+  width: 32px;
+  height: 32px;
   border-radius: 9px;
   display: grid;
   place-items: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: .85rem;
   flex: none;
-}
-.wayin b { font-weight: 550; display: block; }
-.wayin span { font-size: .84rem; color: var(--quiet); line-height: 1.45; }
-.wayin.off { opacity: .6; cursor: default; }
-
-/* =========================================================================
- * Status, done properly
- *
- * The coloured dot was doing four jobs at once and explaining none of them.
- * A state now reads as a word with a mark beside it, in a shape that says
- * "this is a state" rather than "this is a decoration".
- * ========================================================================= */
-
-.state {
-  display: inline-flex;
-  align-items: center;
-  gap: .4rem;
-  font-size: .76rem;
-  font-weight: 550;
-  letter-spacing: -.005em;
-  padding: .2rem .55rem .2rem .45rem;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-  background: var(--page);
-  color: var(--quiet);
-  white-space: nowrap;
-}
-.state .pip {
-  width: 6px;
-  height: 6px;
-  border-radius: 2px;
-  background: currentColor;
-  flex: none;
-}
-.state.notStarted { color: var(--faint); }
-.state.working {
-  color: var(--cool);
-  border-color: color-mix(in srgb, var(--cool) 30%, var(--line));
-  background: color-mix(in srgb, var(--cool) 8%, var(--page));
-}
-.state.finished {
-  color: var(--live);
-  border-color: color-mix(in srgb, var(--live) 30%, var(--line));
-  background: color-mix(in srgb, var(--live) 8%, var(--page));
-}
-.state.published {
-  color: #fff;
-  border-color: transparent;
-  background: linear-gradient(120deg, var(--vibe-a), color-mix(in srgb, var(--vibe-b) 65%, var(--vibe-a)));
-}
-.state.published .pip { background: rgba(255, 255, 255, .9); }
-
-/* The one on the left of a slab: a bar, not a dot. It reads as a spine. */
-.spine {
-  width: 3px;
-  align-self: stretch;
-  border-radius: 3px;
-  background: var(--line-strong);
-  flex: none;
-}
-.spine.unsaved { background: var(--attention); }
-.spine.clean { background: color-mix(in srgb, var(--live) 55%, var(--line-strong)); }
-.spine.published { background: linear-gradient(var(--vibe-a), var(--vibe-b)); }
-
-/* =========================================================================
- * Contents
- * ========================================================================= */
-
-.facts {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
-  gap: .1rem;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  background: var(--line);
-  margin-bottom: 1.2rem;
-}
-.facts .one { background: var(--card); padding: .75rem .85rem; }
-.facts .one b {
-  display: block;
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: -.02em;
-  line-height: 1.25;
-}
-.facts .one span { font-size: .74rem; color: var(--faint); }
-
-.bars { display: flex; flex-direction: column; gap: .4rem; }
-.bars .bar1 { display: flex; align-items: center; gap: .6rem; font-size: .86rem; }
-.bars .bar1 .track {
-  flex: 1;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--hover);
-  overflow: hidden;
-}
-.bars .bar1 .fill { height: 100%; border-radius: 3px; background: var(--quiet); }
-.bars .bar1 .n { color: var(--faint); font-size: .78rem; min-width: 2.5rem; text-align: right; }
-
-.needs { display: flex; flex-direction: column; gap: .35rem; }
-.needs .need {
-  display: flex;
-  gap: .6rem;
-  align-items: baseline;
-  font-size: .87rem;
-  padding: .4rem .1rem;
-}
-.needs .need .tick { color: var(--live); }
-.needs .need .cross { color: var(--faint); }
-.needs .need span { color: var(--quiet); }
-
-/* =========================================================================
- * Themes
- *
- * One set of names, six sets of values. Everything in this file already draws
- * from the names, so a theme is a palette and nothing else — no theme may
- * change a layout, hide a control, or alter a sentence.
- * ========================================================================= */
-
-:root[data-theme="steam"] {
-  --page: #1b2838; --card: #16202d; --raised: #1f2b3a; --line: #2a3f5a;
-  --line-strong: #3a5a7a; --hover: #223449;
-  --ink: #c7d5e0; --quiet: #8f98a0; --faint: #6a7480;
-  --live: #a4d007; --attention: #e5a33f; --trouble: #e8735f; --cool: #66c0f4;
-  --vibe-a: #1a9fff; --vibe-b: #66c0f4; --vibe-c: #417a9b;
-  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 30px -14px rgba(0,0,0,.8);
-  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 24px 60px -20px rgba(0,0,0,.9);
-}
-
-:root[data-theme="neon"] {
-  --page: #0a0a12; --card: #12121f; --raised: #171728; --line: #262646;
-  --line-strong: #3a3a66; --hover: #1c1c30;
-  --ink: #e8e6ff; --quiet: #9d99c7; --faint: #6b6790;
-  --live: #39ff88; --attention: #ffcc33; --trouble: #ff5c8a; --cool: #4dd6ff;
-  --vibe-a: #b14dff; --vibe-b: #00e5ff; --vibe-c: #ff2d95;
-  --shadow: 0 1px 2px rgba(0,0,0,.6), 0 0 24px -8px rgba(177,77,255,.35);
-  --shadow-lift: 0 2px 6px rgba(0,0,0,.7), 0 0 48px -12px rgba(0,229,255,.4);
-}
-
-:root[data-theme="fire"] {
-  --page: #140d0a; --card: #1d1310; --raised: #241814; --line: #3a231c;
-  --line-strong: #55332a; --hover: #2a1b16;
-  --ink: #f5e6df; --quiet: #b79287; --faint: #856660;
-  --live: #6fcf6f; --attention: #ffb03a; --trouble: #ff5a3c; --cool: #ffa06b;
-  --vibe-a: #ff6b2c; --vibe-b: #ffb800; --vibe-c: #ff2d55;
-  --shadow: 0 1px 2px rgba(0,0,0,.55), 0 10px 30px -14px rgba(120,30,0,.7);
-  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 0 44px -14px rgba(255,107,44,.45);
-}
-
-:root[data-theme="crimson"] {
-  --page: #120a0d; --card: #1b1013; --raised: #221419; --line: #3b1f27;
-  --line-strong: #5a2d38; --hover: #281820;
-  --ink: #f3e2e6; --quiet: #bd8e99; --faint: #8a6570;
-  --live: #7ad19a; --attention: #f0a94b; --trouble: #ff6b6b; --cool: #ff8fa3;
-  --vibe-a: #e01b4c; --vibe-b: #ff5f7e; --vibe-c: #8b1233;
-  --shadow: 0 1px 2px rgba(0,0,0,.55), 0 10px 30px -14px rgba(120,0,30,.7);
-  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 0 44px -14px rgba(224,27,76,.4);
-}
-
-/* =========================================================================
- * The background that follows you
- *
- * A single soft light behind everything, tracking the pointer. It is the one
- * thing in the product that moves without being pressed, and it is deliberately
- * the quietest thing on screen: no edges, no speed, nothing that resolves into
- * a shape. It follows at a distance so it reads as depth rather than as a
- * cursor. Reduced motion turns it off entirely.
- * ========================================================================= */
-
-#sheen {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 900ms ease;
-  background:
-    radial-gradient(
-      42rem 42rem at var(--px, 50%) var(--py, 40%),
-      color-mix(in srgb, var(--vibe-a) 13%, transparent),
-      transparent 62%),
-    radial-gradient(
-      26rem 26rem at calc(var(--px, 50%) + 10rem) calc(var(--py, 40%) + 6rem),
-      color-mix(in srgb, var(--vibe-b) 9%, transparent),
-      transparent 60%);
-}
-#sheen.up { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { #sheen { display: none; } }
-
-#frame, #gate, #layer { position: relative; z-index: 1; }
-
-/* =========================================================================
- * The bar across the top
- *
- * Navigation moves out of the side and onto a bar, with the mark at the far
- * left — the arrangement Steam uses, and most things you launch rather than
- * visit. It gives the content the full width, which the project stack wanted.
- * ========================================================================= */
-
-#frame.topbar { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
-
-.topnav {
-  display: flex;
-  align-items: center;
-  gap: .35rem;
-  padding: 0 1.1rem;
-  height: 54px;
-  border-bottom: 1px solid var(--line);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--raised) 92%, var(--vibe-c) 8%),
-    color-mix(in srgb, var(--card) 96%, transparent));
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 60%, transparent);
-  position: relative;
-  z-index: 20;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: .55rem;
-  margin-right: 1.4rem;
-  font-weight: 700;
-  font-size: 1.02rem;
-  letter-spacing: -.02em;
-}
-.logo svg { display: block; }
-.logo .word {
-  background: linear-gradient(100deg, var(--vibe-a), var(--vibe-b));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.topnav .tab {
-  font: inherit;
-  font-size: .82rem;
-  font-weight: 600;
-  letter-spacing: .045em;
-  text-transform: uppercase;
-  color: var(--quiet);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  padding: .5rem .8rem;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-}
-.topnav .tab:hover { color: var(--ink); background: transparent; }
-.topnav .tab.on { color: var(--cool); border-bottom-color: var(--cool); background: transparent; }
-.topnav .spacer { flex: 1; }
-
-.topnav .who {
-  width: auto;
-  max-width: 15rem;
-  padding: .35rem .6rem;
-  border-radius: 8px;
-}
-.topnav .drop .panel { right: 0; left: auto; top: calc(100% + 8px); bottom: auto; width: 17rem; }
-
-.topnav .icon {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--quiet);
-  padding: .4rem .55rem;
-  font-size: 1rem;
-}
-.topnav .icon:hover { color: var(--ink); background: var(--hover); border-color: var(--line); }
-.topnav .icon.on { color: var(--cool); }
-
-@media (max-width: 60rem) {
-  .topnav { overflow-x: auto; }
-  .topnav .tab { padding: .5rem .55rem; font-size: .74rem; }
-  .logo .word { display: none; }
-}
-
-/* The account panel inside a card must never be clipped by the card. */
-.tile, .slab { overflow: visible; }
-.grid, .lane, .stack { overflow: visible; }
-
-/* =========================================================================
- * Sign in
- * ========================================================================= */
-
-.wayin .mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  display: grid;
-  place-items: center;
-  flex: none;
-  background: var(--page);
+  background: var(--deep);
   border: 1px solid var(--line);
 }
 .wayin .mark svg { display: block; }
-.welcome .ways { gap: .6rem; }
-.wayin b { font-size: .95rem; margin-bottom: .1rem; }
+.wayin b { font-weight: 570; display: block; font-size: .95rem; margin-bottom: .1rem; }
+.wayin span { font-size: .84rem; color: var(--quiet); line-height: 1.45; display: block; }
+.wayin.off { opacity: .6; cursor: default; }
 
-/* The one-time code. The only thing being asked of anybody at that moment. */
 .welcome .code {
   font: 700 1.9rem/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace;
   letter-spacing: .22em;
   padding: 1rem;
   margin: 0 0 1.4rem;
   border-radius: 12px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--vibe-a) 35%, var(--line-strong));
   background: var(--card);
   color: var(--ink);
   user-select: all;
   min-height: 4rem;
   display: grid;
   place-items: center;
+  box-shadow: 0 0 30px -10px var(--glow);
 }
+
+/* ========================================================================= */
+/* Two computers, one project                                                */
+/*                                                                           */
+/* The one thing in the product allowed to appear without being asked for.    */
+/* It states a fact and offers a choice; it never acts, and it can always be  */
+/* dismissed. No sound, no count, no badge.                                   */
+/* ========================================================================= */
+
+#news { display: flex; flex-direction: column; gap: .5rem; margin: 0 0 1.4rem; }
+
+.news {
+  display: flex;
+  gap: .85rem;
+  align-items: center;
+  padding: .85rem 1rem;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--vibe-a) 28%, var(--line));
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--vibe-a) 9%, var(--card)), var(--card) 60%);
+  box-shadow: var(--shadow);
+  animation: rise 260ms cubic-bezier(.22, 1, .36, 1);
+}
+.news.collision {
+  border-color: color-mix(in srgb, var(--attention) 42%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--attention) 10%, var(--card)), var(--card) 60%);
+}
+.news .grow { flex: 1; min-width: 0; }
+.news b { display: block; font-weight: 570; line-height: 1.45; }
+.news span { display: block; color: var(--quiet); font-size: .86rem; line-height: 1.45; margin-top: .1rem; }
+.news .acts { display: flex; gap: .35rem; align-items: center; flex: none; flex-wrap: wrap; }
+@media (prefers-reduced-motion: reduce) { .news { animation: none; } }
+@media (max-width: 62rem) {
+  .news { flex-wrap: wrap; }
+  .news .acts { width: 100%; }
+}
+
+/* A panel with no room below it opens above; with none to the left, rightward. */
+.panel.above { top: auto; bottom: calc(100% + 6px); }
+.panel.leftward { right: auto; left: 0; }

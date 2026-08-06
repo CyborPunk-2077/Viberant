@@ -600,6 +600,57 @@ The order matters as much as the set: it is the order work actually goes, so the
 
 ---
 
+### D-54 `[DECIDED]` — Two computers compare fingerprints, never files
+
+**Decision.** Each computer keeps a short fingerprint of every project it shares — a hash of every meaningful file's path, size and last-written second — and answers for it on the local network. The others ask every few seconds. A difference is noticed by comparing two short strings.
+
+**Why.** "Your laptop has newer work" has to appear while you still care, which means seconds. Copying anything to find out would make noticing cost more than syncing. Only directory entries are touched, so a hundred-megabyte project costs the same to check as an empty one.
+
+**The limit, stated because it is real.** Two files of the same size, written in the same second, with different bytes inside look identical to this. Reading every byte of every project every few seconds is the alternative, and the failure it would protect against does not happen when one person works on their own two computers.
+
+---
+
+### D-55 `[LOCKED]` — Nothing syncs by itself, and four rules say why
+
+**Decision.** Live sync between computers obeys four rules, in this order:
+
+1. **Nothing is ever synced automatically.** A computer noticing a difference raises it. A person decides.
+2. **Unsaved work is never walked over.** Syncing refuses outright while the receiving copy has unsaved changes.
+3. **Your copy is kept before it is replaced** — moved aside, never deleted, and the sentence afterwards says where it went. If the transfer fails at any point, it is put straight back.
+4. **Two changes at once is a fact, not a problem to solve.** When both computers have moved, the manager will not pick a winner or merge anything. It says both changed and makes you choose.
+
+**Why locked.** This is the only thing in the product that can destroy work. Every one of these rules is the difference between a tool you trust with a project and one you use once. Rule 4 especially: an automatic merge nobody asked for is how people lose an afternoon and never find out why — and it fails silently, which is the worst property a data-losing bug can have.
+
+**Held by tests** that assert each refusal, including the roll-back: when the other computer cannot be reached, the folder that was here comes back byte for byte.
+
+---
+
+### D-56 `[DECIDED]` — The stylesheet is written once, not appended to
+
+**Decision.** `app/ui/style.css` is one coherent sheet. It was rewritten from scratch after six rounds of appending.
+
+**Why.** The navigation stacked itself vertically down the left and the content landed on top of it. The cause was not a layout mistake: an early rule said `nav { flex-direction: column }`, a later block added a `.topnav` class that set everything *except* direction, and the element rule kept winning. Six rounds of "add an override at the end" had produced a file where the truth about any property depended on reading all 1,500 lines.
+
+**Contradictory rules in one stylesheet are a correctness problem, not a tidiness one.** The fix for one is never another override. Recorded so the next person to reach for `!important` here reads this first.
+
+---
+
+### D-57 `[DECIDED]` — A hanging menu opens where there is room
+
+**Decision.** Panels measure themselves at the moment of opening and flip above, or leftward, when they would otherwise leave the window.
+
+**Why.** A menu that opens downward off the bottom of the screen is a menu you cannot use, and it happens only to whichever card lands near an edge — so it reads as random rather than as a rule. The answer is only knowable at the moment of opening, so that is when it is measured.
+
+---
+
+### D-58 `[DECIDED]` — Google is a sign-in on the apps that use it
+
+**Decision.** Google appears with its own mark on the account panel of every app that genuinely signs in with it — Gemini, Antigravity, OpenCode — beside the key-based options rather than instead of them. It still does not sign anybody in to Viberant itself.
+
+**Why.** The two things were being run together. "Sign in with Google" is real and useful for the apps that offer it, and hiding it behind "paste a key" made those apps look harder to use than they are. What remains impossible is the linkage — no service says which GitHub account belongs to a Google one — and that is a different claim from "Google is not useful here".
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

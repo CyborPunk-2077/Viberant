@@ -40,6 +40,8 @@ import * as contents from './contents.mjs';
 import * as firstpublish from './firstpublish.mjs';
 import * as signin from './signin.mjs';
 import * as feedback from './feedback.mjs';
+import * as fingerprint from './fingerprint.mjs';
+import * as live from './live.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const VERSION = '0.1.0';
@@ -174,6 +176,39 @@ async function offering() {
   }
   return out;
 }
+
+/**
+ * Every project this computer will answer for on the network, with a
+ * fingerprint of each so another computer can tell in one comparison whether
+ * they match — without anything being copied to find out.
+ *
+ * Private projects are absent, exactly as they are absent from the workspace.
+ * There is nothing here for another computer to ask about.
+ */
+async function whatThisComputerHas() {
+  const list = await projects.remembered();
+  const out = [];
+  for (const p of list) {
+    if (p.private || !existsSync(p.path)) continue;
+    const [state, s] = await Promise.all([
+      fingerprint.of(p.path),
+      projects.situation(p.path),
+    ]);
+    out.push({
+      name: p.name,
+      path: p.path,
+      state,
+      unsaved: s.unsaved ?? 0,
+      // Whether this copy has moved since it last agreed with anybody. Used to
+      // tell "they are ahead" from "you have both changed it".
+      changedSinceSync: (s.unsaved ?? 0) > 0,
+    });
+  }
+  return out;
+}
+
+// What the others are told, when they ask.
+lan.shares(whatThisComputerHas);
 
 const routes = {
 
@@ -671,6 +706,30 @@ const routes = {
 
   async 'GET /local/offers'({ url }) {
     return lan.offeredBy(url.searchParams.get('machine'));
+  },
+
+  // -- the same project, on two computers at once -------------------------
+
+  async 'GET /live'() {
+    return live.look({ mine: await whatThisComputerHas() });
+  },
+
+  async 'POST /live/sync'({ body }) {
+    const job = jobs.begin({ what: `Bringing ${body.name} across`, where: body.path ?? HOUSE });
+    live.take({ name: body.name, from: body.from, path: body.path, job, jobs })
+      .then(async (done) => {
+        if (done?.ok && done.at) { current = await open(done.at); await watchProject(done.at); }
+      })
+      .catch(() => jobs.end(job, {
+        ok: false,
+        sentence: 'That did not come across.',
+        action: 'Your copy was put back exactly as it was. Try again.',
+      }));
+    return { ok: true, job: job.id };
+  },
+
+  async 'POST /live/leave'({ body }) {
+    return live.leaveItAlone({ from: body.from, name: body.name, mark: body.mark });
   },
 
   async 'POST /local/take'({ body }) {
