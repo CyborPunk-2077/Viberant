@@ -10,6 +10,13 @@
 <body>
 
 <!--
+  The one light that moves. It follows the pointer at a distance, has no edges
+  and never resolves into a shape, so it reads as depth rather than as a thing
+  chasing you. Off entirely when the computer asks for less motion.
+-->
+<div id="sheen"></div>
+
+<!--
   The opening. It runs once, while there is nothing to read yet, and then the
   app stops moving on its own for the rest of the session.
 -->
@@ -24,8 +31,8 @@
 
 <div id="gate" hidden></div>
 
-<div id="frame">
-  <nav id="nav"></nav>
+<div id="frame" class="topbar">
+  <nav class="topnav" id="nav"></nav>
   <main><div class="hold" id="view"></div></main>
 </div>
 
@@ -38,7 +45,7 @@
   [...'Viberant'].forEach((letter, i) => {
     const s = document.createElement('span');
     s.textContent = letter;
-    s.style.animationDelay = `${i * 55}ms`;
+    s.style.animationDelay = `${i * 48}ms`;
     word.appendChild(s);
   });
 </script>

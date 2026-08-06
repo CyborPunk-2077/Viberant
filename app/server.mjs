@@ -38,8 +38,11 @@ import * as lan from './lan.mjs';
 import * as parcel from './parcel.mjs';
 import * as contents from './contents.mjs';
 import * as firstpublish from './firstpublish.mjs';
+import * as signin from './signin.mjs';
+import * as feedback from './feedback.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
+const VERSION = '0.1.0';
 const HOUSE = projects.HOUSE;
 
 // ---------------------------------------------------------------------------
@@ -428,17 +431,42 @@ const routes = {
         action: 'Install GitHub CLI from cli.github.com, then come back.',
       };
     }
-    const opened = await terminals.openTerminal({
-      dir: current?.dir ?? HOUSE,
-      command: 'gh auth login --web --git-protocol https',
-      which: await settings.get('terminal'),
+    return { ok: true, ...signin.begin() };
+  },
+
+  async 'GET /github/signin'() {
+    return { ok: true, signin: signin.state(), github: await github.who() };
+  },
+
+  async 'POST /github/signin/stop'() {
+    signin.forget();
+    return { ok: true };
+  },
+
+  async 'POST /open/page'({ body }) {
+    // The page cannot open a browser tab itself when it is inside the app's own
+    // window, so it asks. Only ever addresses on the web.
+    if (!/^https:\/\//.test(String(body.at ?? ''))) {
+      return { ok: false, sentence: 'That is not an address this can open.', action: 'Try another one.' };
+    }
+    signin.openInBrowser(body.at);
+    return { ok: true };
+  },
+
+  async 'GET /feedback'() {
+    return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.HOME };
+  },
+
+  async 'POST /feedback'({ body }) {
+    return feedback.send({
+      what: body.what,
+      kind: body.kind,
+      about: {
+        machine: await myName(),
+        project: current?.name ?? null,
+        version: VERSION,
+      },
     });
-    if (!opened.ok) return opened;
-    return {
-      ok: true,
-      sentence: 'Signing in to GitHub in the window that just opened.',
-      action: 'Follow the steps there, then come back and this page will know.',
-    };
   },
 
   async 'POST /github/switch'({ body }) {

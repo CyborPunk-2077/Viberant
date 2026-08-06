@@ -1296,3 +1296,205 @@ button.go:active:not(:disabled) { box-shadow: none; }
 .needs .need .tick { color: var(--live); }
 .needs .need .cross { color: var(--faint); }
 .needs .need span { color: var(--quiet); }
+
+/* =========================================================================
+ * Themes
+ *
+ * One set of names, six sets of values. Everything in this file already draws
+ * from the names, so a theme is a palette and nothing else — no theme may
+ * change a layout, hide a control, or alter a sentence.
+ * ========================================================================= */
+
+:root[data-theme="steam"] {
+  --page: #1b2838; --card: #16202d; --raised: #1f2b3a; --line: #2a3f5a;
+  --line-strong: #3a5a7a; --hover: #223449;
+  --ink: #c7d5e0; --quiet: #8f98a0; --faint: #6a7480;
+  --live: #a4d007; --attention: #e5a33f; --trouble: #e8735f; --cool: #66c0f4;
+  --vibe-a: #1a9fff; --vibe-b: #66c0f4; --vibe-c: #417a9b;
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 10px 30px -14px rgba(0,0,0,.8);
+  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 24px 60px -20px rgba(0,0,0,.9);
+}
+
+:root[data-theme="neon"] {
+  --page: #0a0a12; --card: #12121f; --raised: #171728; --line: #262646;
+  --line-strong: #3a3a66; --hover: #1c1c30;
+  --ink: #e8e6ff; --quiet: #9d99c7; --faint: #6b6790;
+  --live: #39ff88; --attention: #ffcc33; --trouble: #ff5c8a; --cool: #4dd6ff;
+  --vibe-a: #b14dff; --vibe-b: #00e5ff; --vibe-c: #ff2d95;
+  --shadow: 0 1px 2px rgba(0,0,0,.6), 0 0 24px -8px rgba(177,77,255,.35);
+  --shadow-lift: 0 2px 6px rgba(0,0,0,.7), 0 0 48px -12px rgba(0,229,255,.4);
+}
+
+:root[data-theme="fire"] {
+  --page: #140d0a; --card: #1d1310; --raised: #241814; --line: #3a231c;
+  --line-strong: #55332a; --hover: #2a1b16;
+  --ink: #f5e6df; --quiet: #b79287; --faint: #856660;
+  --live: #6fcf6f; --attention: #ffb03a; --trouble: #ff5a3c; --cool: #ffa06b;
+  --vibe-a: #ff6b2c; --vibe-b: #ffb800; --vibe-c: #ff2d55;
+  --shadow: 0 1px 2px rgba(0,0,0,.55), 0 10px 30px -14px rgba(120,30,0,.7);
+  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 0 44px -14px rgba(255,107,44,.45);
+}
+
+:root[data-theme="crimson"] {
+  --page: #120a0d; --card: #1b1013; --raised: #221419; --line: #3b1f27;
+  --line-strong: #5a2d38; --hover: #281820;
+  --ink: #f3e2e6; --quiet: #bd8e99; --faint: #8a6570;
+  --live: #7ad19a; --attention: #f0a94b; --trouble: #ff6b6b; --cool: #ff8fa3;
+  --vibe-a: #e01b4c; --vibe-b: #ff5f7e; --vibe-c: #8b1233;
+  --shadow: 0 1px 2px rgba(0,0,0,.55), 0 10px 30px -14px rgba(120,0,30,.7);
+  --shadow-lift: 0 2px 6px rgba(0,0,0,.6), 0 0 44px -14px rgba(224,27,76,.4);
+}
+
+/* =========================================================================
+ * The background that follows you
+ *
+ * A single soft light behind everything, tracking the pointer. It is the one
+ * thing in the product that moves without being pressed, and it is deliberately
+ * the quietest thing on screen: no edges, no speed, nothing that resolves into
+ * a shape. It follows at a distance so it reads as depth rather than as a
+ * cursor. Reduced motion turns it off entirely.
+ * ========================================================================= */
+
+#sheen {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 900ms ease;
+  background:
+    radial-gradient(
+      42rem 42rem at var(--px, 50%) var(--py, 40%),
+      color-mix(in srgb, var(--vibe-a) 13%, transparent),
+      transparent 62%),
+    radial-gradient(
+      26rem 26rem at calc(var(--px, 50%) + 10rem) calc(var(--py, 40%) + 6rem),
+      color-mix(in srgb, var(--vibe-b) 9%, transparent),
+      transparent 60%);
+}
+#sheen.up { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { #sheen { display: none; } }
+
+#frame, #gate, #layer { position: relative; z-index: 1; }
+
+/* =========================================================================
+ * The bar across the top
+ *
+ * Navigation moves out of the side and onto a bar, with the mark at the far
+ * left — the arrangement Steam uses, and most things you launch rather than
+ * visit. It gives the content the full width, which the project stack wanted.
+ * ========================================================================= */
+
+#frame.topbar { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+
+.topnav {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: 0 1.1rem;
+  height: 54px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--raised) 92%, var(--vibe-c) 8%),
+    color-mix(in srgb, var(--card) 96%, transparent));
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--line) 60%, transparent);
+  position: relative;
+  z-index: 20;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  margin-right: 1.4rem;
+  font-weight: 700;
+  font-size: 1.02rem;
+  letter-spacing: -.02em;
+}
+.logo svg { display: block; }
+.logo .word {
+  background: linear-gradient(100deg, var(--vibe-a), var(--vibe-b));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.topnav .tab {
+  font: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  letter-spacing: .045em;
+  text-transform: uppercase;
+  color: var(--quiet);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: .5rem .8rem;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.topnav .tab:hover { color: var(--ink); background: transparent; }
+.topnav .tab.on { color: var(--cool); border-bottom-color: var(--cool); background: transparent; }
+.topnav .spacer { flex: 1; }
+
+.topnav .who {
+  width: auto;
+  max-width: 15rem;
+  padding: .35rem .6rem;
+  border-radius: 8px;
+}
+.topnav .drop .panel { right: 0; left: auto; top: calc(100% + 8px); bottom: auto; width: 17rem; }
+
+.topnav .icon {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--quiet);
+  padding: .4rem .55rem;
+  font-size: 1rem;
+}
+.topnav .icon:hover { color: var(--ink); background: var(--hover); border-color: var(--line); }
+.topnav .icon.on { color: var(--cool); }
+
+@media (max-width: 60rem) {
+  .topnav { overflow-x: auto; }
+  .topnav .tab { padding: .5rem .55rem; font-size: .74rem; }
+  .logo .word { display: none; }
+}
+
+/* The account panel inside a card must never be clipped by the card. */
+.tile, .slab { overflow: visible; }
+.grid, .lane, .stack { overflow: visible; }
+
+/* =========================================================================
+ * Sign in
+ * ========================================================================= */
+
+.wayin .mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: var(--page);
+  border: 1px solid var(--line);
+}
+.wayin .mark svg { display: block; }
+.welcome .ways { gap: .6rem; }
+.wayin b { font-size: .95rem; margin-bottom: .1rem; }
+
+/* The one-time code. The only thing being asked of anybody at that moment. */
+.welcome .code {
+  font: 700 1.9rem/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace;
+  letter-spacing: .22em;
+  padding: 1rem;
+  margin: 0 0 1.4rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink);
+  user-select: all;
+  min-height: 4rem;
+  display: grid;
+  place-items: center;
+}

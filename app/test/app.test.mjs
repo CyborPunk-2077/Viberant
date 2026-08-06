@@ -58,12 +58,15 @@ before(async () => {
   // A stand-in for a desktop AI app: it records the folder it was opened in.
   // Two versions, because the two platforms start programs differently and this
   // test is about the manager, not about that difference.
+  // A real editor of this family is handed flags and then the folder, so the
+  // stand-in records the last thing it was given rather than the first.
   const openedAt = join(root, 'opened-at.txt');
   if (WINDOWS) {
-    await writeFile(join(bin, 'cursor.cmd'), `@echo off\r\n>"${openedAt}" echo %~1\r\n`);
+    await writeFile(join(bin, 'cursor.cmd'),
+      `@echo off\r\n:last\r\nif not "%~2"=="" ( shift & goto last )\r\n>"${openedAt}" echo %~1\r\n`);
   } else {
     const tool = join(bin, 'cursor');
-    await writeFile(tool, `#!/bin/bash\necho "$1" > ${openedAt}\n`);
+    await writeFile(tool, `#!/bin/bash\necho "\${@: -1}" > ${openedAt}\n`);
     await chmod(tool, 0o755);
   }
 
@@ -148,6 +151,14 @@ describe('the errand, start to finish', () => {
     await settle(400);
     const openedAt = (await readFile(join(root, 'opened-at.txt'), 'utf8')).trim();
     assert.equal(openedAt, projectDir, 'the app was handed the folder — no adding it by hand');
+  });
+
+  test('and it is asked for a window, so a copy already running does not swallow it', async () => {
+    const { find } = await import('../tools.mjs');
+    assert.equal(find('cursor').newWindow, true);
+    assert.equal(find('code').newWindow, true);
+    assert.equal(find('antigravity').newWindow, true,
+      'these all hand the folder to the copy already running unless told otherwise');
   });
 
   test('and that is remembered as something going on here', async () => {

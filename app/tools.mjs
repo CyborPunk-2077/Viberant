@@ -173,6 +173,7 @@ export const KNOWN = [
       terminal: { bin: 'cursor-agent' },
     },
     services: [],
+    newWindow: true,
     signIn: { way: 'inside', then: 'Cursor signs you in inside its own window.' },
     install: 'https://cursor.com/downloads',
   },
@@ -185,6 +186,7 @@ export const KNOWN = [
       desktop: { bin: 'windsurf', at: [[local, 'Programs', 'Windsurf', 'Windsurf.exe']] },
     },
     services: [],
+    newWindow: true,
     signIn: { way: 'inside', then: 'Windsurf signs you in inside its own window.' },
     install: 'https://windsurf.com/download',
   },
@@ -197,6 +199,7 @@ export const KNOWN = [
       desktop: { bin: 'antigravity', at: [[local, 'Programs', 'antigravity', 'Antigravity.exe']] },
     },
     services: [],
+    newWindow: true,
     signIn: { way: 'inside', then: 'Antigravity signs you in inside its own window.' },
     install: 'https://antigravity.google/download',
   },
@@ -216,6 +219,7 @@ export const KNOWN = [
       },
     },
     services: [],
+    newWindow: true,
     signIn: { way: 'inside', then: 'VS Code signs you in inside its own window.' },
     install: 'https://code.visualstudio.com/download',
   },
@@ -473,9 +477,16 @@ export async function launch({ tool, dir, how = null, terminal = null, carryOn =
     // most people have a space in a folder name somewhere — has to carry its
     // own quotes or the app is handed half a path.
     const folder = WINDOWS ? `"${dir}"` : dir;
+
+    // The editors are all one family and all behave the same way: started a
+    // second time, they hand the folder to the copy that is already running
+    // and put nothing new on screen. From where you are sitting the button did
+    // nothing. Asking for a window is how you get a window.
+    const wantsAWindow = tool.newWindow ? ['--new-window'] : [];
+
     const args = where.run
       ? [...where.run.args, ...(where.run.takesPath ? [folder] : [])]
-      : [folder];
+      : [...wantsAWindow, folder];
 
     const child = spawn(quote(where.bin), args, {
       cwd: dir,

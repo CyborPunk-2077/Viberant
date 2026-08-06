@@ -517,7 +517,11 @@ export async function myProjects({ limit = 100 } = {}) {
     };
   }
   try {
-    const projects = JSON.parse(out.stdout).map((r) => ({
+    const projects = JSON.parse(out.stdout)
+      // The workspace is the manager's own bookkeeping. Offering it as
+      // something to work on would be the app pointing at its own filing.
+      .filter((r) => r.name !== 'viberant-workspace')
+      .map((r) => ({
       name: r.name,
       about: r.description ?? null,
       visibility: String(r.visibility ?? '').toLowerCase(),

@@ -97,10 +97,51 @@ const TABS = [
   { id: 'projects', name: 'Projects', glyph: '◳' },
   { id: 'apps', name: 'AI apps', glyph: '✦' },
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
-  { id: 'workspace', name: 'Shared workspace', glyph: '⌸' },
+  { id: 'workspace', name: 'Workspace', glyph: '⌸' },
   { id: 'ship', name: 'Deploy', glyph: '↗' },
+];
+
+/** The two behind the icons at the far end, out of the way of the daily five. */
+const ASIDE = [
+  { id: 'feedback', name: 'Tell us what is wrong', glyph: '✎' },
   { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
+
+/** The mark. Drawn, not fetched — this app never reaches the network to draw itself. */
+const LOGO = `
+  <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true">
+    <defs><linearGradient id="vb" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="var(--vibe-a)"/><stop offset="1" stop-color="var(--vibe-b)"/>
+    </linearGradient></defs>
+    <rect x="2" y="2" width="28" height="28" rx="9" fill="url(#vb)"/>
+    <path d="M10 11.5 L16 21 L22 11.5" fill="none" stroke="rgba(255,255,255,.92)"
+          stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+
+/**
+ * The marks of the two services, as they are drawn everywhere else.
+ *
+ * A sign-in button that does not carry the mark people already know makes them
+ * stop and read, which is the one thing a sign-in button must not do.
+ */
+const GITHUB_MARK = `
+  <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden="true" fill="var(--ink)">
+    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38
+      0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01
+      1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95
+      0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27
+      2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82
+      2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0
+      .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+  </svg>`;
+
+const GOOGLE_MARK = `
+  <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+    <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12.1c-.2 1.9-1.6 4.9-4.5 6.9l6.9 5.4c4.1-3.8 6.6-9.4 6.6-15.6z"/>
+    <path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.9 1.3-4.3 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8.1 41 15.4 46 24 46z"/>
+    <path fill="#FBBC05" d="M11.5 28.4c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 9.9l7.1-5.5z"/>
+    <path fill="#EA4335" d="M24 10.2c4.1 0 6.9 1.8 8.5 3.3l6.1-6C34.9 4 29.9 2 24 2 15.4 2 8.1 7 4.4 14.1l7.1 5.5C13.3 14.3 18.2 10.2 24 10.2z"/>
+  </svg>`;
 
 const at = { tab: 'projects', inside: false };
 let me = { machine: null, machineName: '', github: null, workspace: {}, settings: {}, current: null };
@@ -110,42 +151,70 @@ const chosen = { account: {}, folder: {} };
 
 async function refreshMe() {
   me = await get('/me');
-  document.documentElement.dataset.theme = me.settings?.appearance === 'system'
-    ? '' : (me.settings?.appearance ?? '');
+  const look = me.settings?.appearance ?? 'system';
+  document.documentElement.dataset.theme = look === 'system' ? '' : look;
   drawNav();
 }
 
 function drawNav() {
   $('#nav').innerHTML = `
-    <div class="brand"><span class="bead"></span><span>Viberant</span></div>
-    <div class="places">
-      ${TABS.map((t, i) => `
-        <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}">
-          <span aria-hidden="true">${t.glyph}</span>
-          <span class="label">${esc(t.name)}</span>
-          <span class="key">${i + 1}</span>
-        </button>`).join('')}
-    </div>
-    <div class="corner">
-      <div class="drop">
-        <button class="who" id="who">
-          <span class="dot ${me.github ? 'live' : 'off'}"></span>
-          <span class="grow">
-            <span class="name">${esc(me.github ?? 'Not signed in')}</span>
-            <span class="what">${me.github ? 'GitHub account' : 'sign in to GitHub'}</span>
-          </span>
-          <span style="color:var(--faint)">▾</span>
-        </button>
-        <div class="panel" hidden id="who-panel"></div>
-      </div>
-      <div class="thisone">
-        <span class="dot ${me.sharingHere ? 'live' : 'off'}"></span>
-        <span>${esc(me.machineName || 'This computer')}</span>
-      </div>
+    <div class="logo">${LOGO}<span class="word">VIBERANT</span></div>
+    ${TABS.map((t) => `
+      <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}">${esc(t.name)}</button>`).join('')}
+    <div class="spacer"></div>
+    ${ASIDE.map((t) => `
+      <button class="icon ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}"
+        title="${esc(t.name)}" aria-label="${esc(t.name)}">${t.glyph}</button>`).join('')}
+    <div class="drop">
+      <button class="who" id="who">
+        <span class="dot ${me.github ? 'live' : 'off'}"></span>
+        <span class="grow">
+          <span class="name">${esc(me.github ?? 'Not signed in')}</span>
+          <span class="what">${esc(me.machineName || 'this computer')}</span>
+        </span>
+        <span style="color:var(--faint)">▾</span>
+      </button>
+      <div class="panel" hidden id="who-panel"></div>
     </div>`;
 
   for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
   $('#who').onclick = (e) => { e.stopPropagation(); openWhoPanel(); };
+}
+
+/**
+ * The light that follows the pointer.
+ *
+ * Two per-frame writes of a CSS variable and nothing else — no canvas, no
+ * animation loop, nothing that costs anything when the pointer is still. It
+ * trails deliberately, because something that keeps up exactly reads as a
+ * cursor and something that lags reads as depth.
+ */
+function followThePointer() {
+  const sheen = $('#sheen');
+  if (!sheen || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  let wantX = innerWidth / 2;
+  let wantY = innerHeight * 0.4;
+  let atX = wantX;
+  let atY = wantY;
+  let due = false;
+
+  addEventListener('pointermove', (e) => {
+    wantX = e.clientX;
+    wantY = e.clientY;
+    if (due) return;
+    due = true;
+    requestAnimationFrame(drift);
+  }, { passive: true });
+
+  function drift() {
+    atX += (wantX - atX) * 0.06;
+    atY += (wantY - atY) * 0.06;
+    sheen.style.setProperty('--px', `${atX}px`);
+    sheen.style.setProperty('--py', `${atY}px`);
+    if (Math.abs(wantX - atX) > 0.5 || Math.abs(wantY - atY) > 0.5) requestAnimationFrame(drift);
+    else due = false;
+  }
 }
 
 async function openWhoPanel() {
@@ -416,9 +485,16 @@ SCREENS.projects = async () => {
     ${saidHtml()}
 
     ${d.projects.length
-    ? `<div class="stack">${d.projects.map(projectSlab).join('')}</div>`
+    ? `<h2>On this computer</h2><div class="stack">${d.projects.map(projectSlab).join('')}</div>`
     : `<div class="empty"><b>Nothing here yet.</b>
-         Choose a folder above and it becomes the project every app opens into.</div>`}`;
+         Choose a folder above and it becomes the project every app opens into.</div>`}
+
+    ${me.github ? `
+      <h2>On GitHub, not on this computer
+        <button class="quiet small" id="p-refresh" style="float:right;text-transform:none;letter-spacing:0">check again</button>
+      </h2>
+      <div id="cloud"><div class="row"><span class="spin"></span>
+        <div class="grow">Asking GitHub what you have…</div></div></div>` : ''}`;
   said = null;
 
   $('#p-add').onclick = async () => {
@@ -430,6 +506,11 @@ SCREENS.projects = async () => {
   for (const el of document.querySelectorAll('[data-open]')) {
     el.onclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
   }
+  if (me.github) {
+    drawCloud(d.projects);
+    $('#p-refresh').onclick = () => drawCloud(d.projects, { again: true });
+  }
+
   for (const b of document.querySelectorAll('[data-open-now]')) b.onclick = () => openProject(b.dataset.openNow);
   for (const b of document.querySelectorAll('[data-mark]')) b.onclick = () => markSheet(b.dataset.mark, d.marks);
   for (const b of document.querySelectorAll('[data-look]')) b.onclick = () => statusSheet(b.dataset.look);
@@ -472,6 +553,81 @@ function projectSlab(p) {
           ${p.private ? 'let my computers see it' : 'keep it private'}</button>
       </div>
     </div>`;
+}
+
+/**
+ * The projects on your GitHub account that are not on this computer yet.
+ *
+ * Kept beneath the ones that are here, because the ones that are here are the
+ * ones you can actually work on. Bringing one down is one press and one
+ * question — where it should go.
+ *
+ * Held for a few minutes once fetched: asking GitHub takes a second or two and
+ * the answer does not change while you are looking at it.
+ */
+let cloudHeld = null;
+
+async function drawCloud(here, { again = false } = {}) {
+  const box = $('#cloud');
+  if (!box) return;
+
+  if (again || !cloudHeld || Date.now() - cloudHeld.at > 5 * 60_000) {
+    box.innerHTML = '<div class="row"><span class="spin"></span><div class="grow">Asking GitHub what you have…</div></div>';
+    cloudHeld = { at: Date.now(), r: await get('/github/mine') };
+  }
+  const r = cloudHeld.r;
+
+  if (!r.ok) {
+    box.innerHTML = `<div class="empty"><b>${esc(r.sentence)}</b>${r.action ? `<br>${esc(r.action)}` : ''}</div>`;
+    return;
+  }
+
+  // A project already on this computer is not news.
+  const names = new Set(here.map((p) => p.name.toLowerCase()));
+  const missing = r.projects.filter((p) => !names.has(p.name.toLowerCase()));
+
+  if (!missing.length) {
+    box.innerHTML = `<div class="empty"><b>Everything on GitHub is already here.</b>
+      All ${r.projects.length} of them.</div>`;
+    return;
+  }
+
+  box.innerHTML = `<div class="lane">${missing.map((p) => `
+    <div class="slab" style="cursor:default">
+      <span class="spine ${p.visibility === 'public' ? 'published' : ''}"></span>
+      <div class="grow">
+        <div class="line1"><b>${esc(p.name)}</b>
+          <span class="chip">${esc(p.visibility)}</span>
+          ${p.copied ? '<span class="chip">a copy of somebody else\'s</span>' : ''}</div>
+        <div class="fact">${esc(p.about ?? 'No description on GitHub.')}</div>
+        <div class="did">Changed ${ago(p.changed)}</div>
+      </div>
+      <div class="acts">
+        <button class="go small" data-pull="${esc(p.url)}" data-name="${esc(p.name)}">Bring it here…</button>
+        <button class="quiet small" data-seepage="${esc(p.url)}">Open on GitHub</button>
+      </div>
+    </div>`).join('')}</div>`;
+
+  for (const b of box.querySelectorAll('[data-pull]')) {
+    b.onclick = async () => {
+      const into = await pickFolder({
+        title: `Where should ${b.dataset.name} go on this computer?`,
+        confirm: 'Put it in here',
+        startAt: me.settings?.workFolder,
+      });
+      if (!into) return;
+      say({ sentence: `Bringing ${b.dataset.name} down…` });
+      draw();
+      const r2 = await post('/github/bring', { url: b.dataset.pull, into });
+      say(r2);
+      cloudHeld = null;
+      await refreshMe();
+      draw();
+    };
+  }
+  for (const b of box.querySelectorAll('[data-seepage]')) {
+    b.onclick = () => post('/open/page', { at: b.dataset.seepage });
+  }
 }
 
 async function openProject(path) {
@@ -892,7 +1048,7 @@ async function doGitHub(what, p) {
   if (what === 'open') {
     closeLayer();
     const picture = await get('/github');
-    if (picture.picture?.url) window.open(picture.picture.url, '_blank');
+    if (picture.picture?.url) post('/open/page', { at: picture.picture.url });
     return;
   }
 
@@ -1228,7 +1384,7 @@ function wireAppCards(t, p) {
         why: 'Its download page has the window version. Once it is installed, this button opens it.',
         confirm: 'Open the download page',
       });
-      if (go) window.open(b.dataset.getwindow, '_blank');
+      if (go) post('/open/page', { at: b.dataset.getwindow });
     };
   }
 
@@ -1246,7 +1402,7 @@ function wireAppCards(t, p) {
     b.onclick = async (e) => {
       e.stopPropagation();
       const [tool, , where] = b.dataset.service.split('|');
-      window.open(where, '_blank');
+      post('/open/page', { at: where });
       closePanels();
       say({
         ok: true,
@@ -1312,7 +1468,7 @@ function wireAppCards(t, p) {
   }
 
   for (const b of document.querySelectorAll('[data-getpage]')) {
-    b.onclick = () => window.open(b.dataset.getpage, '_blank');
+    b.onclick = () => post('/open/page', { at: b.dataset.getpage });
   }
 }
 
@@ -1951,6 +2107,77 @@ function control(s, terminals) {
 }
 
 // ---------------------------------------------------------------------------
+// Telling us what is wrong
+// ---------------------------------------------------------------------------
+
+SCREENS.feedback = async () => {
+  const d = await get('/feedback');
+
+  view.innerHTML = `
+    <h1>Tell us what is wrong</h1>
+    <p class="sub">This is early, and the most useful thing anybody can do is say
+      what annoyed them the moment it happened — before you have worked around it
+      and forgotten. It goes to the project's own list on GitHub.</p>
+    ${saidHtml()}
+
+    <div class="card">
+      <label class="field">What happened?</label>
+      <textarea id="fb-what" rows="5" style="width:100%;margin-bottom:1rem"
+        placeholder="I pressed Open on Antigravity and nothing appeared."></textarea>
+
+      <label class="field">What kind of thing is it?</label>
+      <div class="menu" style="margin-bottom:1rem">
+        ${d.kinds.map((k, i) => `
+          <button class="opt ${i === 0 ? 'on' : ''}" data-kind="${esc(k.id)}">
+            <span class="glyph">${['✕', '?', '＋', '✓'][i] ?? '·'}</span>
+            <span><span class="what">${esc(k.name)}</span><br><span class="why">${esc(k.blurb)}</span></span>
+          </button>`).join('')}
+      </div>
+
+      <div class="bar" style="margin:0">
+        <button class="go" id="fb-send" ${me.github ? '' : 'disabled'}>Send it</button>
+        <span class="note" style="color:var(--quiet);font-size:.84rem">
+          ${me.github
+    ? 'What you typed, plus which computer and which version. Nothing about your projects.'
+    : 'Sign in to GitHub first — it is sent as you, to the project\'s own list.'}
+        </span>
+      </div>
+    </div>
+
+    ${d.said.length ? `
+      <h2>What you have said before</h2>
+      <div class="lane">
+        ${d.said.slice(0, 12).map((s) => `
+          <div class="slab" style="cursor:default">
+            <span class="spine clean"></span>
+            <div class="grow">
+              <div class="line1"><b>${esc(d.kinds.find((k) => k.id === s.kind)?.name ?? s.kind)}</b>
+                <span class="chip">${ago(s.at)}</span></div>
+              <div class="fact">${esc(s.what)}</div>
+            </div>
+          </div>`).join('')}
+      </div>` : ''}`;
+  said = null;
+
+  let kind = d.kinds[0]?.id ?? 'wrong';
+  for (const b of document.querySelectorAll('[data-kind]')) {
+    b.onclick = () => {
+      kind = b.dataset.kind;
+      for (const o of document.querySelectorAll('[data-kind]')) o.classList.remove('on');
+      b.classList.add('on');
+    };
+  }
+  $('#fb-send').onclick = async () => {
+    const what = $('#fb-what').value.trim();
+    if (!what) return;
+    $('#fb-send').disabled = true;
+    $('#fb-send').textContent = 'Sending…';
+    say(await post('/feedback', { what, kind }));
+    draw();
+  };
+};
+
+// ---------------------------------------------------------------------------
 // Noticing the folder changed underneath us
 // ---------------------------------------------------------------------------
 
@@ -2010,19 +2237,19 @@ function showGate() {
 
       <div class="ways">
         <button class="wayin" id="in-github">
-          <span class="badge" style="background:#24292f">GH</span>
+          <span class="mark">${GITHUB_MARK}</span>
           <span><b>Continue with GitHub</b>
             <span>Signs this computer in, so your work has a second copy and your
               other computers can find each other.</span></span>
         </button>
 
-        <button class="wayin off" id="in-google" disabled>
-          <span class="badge" style="background:#4285f4">G</span>
+        <button class="wayin" id="in-google">
+          <span class="mark">${GOOGLE_MARK}</span>
           <span><b>Continue with Google</b>
-            <span>Not offered, and here is the honest reason: nothing in this app
-              needs a Google account, and no service anywhere can tell which GitHub
-              account belongs to a Google one. Sign in to Gemini or Antigravity
-              inside those apps, where it means something.</span></span>
+            <span>Signs you in to the AI apps that use it — Gemini, Antigravity and
+              OpenCode. It cannot sign you in to Viberant itself: nothing here needs a
+              Google account, and no service can say which GitHub account belongs to
+              one.</span></span>
         </button>
       </div>
 
@@ -2034,39 +2261,75 @@ function showGate() {
   $('#in-github').onclick = async () => {
     const b = $('#in-github');
     b.disabled = true;
-    b.querySelector('b').textContent = 'Signing in…';
     const r = await post('/github/signin');
-    say(r);
-    if (!r.ok) { hideGate(); draw(); return; }
+    if (!r.ok) { say(r); hideGate(); draw(); return; }
     waitForSignIn();
+  };
+  $('#in-google').onclick = () => {
+    hideGate();
+    go('apps');
+    say({
+      ok: true,
+      sentence: 'Google signs you in to the AI apps that use it, not to Viberant.',
+      action: 'On any card here, open Account and pick Google.',
+    });
   };
   $('#in-later').onclick = () => { hideGate(); draw(); };
 }
 
-/** Watch for the sign-in that is happening in the window we just opened. */
+/**
+ * Waiting for the sign-in that is happening in the browser.
+ *
+ * The code is the whole of it. It is shown large, because the one thing being
+ * asked of somebody at this moment is to carry eight characters from here to
+ * there, and everything else on the screen is in the way of that.
+ */
 function waitForSignIn() {
-  const welcome = $('#gate .welcome');
-  if (!welcome) return;
-  welcome.innerHTML = `
-    <div class="bead"></div>
-    <h1>Finish in the window that opened</h1>
-    <p>Follow the steps there. This page will notice by itself the moment you are
-      signed in.</p>
-    <div class="ways">
-      <div class="wayin off"><span class="spin"></span>
-        <span><b>Waiting for GitHub</b><span>You can carry on here whenever you like.</span></span></div>
-    </div>
-    <div class="later"><button class="quiet" id="in-later">Carry on without it</button></div>`;
-  $('#in-later').onclick = () => { hideGate(); draw(); };
+  const paint = (code) => {
+    const welcome = $('#gate .welcome');
+    if (!welcome) return;
+    welcome.innerHTML = `
+      <div class="bead"></div>
+      <h1>Type this code in your browser</h1>
+      <p>Your browser is opening at github.com/login/device. Put this code in, and
+        this page will notice by itself.</p>
+      <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
+      <div class="ways">
+        <button class="wayin" id="in-again"><span class="mark">${GITHUB_MARK}</span>
+          <span><b>Open the page again</b><span>github.com/login/device</span></span></button>
+      </div>
+      <div class="later"><button class="quiet" id="in-later">Carry on without it</button></div>`;
+
+    $('#in-again').onclick = () => post('/open/page', { at: 'https://github.com/login/device' });
+    $('#in-later').onclick = () => { clearInterval(look); hideGate(); draw(); };
+  };
+
+  paint(null);
 
   const look = setInterval(async () => {
-    await refreshMe();
-    if (!me.github) return;
-    clearInterval(look);
-    hideGate();
-    say({ ok: true, sentence: `Signed in as ${me.github}.`, action: 'Everything on this computer now has a home to go to.' });
-    draw();
-  }, 2500);
+    const r = await get('/github/signin');
+    if (r.signin?.code && $('#gate .code')?.textContent.trim() !== r.signin.code) paint(r.signin.code);
+
+    if (r.github) {
+      clearInterval(look);
+      await refreshMe();
+      hideGate();
+      say({
+        ok: true,
+        sentence: `Signed in as ${r.github}.`,
+        action: 'Everything on this computer now has a home to go to.',
+      });
+      draw();
+      return;
+    }
+
+    if (r.signin && !r.signin.running && r.signin.ok === false) {
+      clearInterval(look);
+      say(r.signin);
+      hideGate();
+      draw();
+    }
+  }, 1500);
 }
 
 function hideGate() {
@@ -2075,6 +2338,7 @@ function hideGate() {
 }
 
 const start = async () => {
+  followThePointer();
   await refreshMe();
   const p = await get('/project');
   at.inside = !!p.open;
@@ -2089,6 +2353,7 @@ const start = async () => {
     // Asked once, on a computer that has never signed in. After that the corner
     // is where you go, and nothing stands in front of the app again.
     if (!me.github && !me.askedToSignIn) showGate();
+    $('#sheen')?.classList.add('up');
   }, skip ? 120 : 1600);
 };
 
