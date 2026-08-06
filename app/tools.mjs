@@ -92,6 +92,7 @@ export const KNOWN = [
     },
     services: [SERVICE.anthropic, SERVICE.anthropicKey],
     signIn: { way: 'terminal', command: 'claude auth login', then: 'Follow the steps in the window that opens.' },
+    carryOn: ['--continue'],
     install: 'https://claude.com/product/claude-code',
   },
   {
@@ -108,6 +109,7 @@ export const KNOWN = [
     },
     services: [SERVICE.openai, SERVICE.openaiKey],
     signIn: { way: 'terminal', command: 'codex login', then: 'Follow the steps in the window.' },
+    carryOn: ['resume', '--last'],
     install: 'https://developers.openai.com/codex/cli',
   },
   {
@@ -142,6 +144,7 @@ export const KNOWN = [
     },
     services: [SERVICE.anthropicKey, SERVICE.openaiKey, SERVICE.google, SERVICE.openrouter],
     signIn: { way: 'terminal', command: 'opencode auth login', then: 'Pick a provider and paste its key.' },
+    carryOn: ['--continue'],
     install: 'https://opencode.ai',
   },
   {
@@ -380,6 +383,9 @@ export async function installed(extra = []) {
         ? `What is installed here is ${t.name} for the terminal, not its window.`
         : null,
       opensInBrowser: !!ways.desktop?.inBrowser,
+      // Whether this app can be asked to carry on the conversation you were
+      // having, rather than starting a new one.
+      canCarryOn: !!t.carryOn,
       services: t.services ?? [],
       signIn: t.signIn ?? null,
       install: t.install ?? null,
@@ -403,7 +409,7 @@ export function find(id, extra = []) {
  * it has; an app with both and no choice made opens in its own window, because
  * that is the one that does not take your keyboard.
  */
-export async function launch({ tool, dir, how = null, terminal = null, env = {} }) {
+export async function launch({ tool, dir, how = null, terminal = null, carryOn = false, env = {} }) {
   if (!tool) {
     return {
       ok: false,
@@ -450,9 +456,17 @@ export async function launch({ tool, dir, how = null, terminal = null, env = {} 
 
   try {
     if (chosen === 'terminal') {
-      const started = await openTerminal({ dir, command: quote(where.bin), which: terminal });
+      // Picking up where you left off is the app's own trick, not ours — every
+      // one of these already remembers your conversation, and each has its own
+      // word for asking to carry on with it. Where an app has no such word, it
+      // opens fresh, and the page says so rather than implying otherwise.
+      const resuming = carryOn && tool.carryOn ? ` ${tool.carryOn.join(' ')}` : '';
+      const started = await openTerminal({ dir, command: `${quote(where.bin)}${resuming}`, which: terminal });
       if (!started.ok) return started;
-      return { ok: true, started: tool.id, how: chosen, at: dir, terminal: started.opened };
+      return {
+        ok: true, started: tool.id, how: chosen, at: dir,
+        terminal: started.opened, carriedOn: !!resuming,
+      };
     }
 
     // On Windows we start through a shell, so anything with a space in it — and

@@ -526,6 +526,28 @@ On the default: they are your own computers, signed in to your own account. Hidi
 
 ---
 
+### D-47 `[DECIDED]` — Asking and instructing are different functions, and neither may fail in silence
+
+**Decision.** The page has `get` and `post`, chosen by the person writing the line. Neither ever throws: anything that goes wrong comes back in the product's one failure shape, so a fault reaches the screen as a sentence.
+
+**Why.** There was one function that decided which it was by whether you had passed it anything. Every button whose errand needed no details — clear the list, get the latest, join the workspace, sign in to GitHub — therefore asked a *question* where it meant to give an *instruction*, got a 404, failed while turning that into an answer, and did nothing at all. Silently, because the failure landed inside a promise nobody was watching.
+
+This is the exact failure the constitution's "one failure shape" rule exists to prevent, arriving through a door nobody had thought to guard: not a wrong sentence, but no sentence. **A convenience that infers intent from the shape of the arguments will eventually infer it wrongly**, and when it does there is nothing to read.
+
+**Held by a test.** `wiring.test.mjs` reads the page and the server and checks that every address the page names exists by the verb the page uses. It cannot press a button, but it catches this whole class without a browser.
+
+---
+
+### D-48 `[DECIDED]` — What you have open is one card per app, and pressing it carries on
+
+**Decision.** The list of what is open in a project shows one card per assistant, however many times it was opened, and pressing a card opens that assistant again *carrying on the conversation you were having* — `claude --continue`, `codex resume --last`, `opencode --continue`. Apps with no such word open fresh, and the sentence says so.
+
+**Why.** The list had grown to fifteen rows saying the same four things, because it was recording presses rather than what you were doing. D-39 stopped new duplicates; grouping fixes the ones already recorded and, more to the point, makes the list answer the question people bring to it: *take me back to Codex*, not *how many times did I press this*.
+
+Carrying on is the apps' own trick — every one of them already remembers the conversation, each with its own word for asking. The manager's job is to know the word, which is exactly the errand this product exists for.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -348,15 +348,22 @@ const routes = {
       dir,
       how: body.how ?? null,
       terminal: body.terminal ?? (await settings.get('terminal')),
+      carryOn: !!body.carryOn,
     });
 
     if (started.ok) {
       await noteLaunch({ tool, dir, how: started.how, profile: body.profile ?? null });
       const where = started.how === 'terminal' ? 'a terminal' : 'its own window';
+      const carried = started.carriedOn
+        ? ' Carrying on the conversation you were having.'
+        : (body.carryOn && started.how === 'terminal'
+          ? ` ${tool.name} has no way to be asked to carry on, so this is a fresh start.`
+          : '');
       return {
         ...started,
         sentence: `${tool.name} is opening in ${where}, already in ${basename(dir)}.`
-          + (body.profile ? ` Using the account you called “${body.profile}”.` : ''),
+          + (body.profile ? ` Using the account you called “${body.profile}”.` : '')
+          + carried,
         ...(await routes['GET /project']()),
       };
     }
@@ -615,17 +622,21 @@ const routes = {
 
   // -- efforts ------------------------------------------------------------
 
+  // One press on a card means all of that app's entries, because the card is
+  // one app rather than one press of it.
   async 'POST /done'({ body }) {
-    if (!current) return { ok: false };
-    const verdict = current.dev.judge({ effort: body.effort, verdict: 'accept' });
-    await current.store.append(verdict,
-      current.dev.transitioned({ effort: body.effort, to: 'done', causedBy: verdict.id }));
+    if (!current) return noProject;
+    for (const id of asked(body)) {
+      const verdict = current.dev.judge({ effort: id, verdict: 'accept' });
+      await current.store.append(verdict,
+        current.dev.transitioned({ effort: id, to: 'done', causedBy: verdict.id }));
+    }
     return { ok: true, ...(await routes['GET /project']()) };
   },
 
   async 'POST /drop'({ body }) {
-    if (!current) return { ok: false };
-    await letGo(body.effort);
+    if (!current) return noProject;
+    for (const id of asked(body)) await letGo(id);
     return { ok: true, ...(await routes['GET /project']()) };
   },
 
@@ -674,6 +685,11 @@ async function noteLaunch({ tool, dir, how, profile }) {
   await current.store.append(event, delegated,
     current.dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
 }
+
+/** Which entries a press was about: a whole card's worth, or just one. */
+const asked = (body) => (Array.isArray(body?.efforts) && body.efforts.length
+  ? body.efforts
+  : [body?.effort].filter(Boolean));
 
 async function letGo(id) {
   const verdict = current.dev.judge({ effort: id, verdict: 'abandon' });

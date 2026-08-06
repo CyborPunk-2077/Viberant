@@ -15,12 +15,48 @@ const $ = (s) => document.querySelector(s);
 const view = $('#view');
 const layer = $('#layer');
 
-const api = async (path, body) => {
-  const res = await fetch(path, body
-    ? { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }
-    : undefined);
-  return res.json();
-};
+/**
+ * Asking the server something, and telling it to do something.
+ *
+ * These used to be one function that decided which it was by whether you had
+ * passed anything along with it. Every button whose errand needed no details —
+ * clear the list, get the latest, join the workspace — therefore asked a
+ * question where it meant to give an instruction, got nothing back, and did
+ * nothing at all. Silently: the failure landed inside a promise nobody was
+ * watching. Two functions, so the choice is made by the person writing the line
+ * rather than by an accident of what they had to say.
+ *
+ * Neither ever throws. Anything that goes wrong comes back in the one shape
+ * everything in this product uses, so a fault shows up as a sentence on the
+ * screen rather than as a button that does nothing.
+ */
+async function reach(method, path, body) {
+  let res;
+  try {
+    res = await fetch(path, method === 'POST'
+      ? { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) }
+      : undefined);
+  } catch {
+    return {
+      ok: false,
+      sentence: 'The manager is not answering.',
+      action: 'It may have stopped. Start Viberant again.',
+    };
+  }
+
+  try {
+    return await res.json();
+  } catch {
+    return {
+      ok: false,
+      sentence: 'Something went wrong here.',
+      action: 'Try that again.',
+    };
+  }
+}
+
+const get = (path) => reach('GET', path);
+const post = (path, body) => reach('POST', path, body);
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -62,7 +98,7 @@ const TABS = [
   { id: 'apps', name: 'AI apps', glyph: '✦' },
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
   { id: 'workspace', name: 'Shared workspace', glyph: '⌸' },
-  { id: 'ship', name: 'Put it out', glyph: '↗' },
+  { id: 'ship', name: 'Deploy', glyph: '↗' },
   { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
 
@@ -73,7 +109,7 @@ let me = { machine: null, machineName: '', github: null, workspace: {}, settings
 const chosen = { account: {}, folder: {} };
 
 async function refreshMe() {
-  me = await api('/me');
+  me = await get('/me');
   document.documentElement.dataset.theme = me.settings?.appearance === 'system'
     ? '' : (me.settings?.appearance ?? '');
   drawNav();
@@ -119,7 +155,7 @@ async function openWhoPanel() {
   panel.hidden = false;
   panel.innerHTML = '<div class="head">GitHub</div><div class="pick"><span class="spin"></span> looking…</div>';
 
-  const g = await api('/github');
+  const g = await get('/github');
   panel.innerHTML = `
     <div class="head">Signed in on this computer</div>
     ${g.accounts.length ? g.accounts.map((a) => `
@@ -137,12 +173,12 @@ async function openWhoPanel() {
   for (const b of panel.querySelectorAll('[data-gh-use]')) {
     b.onclick = async () => {
       closePanels();
-      say(await api('/github/switch', { name: b.dataset.ghUse }));
+      say(await post('/github/switch', { name: b.dataset.ghUse }));
       await refreshMe();
       draw();
     };
   }
-  $('#gh-add').onclick = async () => { closePanels(); say(await api('/github/signin')); draw(); };
+  $('#gh-add').onclick = async () => { closePanels(); say(await post('/github/signin')); draw(); };
   $('#gh-name').onclick = async () => { closePanels(); identitySheet(g); };
   $('#gh-out')?.addEventListener('click', async () => {
     closePanels();
@@ -154,7 +190,7 @@ async function openWhoPanel() {
       danger: true,
     });
     if (!sure) return;
-    say(await api('/github/signout', { name: g.active }));
+    say(await post('/github/signout', { name: g.active }));
     await refreshMe();
     draw();
   });
@@ -176,7 +212,7 @@ function identitySheet(g) {
       $('#id-no').onclick = closeLayer;
       $('#id-yes').onclick = async () => {
         closeLayer();
-        say(await api('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
+        say(await post('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
         draw();
       };
     },
@@ -279,7 +315,7 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
     const paint = async (path) => {
       const box = $('#walk-box');
       box.innerHTML = '<div class="item"><span class="spin"></span> looking…</div>';
-      const r = await api(`/browse?at=${encodeURIComponent(path ?? '')}`);
+      const r = await get(`/browse?at=${encodeURIComponent(path ?? '')}`);
       if (!r.ok) { box.innerHTML = `<div class="item">${esc(r.sentence)}</div>`; return; }
 
       herePath = r.at;
@@ -317,7 +353,7 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
           const button = $('#walk-native');
           button.disabled = true;
           button.textContent = 'Waiting for the chooser…';
-          const r = await api('/browse/choose', { startAt: herePath });
+          const r = await post('/browse/choose', { startAt: herePath });
           button.disabled = false;
           button.textContent = 'Use the Windows folder chooser';
           if (r.ok) { closeLayer(); resolve(r.path); return; }
@@ -328,7 +364,7 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
           draw();
         };
 
-        const { places } = await api('/browse/starts');
+        const { places } = await get('/browse/starts');
         $('#walk-starts').innerHTML = places
           .map((p) => `<button class="small" data-start="${esc(p.path)}">${esc(p.name)}</button>`).join('');
         for (const b of document.querySelectorAll('[data-start]')) b.onclick = () => paint(b.dataset.start);
@@ -351,7 +387,7 @@ const MARK_LOOK = {
 SCREENS.projects = async () => {
   if (at.inside) return drawOpenProject();
 
-  const d = await api('/projects');
+  const d = await get('/projects');
   const busy = d.projects.filter((p) => p.unsaved).length;
 
   view.innerHTML = `
@@ -387,7 +423,7 @@ SCREENS.projects = async () => {
   for (const b of document.querySelectorAll('[data-look]')) b.onclick = () => statusSheet(b.dataset.look);
   for (const b of document.querySelectorAll('[data-private]')) {
     b.onclick = async () => {
-      say(await api('/projects/private', { path: b.dataset.private, private: b.dataset.now !== '1' }));
+      say(await post('/projects/private', { path: b.dataset.private, private: b.dataset.now !== '1' }));
       draw();
     };
   }
@@ -426,7 +462,7 @@ function projectSlab(p) {
 }
 
 async function openProject(path) {
-  const r = await api('/open', { path });
+  const r = await post('/open', { path });
   if (r.ok === false) { say(r); return draw(); }
   at.inside = true;
   said = null;
@@ -451,7 +487,7 @@ function markSheet(path, marks) {
       for (const b of document.querySelectorAll('[data-set]')) {
         b.onclick = async () => {
           closeLayer();
-          say(await api('/projects/mark', { path, mark: b.dataset.set || null }));
+          say(await post('/projects/mark', { path, mark: b.dataset.set || null }));
           draw();
         };
       }
@@ -460,9 +496,9 @@ function markSheet(path, marks) {
 }
 
 async function statusSheet(path) {
-  const opened = await api('/open', { path });
+  const opened = await post('/open', { path });
   if (opened.ok === false) { say(opened); return draw(); }
-  const [changes, history] = await Promise.all([api('/github/changes'), api('/github/history')]);
+  const [changes, history] = await Promise.all([get('/github/changes'), get('/github/history')]);
 
   sheet({
     title: opened.name,
@@ -498,7 +534,7 @@ async function statusSheet(path) {
           danger: true,
         });
         if (!sure) return;
-        say(await api('/projects/forget', { path }));
+        say(await post('/projects/forget', { path }));
         at.inside = false;
         await refreshMe();
         draw();
@@ -512,7 +548,7 @@ async function fromGitHub() {
     title: 'Your projects on GitHub',
     body: '<div class="row"><span class="spin"></span><div class="grow">Asking GitHub what you have…</div></div>',
     onOpen: async (body) => {
-      const r = await api('/github/mine');
+      const r = await get('/github/mine');
       if (!r.ok) {
         body.innerHTML = `<p><b>${esc(r.sentence)}</b><br><span style="color:var(--quiet)">${esc(r.action ?? '')}</span></p>`;
         return;
@@ -533,7 +569,7 @@ async function fromGitHub() {
           if (!into) return;
           say({ sentence: `Bringing ${row.dataset.name} down…` });
           draw();
-          say(await api('/github/bring', { url: row.dataset.url, into }));
+          say(await post('/github/bring', { url: row.dataset.url, into }));
           await refreshMe();
           draw();
         };
@@ -547,10 +583,10 @@ async function fromGitHub() {
 // ---------------------------------------------------------------------------
 
 async function drawOpenProject() {
-  const p = await api('/project');
+  const [p, t] = await Promise.all([get('/project'), get('/tools')]);
   if (!p.open) { at.inside = false; return draw(); }
 
-  const efforts = p.home.ranks.flatMap((r) => r.efforts.map((e) => ({ ...e, rank: r.name })));
+  const open = whatIsOpen(p, t.tools);
   const look = MARK_LOOK[p.mark];
 
   view.innerHTML = `
@@ -574,24 +610,35 @@ async function drawOpenProject() {
     <div class="bar">
       <button id="to-apps">Choose an AI app →</button>
       <button id="to-terms">Open a terminal here →</button>
-      <button id="to-ship">Put it out into the world →</button>
+      <button id="to-ship">Deploy it →</button>
     </div>
 
-    ${efforts.length ? `
-      <h2>What you have open here
+    ${open.length ? `
+      <h2>Pick up where you left off
         <button class="quiet small" id="tidy" style="float:right;text-transform:none;letter-spacing:0">clear the list</button>
       </h2>
-      ${efforts.map((e) => `
-        <div class="row">
-          <span class="dot ${e.rank === 'moving' ? 'live' : e.rank === 'waiting on you' ? 'attention' : 'off'}"></span>
-          <div class="grow"><div class="name">${esc(e.intent)}</div>
-            <div class="note">${esc(e.rank === 'moving' ? 'open' : e.rank)} · last opened ${esc(e.ago)}</div></div>
-          <button class="quiet small" data-done="${esc(e.id)}">finished</button>
-          <button class="quiet small" data-drop="${esc(e.id)}">remove</button>
-        </div>`).join('')}` : ''}`;
+      <div class="lane">
+        ${open.map((g) => `
+          <div class="slab" data-again="${esc(g.assistant)}">
+            <span class="dot ${g.rank === 'moving' ? 'live' : g.rank === 'waiting on you' ? 'attention' : 'off'}"></span>
+            <div class="grow">
+              <div class="line1"><b>${esc(g.name)}</b>
+                ${g.times > 1 ? `<span class="chip">opened ${g.times} times</span>` : ''}
+                ${g.canCarryOn ? '<span class="chip cool">carries on where you left off</span>' : ''}
+                ${g.here ? '' : '<span class="chip">not on this computer now</span>'}
+              </div>
+              <div class="fact">Last opened ${esc(g.ago)}.</div>
+            </div>
+            <div class="acts">
+              ${g.here ? `<button class="go small" data-again-now="${esc(g.assistant)}">Open again</button>` : ''}
+              <button class="quiet small" data-done="${esc(g.ids.join(' '))}">finished</button>
+              <button class="quiet small" data-drop="${esc(g.ids.join(' '))}">remove</button>
+            </div>
+          </div>`).join('')}
+      </div>` : ''}`;
   said = null;
 
-  $('#back').onclick = async () => { at.inside = false; await api('/close'); await refreshMe(); draw(); };
+  $('#back').onclick = async () => { at.inside = false; await post('/close'); await refreshMe(); draw(); };
   $('#pub').onclick = saveAndSend;
   $('#msg').onkeydown = (e) => { if (e.key === 'Enter') saveAndSend(); };
   $('#more').onclick = () => gitHubSheet(p);
@@ -606,23 +653,91 @@ async function drawOpenProject() {
       confirm: 'Clear it',
     });
     if (!sure) return;
-    say(await api('/tidy'));
+    say(await post('/tidy'));
     draw();
   });
 
   for (const b of document.querySelectorAll('[data-done]')) {
-    b.onclick = async () => { await api('/done', { effort: b.dataset.done }); draw(); };
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      say(await post('/done', { efforts: b.dataset.done.split(' ') }));
+      draw();
+    };
   }
   for (const b of document.querySelectorAll('[data-drop]')) {
-    b.onclick = async () => { await api('/drop', { effort: b.dataset.drop }); draw(); };
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      say(await post('/drop', { efforts: b.dataset.drop.split(' ') }));
+      draw();
+    };
   }
+
+  // The whole card takes you back to that app — which is the thing you came to
+  // this list to do.
+  for (const el of document.querySelectorAll('[data-again]')) {
+    el.onclick = (e) => { if (e.target.closest('button')) return; openAgain(el.dataset.again); };
+  }
+  for (const b of document.querySelectorAll('[data-again-now]')) {
+    b.onclick = (e) => { e.stopPropagation(); openAgain(b.dataset.againNow); };
+  }
+}
+
+/**
+ * What you have open here, one card per app.
+ *
+ * Opening the same assistant five times in an afternoon is one thing you are
+ * doing. New presses are already folded into one entry, but a list recorded
+ * before that was true still has the old ones in it — and either way, the thing
+ * you want from this list is "take me back to Codex", not a receipt for every
+ * time you pressed the button.
+ */
+function whatIsOpen(p, tools) {
+  const byApp = new Map();
+
+  for (const rank of p.home.ranks) {
+    for (const e of rank.efforts) {
+      const id = e.assistant ?? e.intent;
+      const app = tools.find((x) => x.id === e.assistant);
+      const group = byApp.get(id) ?? {
+        assistant: e.assistant,
+        name: app?.name ?? e.intent,
+        here: !!app?.here,
+        canCarryOn: !!app?.canCarryOn,
+        ids: [],
+        times: 0,
+        rank: rank.name,
+        ago: e.ago,
+        newest: e.changedAt ?? 0,
+      };
+      group.ids.push(e.id);
+      group.times += 1;
+      if ((e.changedAt ?? 0) >= group.newest) {
+        group.newest = e.changedAt ?? 0;
+        group.ago = e.ago;
+        group.rank = rank.name;
+      }
+      byApp.set(id, group);
+    }
+  }
+
+  return [...byApp.values()].sort((a, b) => b.newest - a.newest);
+}
+
+/** Open an app again in this project, carrying on where it left off. */
+async function openAgain(assistant) {
+  say(await post('/launch', {
+    tool: assistant,
+    carryOn: true,
+    profile: chosen.account[assistant] ?? null,
+  }));
+  draw();
 }
 
 async function saveAndSend() {
   const button = $('#pub');
   button.disabled = true;
   button.textContent = 'Saving…';
-  say(await api('/publish', { message: $('#msg').value.trim() }));
+  say(await post('/publish', { message: $('#msg').value.trim() }));
   draw();
 }
 
@@ -689,13 +804,13 @@ async function doGitHub(what, p) {
       confirm: 'Set it up',
     });
     if (!sure) return;
-    say(await api('/github/allowSending'));
+    say(await post('/github/allowSending'));
     return draw();
   }
 
   if (what === 'open') {
     closeLayer();
-    const picture = await api('/github');
+    const picture = await get('/github');
     if (picture.picture?.url) window.open(picture.picture.url, '_blank');
     return;
   }
@@ -710,7 +825,7 @@ async function doGitHub(what, p) {
       confirm: 'Save it',
     });
     if (message === null) return;
-    say(await api('/github/save', { message }));
+    say(await post('/github/save', { message }));
     return draw();
   }
 
@@ -722,7 +837,7 @@ async function doGitHub(what, p) {
       why: 'Choose whether anyone can see it. You can change this later either way.',
       confirm: 'Only I can see it',
     });
-    say(await api('/github/copy', { visibility: keepPrivate ? 'private' : 'public' }));
+    say(await post('/github/copy', { visibility: keepPrivate ? 'private' : 'public' }));
     return draw();
   }
 
@@ -737,7 +852,7 @@ async function doGitHub(what, p) {
       danger: true,
     });
     if (!sure) return;
-    say(await api('/github/visibility', { visibility: toPublic ? 'public' : 'private' }));
+    say(await post('/github/visibility', { visibility: toPublic ? 'public' : 'private' }));
     return draw();
   }
 
@@ -751,7 +866,7 @@ async function doGitHub(what, p) {
       danger: true,
     });
     if (!sure) return;
-    say(await api('/github/undo'));
+    say(await post('/github/undo'));
     return draw();
   }
 
@@ -759,7 +874,7 @@ async function doGitHub(what, p) {
     closeLayer();
     say({ sentence: 'Getting the latest…' });
     draw();
-    say(await api('/github/latest'));
+    say(await post('/github/latest'));
     return draw();
   }
 }
@@ -769,7 +884,7 @@ async function doGitHub(what, p) {
 // ---------------------------------------------------------------------------
 
 SCREENS.apps = async () => {
-  const [t, p] = await Promise.all([api('/tools'), api('/project')]);
+  const [t, p] = await Promise.all([get('/tools'), get('/project')]);
   const here = t.tools.filter((x) => x.here);
   const away = t.tools.filter((x) => !x.here);
 
@@ -930,7 +1045,7 @@ function wireAppCards(t, p) {
     b.onclick = async () => {
       const { launch, how } = b.dataset;
       b.disabled = true;
-      say(await api('/launch', {
+      say(await post('/launch', {
         tool: launch, how, dir: whereFor(launch, p), profile: chosen.account[launch] ?? null,
       }));
       await draw();
@@ -1002,7 +1117,7 @@ function wireAppCards(t, p) {
       });
       if (!sure) return;
       if (chosen.account[tool] === name) delete chosen.account[tool];
-      say(await api('/profile/forget', { tool, name }));
+      say(await post('/profile/forget', { tool, name }));
       draw();
     };
   }
@@ -1018,7 +1133,7 @@ function wireAppCards(t, p) {
         confirm: 'Keep it',
       });
       if (!name) return;
-      say(await api('/profile/save', { tool: b.dataset.keep, name }));
+      say(await post('/profile/save', { tool: b.dataset.keep, name }));
       draw();
     };
   }
@@ -1027,7 +1142,7 @@ function wireAppCards(t, p) {
     b.onclick = async (e) => {
       e.stopPropagation();
       closePanels();
-      say(await api('/signin/tool', { tool: b.dataset.signin, dir: whereFor(b.dataset.signin, p) }));
+      say(await post('/signin/tool', { tool: b.dataset.signin, dir: whereFor(b.dataset.signin, p) }));
       draw();
     };
   }
@@ -1050,7 +1165,7 @@ function whichTerminal(toolId, dir, terminals) {
       for (const b of document.querySelectorAll('[data-in]')) {
         b.onclick = async () => {
           closeLayer();
-          say(await api('/launch', {
+          say(await post('/launch', {
             tool: toolId, how: 'terminal', terminal: b.dataset.in, dir,
             profile: chosen.account[toolId] ?? null,
           }));
@@ -1066,7 +1181,7 @@ function whichTerminal(toolId, dir, terminals) {
 // ---------------------------------------------------------------------------
 
 SCREENS.terminals = async () => {
-  const [{ terminals }, p] = await Promise.all([api('/terminals'), api('/project')]);
+  const [{ terminals }, p] = await Promise.all([get('/terminals'), get('/project')]);
   const dir = whereFor(null, p);
 
   view.innerHTML = `
@@ -1093,7 +1208,7 @@ SCREENS.terminals = async () => {
 
   for (const b of document.querySelectorAll('[data-open-term]')) {
     b.onclick = async () => {
-      say(await api('/terminal', { terminal: b.dataset.openTerm, dir: whereFor(null, p) }));
+      say(await post('/terminal', { terminal: b.dataset.openTerm, dir: whereFor(null, p) }));
       draw();
     };
   }
@@ -1106,9 +1221,9 @@ SCREENS.terminals = async () => {
 let watching = null;
 
 SCREENS.ship = async () => {
-  const d = await api('/ship');
+  const d = await get('/ship');
   if (!d.open) {
-    view.innerHTML = `<h1>Put it out</h1>
+    view.innerHTML = `<h1>Deploy</h1>
       <div class="empty"><b>No project is open.</b> Pick one first and this page fills in.</div>`;
     return;
   }
@@ -1116,7 +1231,7 @@ SCREENS.ship = async () => {
   const { site, app } = d;
 
   view.innerHTML = `
-    <h1>Put it out into the world</h1>
+    <h1>Deploy</h1>
     <p class="sub">Two different errands, because they really are different. A website
       lives at an address and gets replaced whole. An application is downloaded and
       installed, and old copies stay out there.</p>
@@ -1171,12 +1286,12 @@ SCREENS.ship = async () => {
 
   for (const b of document.querySelectorAll('[data-site]')) {
     b.onclick = async () => {
-      const r = await api('/ship/site', { place: b.dataset.site });
+      const r = await post('/ship/site', { place: b.dataset.site });
       if (r.ok) watchJob(r.job); else { say(r); draw(); }
     };
   }
   $('#app-build').onclick = async () => {
-    const r = await api('/ship/app', { giveOut: false });
+    const r = await post('/ship/app', { giveOut: false });
     if (r.ok) watchJob(r.job); else { say(r); draw(); }
   };
   $('#app-out').onclick = async () => {
@@ -1187,7 +1302,7 @@ SCREENS.ship = async () => {
       confirm: 'Build and give it out',
     });
     if (!version) return;
-    const r = await api('/ship/app', { giveOut: true, version });
+    const r = await post('/ship/app', { giveOut: true, version });
     if (r.ok) watchJob(r.job); else { say(r); draw(); }
   };
 
@@ -1202,7 +1317,7 @@ async function watchJob(id) {
 async function paintJob() {
   const box = $('#job');
   if (!box || !watching) return;
-  const j = await api(`/job?id=${encodeURIComponent(watching)}`);
+  const j = await get(`/job?id=${encodeURIComponent(watching)}`);
   if (j.ok === false && !j.lines) { watching = null; return; }
 
   box.innerHTML = `
@@ -1236,7 +1351,7 @@ let workspaceTimer = null;
 
 SCREENS.workspace = async () => {
   clearTimeout(workspaceTimer);
-  const w = await api('/workspace');
+  const w = await get('/workspace');
 
   if (!w.joined) {
     view.innerHTML = `
@@ -1266,7 +1381,7 @@ SCREENS.workspace = async () => {
       const b = $('#w-join');
       b.disabled = true;
       b.textContent = 'Joining…';
-      say(await api('/workspace/join'));
+      say(await post('/workspace/join'));
       await refreshMe();
       draw();
     });
@@ -1407,12 +1522,12 @@ SCREENS.workspace = async () => {
     const text = $('#w-say').value.trim();
     if (!text) return;
     $('#w-say').value = '';
-    const r = await api('/workspace/say', { text });
+    const r = await post('/workspace/say', { text });
     if (!r.ok) say(r);
     draw();
   };
-  $('#w-refresh').onclick = async () => { await api('/workspace/refresh'); draw(); };
-  $('#w-share-on')?.addEventListener('click', async () => { say(await api('/local/on')); await refreshMe(); draw(); });
+  $('#w-refresh').onclick = async () => { await post('/workspace/refresh'); draw(); };
+  $('#w-share-on')?.addEventListener('click', async () => { say(await post('/local/on')); await refreshMe(); draw(); });
   $('#w-rename')?.addEventListener('click', async () => {
     const name = await ask({
       title: 'Name this computer',
@@ -1421,8 +1536,8 @@ SCREENS.workspace = async () => {
       confirm: 'Call it that',
     });
     if (!name) return;
-    say(await api('/settings', { id: 'machineName', value: name }));
-    await api('/workspace/refresh');
+    say(await post('/settings', { id: 'machineName', value: name }));
+    await post('/workspace/refresh');
     await refreshMe();
     draw();
   });
@@ -1436,14 +1551,14 @@ SCREENS.workspace = async () => {
       danger: true,
     });
     if (!sure) return;
-    say(await api('/workspace/leave'));
+    say(await post('/workspace/leave'));
     await refreshMe();
     draw();
   };
 
   for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekAt(b.dataset.peek, w);
   for (const b of document.querySelectorAll('[data-unoffer]')) {
-    b.onclick = async () => { say(await api('/local/withdraw', { id: b.dataset.unoffer })); draw(); };
+    b.onclick = async () => { say(await post('/local/withdraw', { id: b.dataset.unoffer })); draw(); };
   }
   for (const b of document.querySelectorAll('[data-bring]')) {
     b.onclick = async () => {
@@ -1452,7 +1567,7 @@ SCREENS.workspace = async () => {
       if (!into) return;
       say({ sentence: `Bringing ${entry.name} to this computer…` });
       draw();
-      say(await api('/workspace/bring', { entry, into }));
+      say(await post('/workspace/bring', { entry, into }));
       await refreshMe();
       draw();
     };
@@ -1469,8 +1584,8 @@ async function offerFolder() {
   const path = await pickFolder({ title: 'Which folder do you want to offer?', confirm: 'Offer this folder' });
   if (!path) return;
 
-  const light = await api('/local/weigh', { path, everything: false });
-  const heavy = await api('/local/weigh', { path, everything: true });
+  const light = await post('/local/weigh', { path, everything: false });
+  const heavy = await post('/local/weigh', { path, everything: true });
 
   sheet({
     title: `Offer ${tail(path)}`,
@@ -1496,7 +1611,7 @@ async function offerFolder() {
       for (const b of document.querySelectorAll('[data-offer]')) {
         b.onclick = async () => {
           closeLayer();
-          say(await api('/local/offer', { path, everything: b.dataset.offer === '1' }));
+          say(await post('/local/offer', { path, everything: b.dataset.offer === '1' }));
           draw();
         };
       }
@@ -1511,7 +1626,7 @@ async function peekAt(machineId, w) {
     title: `What ${which?.name ?? 'it'} is offering`,
     body: '<div class="row"><span class="spin"></span><div class="grow">Asking it…</div></div>',
     onOpen: async (body) => {
-      const r = await api(`/local/offers?machine=${encodeURIComponent(machineId)}`);
+      const r = await get(`/local/offers?machine=${encodeURIComponent(machineId)}`);
       if (!r.ok) {
         body.innerHTML = `<p><b>${esc(r.sentence)}</b><br><span style="color:var(--quiet)">${esc(r.action ?? '')}</span></p>`;
         return;
@@ -1542,7 +1657,7 @@ async function peekAt(machineId, w) {
             startAt: w.workFolder,
           });
           if (!into) return;
-          const started = await api('/local/take', {
+          const started = await post('/local/take', {
             machine: machineId, offer: b.dataset.take, name: b.dataset.name, into,
           });
           if (started.ok) watchJob(started.job); else { say(started); draw(); }
@@ -1557,7 +1672,7 @@ async function peekAt(machineId, w) {
 // ---------------------------------------------------------------------------
 
 SCREENS.settings = async () => {
-  const [{ settings, record }, { terminals }] = await Promise.all([api('/settings'), api('/terminals')]);
+  const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
   view.innerHTML = `
     <h1>Settings</h1>
@@ -1595,7 +1710,7 @@ SCREENS.settings = async () => {
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.onclick = async () => {
-      await api('/settings', { id: b.dataset.toggle, value: b.dataset.now !== '1' });
+      await post('/settings', { id: b.dataset.toggle, value: b.dataset.now !== '1' });
       await refreshMe();
       draw();
     };
@@ -1609,7 +1724,7 @@ SCREENS.settings = async () => {
         confirm: 'Save',
       });
       if (!value) return;
-      say(await api('/settings', { id: b.dataset.text, value }));
+      say(await post('/settings', { id: b.dataset.text, value }));
       await refreshMe();
       draw();
     };
@@ -1618,20 +1733,20 @@ SCREENS.settings = async () => {
     b.onclick = async () => {
       const path = await pickFolder({ title: b.dataset.title, confirm: 'Use this folder', startAt: b.dataset.value });
       if (!path) return;
-      say(await api('/settings', { id: b.dataset.folder, value: path }));
+      say(await post('/settings', { id: b.dataset.folder, value: path }));
       await refreshMe();
       draw();
     };
   }
   for (const sel of document.querySelectorAll('[data-choose]')) {
     sel.onchange = async () => {
-      say(await api('/settings', { id: sel.dataset.choose, value: sel.value }));
+      say(await post('/settings', { id: sel.dataset.choose, value: sel.value }));
       await refreshMe();
       draw();
     };
   }
 
-  $('#open-record').onclick = async () => { say(await api('/settings/openRecord')); draw(); };
+  $('#open-record').onclick = async () => { say(await post('/settings/openRecord')); draw(); };
   $('#reset').onclick = async () => {
     const sure = await confirmThat({
       title: 'Put every setting back',
@@ -1641,7 +1756,7 @@ SCREENS.settings = async () => {
       danger: true,
     });
     if (!sure) return;
-    say(await api('/settings/reset'));
+    say(await post('/settings/reset'));
     await refreshMe();
     draw();
   };
@@ -1680,7 +1795,7 @@ let lastPulse = null;
 async function checkPulse() {
   if (document.hidden || layer.innerHTML || watching) return;
   try {
-    const { pulse } = await api('/pulse');
+    const { pulse } = await get('/pulse');
     if (lastPulse !== null && pulse !== lastPulse && at.tab === 'projects') await draw();
     lastPulse = pulse;
   } catch { /* the server is starting or stopping; nothing to say about it */ }
@@ -1696,7 +1811,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (layer.innerHTML) closeLayer();
     else if (document.querySelector('.panel:not([hidden])')) closePanels();
-    else if (at.inside) { at.inside = false; api('/close').then(refreshMe).then(draw); }
+    else if (at.inside) { at.inside = false; post('/close').then(refreshMe).then(draw); }
     return;
   }
   const n = Number(e.key);
@@ -1709,7 +1824,7 @@ addEventListener('keydown', (e) => {
 
 const start = async () => {
   await refreshMe();
-  const p = await api('/project');
+  const p = await get('/project');
   at.inside = !!p.open;
   await draw();
 
