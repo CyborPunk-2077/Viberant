@@ -155,3 +155,52 @@ describe('choosing a folder by looking at it', () => {
     assert.ok(places.every((p) => p.name && p.path));
   });
 });
+
+describe('signing in the way the app itself does', () => {
+  test('only real accounts reach the card; a key is not dressed up as one', async () => {
+    const { installed } = await import('../tools.mjs');
+    const all = await installed();
+
+    for (const t of all) {
+      for (const w of t.signIns ?? []) {
+        assert.equal(w.kind, 'account', `${t.name} offers ${w.name} as a sign-in`);
+        assert.ok(!/key/i.test(w.name), `${t.name} offers "${w.name}" where an account belongs`);
+      }
+      for (const k of t.keys ?? []) assert.equal(k.kind, 'key');
+    }
+  });
+
+  test('every way in runs the app\'s own sign-in rather than opening a web page', async () => {
+    const { KNOWN } = await import('../tools.mjs');
+    for (const t of KNOWN) {
+      for (const w of t.signIns ?? []) {
+        // Either it runs the app's own command, or the app signs you in inside
+        // its own window. Never a web address and a hope.
+        assert.ok(w.run || t.signIn?.way === 'inside',
+          `${t.name}'s ${w.name} has nothing to run`);
+        assert.ok(w.then, `${t.name}'s ${w.name} does not say what happens next`);
+      }
+    }
+  });
+
+  test('Google is offered by the apps that actually use it, and runs their flow', async () => {
+    const { find } = await import('../tools.mjs');
+    const gemini = find('gemini').signIns.find((w) => w.id === 'google');
+    assert.ok(gemini, 'Gemini signs in with Google');
+    assert.equal(gemini.run, 'gemini', 'and it is Gemini\'s own sign-in that opens Google');
+    assert.match(gemini.then, /account picker/);
+
+    assert.ok(find('opencode').signIns.some((w) => w.id === 'google'));
+    assert.ok(find('antigravity').signIns.some((w) => w.id === 'google'));
+    assert.ok(!find('claude').signIns.some((w) => w.id === 'google'),
+      'and not by the ones that do not');
+  });
+
+  test('a way in that an app does not have is declined rather than guessed at', async () => {
+    const { signIn, find } = await import('../tools.mjs');
+    const r = await signIn({ tool: find('claude'), dir: root, method: 'google' });
+    assert.equal(r.ok, false);
+    assert.match(r.sentence, /does not sign in that way/);
+    assert.ok(r.action);
+  });
+});

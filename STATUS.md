@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 6 August 2026
-**Tests:** 242 passing on Windows — 107 in the core, 135 in the app
+**Tests:** 246 passing on Windows — 107 in the core, 139 in the app
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ---
@@ -27,6 +27,8 @@ A bar across the top with the mark on it, five places on it, and your GitHub acc
 **Projects.** A stack, newest on top, one per line. Each carries the four things worth knowing at a glance: what state it is in, when you last stopped, **what you were doing when you stopped**, and where it is — plus what kind of project it is and whether it has a copy on GitHub. Mark one working on it, waiting or finished; that is yours to set and the manager never touches it. Any project can be kept private to this computer in one press. Folders are chosen by clicking down to them or with the Windows folder chooser. **Nothing is typed.**
 
 **AI apps.** Eleven of them, each offered by the ways it actually opens on this computer. Some open a window through a file; some open one through their own command — `codex app` takes the folder and even fetches the window if it is missing, and OpenCode serves its own page. Claude Code's window is a separate download, so its Open button says so and offers the page. Apps you do not have are listed with a link to their own install guide. One "Start in" for the page rather than a folder on every card.
+
+**Signing in runs the app's own sign-in.** Pressing Google on Gemini runs Gemini, which opens Google's real account picker. Pressing Anthropic on Claude Code runs its own sign-in, which opens Anthropic's. The manager starts the flow and never tries to be it. Only real accounts are offered; a key sits behind one line labelled as what it is, for the tools where a key is genuinely how they work.
 
 **Accounts, where you use them.** No separate accounts page. Each app's card has its own account control: the services it signs in with along the top, the accounts kept on this computer below. Pick one, press Open, and it opens as that account. The old promise still holds underneath — nothing is replaced without being kept first, and nothing is swapped underneath a running app.
 

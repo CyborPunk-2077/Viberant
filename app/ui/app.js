@@ -135,6 +135,23 @@ const GITHUB_MARK = `
       .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
   </svg>`;
 
+const ANTHROPIC_MARK = `
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="#d97757">
+    <path d="M13.83 5h-3.2L4.6 19h3.3l1.2-3h6l1.2 3h3.3L13.83 5Zm-3.66 8.4 1.9-4.9 1.9 4.9h-3.8Z"/>
+  </svg>`;
+
+const OPENAI_MARK = `
+  <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" fill="#10a37f">
+    <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 3.2 5.2 3v6l-5.2 3-5.2-3v-6l5.2-3Zm0 2.3L8.8 9.4v5.2L12 16.5l3.2-1.9V9.4L12 7.5Z"/>
+  </svg>`;
+
+const MARKS = { github: () => GITHUB_MARK, google: () => GOOGLE_MARK, anthropic: () => ANTHROPIC_MARK, openai: () => OPENAI_MARK };
+
+/** The badge for one way in: the real mark where there is one, a letter otherwise. */
+const wayBadge = (w) => (MARKS[w.mark]
+  ? `<span class="badge plain">${MARKS[w.mark]()}</span>`
+  : `<span class="badge" style="background:${esc(w.tint)}">${esc(w.initial)}</span>`);
+
 const GOOGLE_MARK = `
   <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
     <path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-2.8-.4-4H24v7.3h12.1c-.2 1.9-1.6 4.9-4.5 6.9l6.9 5.4c4.1-3.8 6.6-9.4 6.6-15.6z"/>
@@ -1352,19 +1369,18 @@ function appTile(x, p, t) {
  * accounts already kept for it. Both in the place you are about to press Open.
  */
 function accountPanel(x, t) {
-  const services = x.services ?? [];
+  const ways = x.signIns ?? [];
+  const keys = x.keys ?? [];
   const keeps = x.profiles ?? [];
   const account = chosen.account[x.id] ?? x.active ?? null;
 
   return `
-    ${services.length ? `
+    ${ways.length ? `
       <div class="head">Sign in with</div>
       <div class="services">
-        ${services.map((s) => `
-          <button class="service" data-service="${esc(x.id)}|${esc(s.id)}|${esc(s.at)}">
-            <span class="badge" style="background:${s.mark ? 'transparent' : esc(s.tint)}">${
-  s.mark === 'google' ? GOOGLE_MARK : s.mark === 'github' ? GITHUB_MARK : esc(s.initial)}</span>
-            ${esc(s.name)}
+        ${ways.map((w) => `
+          <button class="service" data-way="${esc(x.id)}|${esc(w.id)}" title="${esc(w.then ?? '')}">
+            ${wayBadge(w)}${esc(w.name)}
           </button>`).join('')}
       </div>` : ''}
 
@@ -1384,9 +1400,12 @@ function accountPanel(x, t) {
     ${x.config ? `<hr>
       <button class="pick" data-keep="${esc(x.id)}"><span>＋</span>
         <span class="grow">Keep the one I am signed in to…</span></button>` : ''}
-    ${x.signIn?.way === 'terminal' ? `
-      <button class="pick" data-signin="${esc(x.id)}"><span>❯</span>
-        <span class="grow">Run ${esc(x.name)}'s own sign-in<br><span class="sub">Opens a terminal, then your browser.</span></span></button>` : ''}`;
+    ${keys.length ? `
+      <button class="pick" data-keys="${esc(x.id)}"><span>⚿</span>
+        <span class="grow">Use a key instead
+          <span class="sub">${keys.length === 1 && !ways.length
+    ? `${esc(x.name)} works this way rather than with an account.`
+    : 'For an account that only issues keys.'}</span></span></button>` : ''}`;
 }
 
 function wireAppCards(t, p) {
@@ -1424,18 +1443,24 @@ function wireAppCards(t, p) {
     };
   }
 
-  for (const b of document.querySelectorAll('[data-service]')) {
+  // Pressing a provider starts that app's own sign-in, which is the thing that
+  // opens the provider's real flow. Nothing here opens a web page and hopes.
+  for (const b of document.querySelectorAll('[data-way]')) {
     b.onclick = async (e) => {
       e.stopPropagation();
-      const [tool, , where] = b.dataset.service.split('|');
-      post('/open/page', { at: where });
       closePanels();
-      say({
-        ok: true,
-        sentence: 'The sign-in page is opening in your browser.',
-        action: `When you are signed in there, run ${t.tools.find((x) => x.id === tool)?.name ?? 'the app'}'s own sign-in to let this computer use it.`,
-      });
+      const [tool, method] = b.dataset.way.split('|');
+      say(await post('/signin/tool', { tool, method, dir: whereFor(tool, p) }));
       draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-keys]')) {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      closePanels();
+      const app = t.tools.find((x) => x.id === b.dataset.keys);
+      keysSheet(app, p);
     };
   }
 
@@ -1496,6 +1521,43 @@ function wireAppCards(t, p) {
   for (const b of document.querySelectorAll('[data-getpage]')) {
     b.onclick = () => post('/open/page', { at: b.dataset.getpage });
   }
+}
+
+/**
+ * Signing in with a key.
+ *
+ * Kept off the card on purpose. A key is not an account: it identifies a
+ * project's billing rather than a person, it does not expire when you leave,
+ * and pasting one is a different act from signing in. The apps that only work
+ * this way say so; for the rest it is the way round when an account cannot be
+ * had.
+ */
+function keysSheet(app, p) {
+  sheet({
+    title: `Use a key with ${app.name}`,
+    narrow: true,
+    body: `
+      <p class="sub">A key is not an account. It identifies a project rather than a
+        person and it does not stop working when you sign out somewhere else — so
+        keep it as carefully as a password.</p>
+      <div class="menu">
+        ${app.keys.map((k) => `
+          <button class="opt" data-usekey="${esc(k.id)}">
+            <span class="glyph">⚿</span>
+            <span><span class="what">${esc(k.name)}</span><br>
+              <span class="why">${esc(k.then ?? 'Paste it in the window that opens.')}</span></span>
+          </button>`).join('')}
+      </div>`,
+    onOpen: (body) => {
+      for (const b of body.querySelectorAll('[data-usekey]')) {
+        b.onclick = async () => {
+          closeLayer();
+          say(await post('/signin/tool', { tool: app.id, method: b.dataset.usekey, dir: whereFor(app.id, p) }));
+          draw();
+        };
+      }
+    },
+  });
 }
 
 function whichTerminal(toolId, dir, terminals) {
@@ -2414,15 +2476,7 @@ function showGate() {
     if (!r.ok) { say(r); hideGate(); draw(); return; }
     waitForSignIn();
   };
-  $('#in-google').onclick = () => {
-    hideGate();
-    go('apps');
-    say({
-      ok: true,
-      sentence: 'Google signs you in to the AI apps that use it, not to Viberant.',
-      action: 'On any card here, open Account and pick Google.',
-    });
-  };
+  $('#in-google').onclick = () => withGoogle();
   $('#in-later').onclick = () => { hideGate(); draw(); };
 }
 
@@ -2484,6 +2538,54 @@ function waitForSignIn() {
 function hideGate() {
   $('#gate').hidden = true;
   $('#gate').innerHTML = '';
+}
+
+/**
+ * Signing in with Google, from the welcome.
+ *
+ * Google signs you in to apps, not to Viberant — so rather than saying that and
+ * leaving you somewhere, this starts the real thing: the apps on this computer
+ * that sign in with Google, each with a button that runs its own flow and puts
+ * Google's account picker in front of you.
+ */
+async function withGoogle() {
+  const { tools } = await get('/tools');
+  const canGoogle = tools.filter((x) => x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
+  const couldGoogle = tools.filter((x) => !x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
+
+  sheet({
+    title: 'Sign in with Google',
+    narrow: true,
+    body: `
+      <p class="sub">Google signs you in to the apps that use it. Viberant itself has no
+        account to sign in to — everything it does happens on this computer or through
+        your own GitHub.</p>
+
+      ${canGoogle.length ? `
+        <div class="head" style="margin-bottom:.5rem">On this computer</div>
+        <div class="menu">
+          ${canGoogle.map((x) => `
+            <button class="opt" data-google="${esc(x.id)}">
+              <span class="glyph">${GOOGLE_MARK}</span>
+              <span><span class="what">${esc(x.name)}</span><br>
+                <span class="why">${esc((x.signIns.find((w) => w.id === 'google') ?? {}).then ?? '')}</span></span>
+            </button>`).join('')}
+        </div>` : `
+        <div class="empty"><b>None of the apps that use Google are installed here.</b>
+          ${couldGoogle.length ? `Install ${esc(couldGoogle.map((x) => x.name).join(' or '))} and this fills in.` : ''}</div>`}`,
+    foot: '<button class="quiet" id="g-no">Never mind</button>',
+    onOpen: (body) => {
+      $('#g-no').onclick = () => { closeLayer(); hideGate(); draw(); };
+      for (const b of body.querySelectorAll('[data-google]')) {
+        b.onclick = async () => {
+          closeLayer();
+          hideGate();
+          say(await post('/signin/tool', { tool: b.dataset.google, method: 'google' }));
+          go('apps');
+        };
+      }
+    },
+  });
 }
 
 const start = async () => {

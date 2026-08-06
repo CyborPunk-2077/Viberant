@@ -17,10 +17,43 @@
  * password and never needs to.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { platform } from 'node:process';
 
+const run = promisify(execFile);
 const WINDOWS = platform === 'win32';
+
+/**
+ * The account that was signed in before we started, so it can be put back.
+ *
+ * Found by pressing the button: `gh auth login` clears the active session the
+ * moment it begins, before you have signed in to anything. Start it and change
+ * your mind, or close the window, and you are signed out of the account you
+ * had — which the manager then reports as "not signed in", correctly and
+ * uselessly.
+ *
+ * This is the same promise profiles.mjs makes about assistant accounts, applied
+ * to the one that everything else here depends on: **signing in must never be
+ * the thing that loses an account.**
+ */
+async function tokenInUse() {
+  try {
+    const { stdout } = await run('gh', ['auth', 'token'], { windowsHide: true });
+    return stdout.trim() || null;
+  } catch { return null; }
+}
+
+async function putItBack(token) {
+  if (!token) return false;
+  try {
+    const back = spawn('gh', ['auth', 'login', '--hostname', 'github.com', '--with-token'], {
+      shell: WINDOWS, windowsHide: true, stdio: ['pipe', 'ignore', 'ignore'],
+    });
+    back.stdin.end(`${token}\n`);
+    return await new Promise((done) => back.on('close', (code) => done(code === 0)));
+  } catch { return false; }
+}
 
 /** One sign-in, in progress. Only ever one at a time. */
 let going = null;
@@ -38,11 +71,14 @@ export const state = () => (going
   : null);
 
 /** Stop watching, without touching whatever is already signed in. */
-export function forget() {
+export async function forget() {
   if (going?.child && going.finished === null) {
     try { going.child.kill(); } catch { /* already gone */ }
+    // Giving up must not cost you the account you already had.
+    await putItBack(going.had);
   }
   going = null;
+  return { ok: true };
 }
 
 /**
@@ -55,8 +91,17 @@ export function forget() {
 export function begin() {
   if (going && going.finished === null) return state();
 
+  start();
+  return state();
+}
+
+async function start() {
+
+  const had = await tokenInUse();
+
   going = {
     child: null,
+    had,
     code: null,
     at: 'https://github.com/login/device',
     lines: [],
@@ -119,13 +164,23 @@ export function begin() {
     going.action = 'Install GitHub CLI from cli.github.com, then try again.';
   });
 
-  child.on('close', (exit) => {
+  child.on('close', async (exit) => {
     going.finished = Date.now();
     going.ok = exit === 0;
-    going.sentence = exit === 0
-      ? 'Signed in to GitHub.'
-      : 'That sign-in did not finish.';
-    going.action = exit === 0 ? null : 'Try again, or use the code at github.com/login/device.';
+
+    if (exit === 0) {
+      going.sentence = 'Signed in to GitHub.';
+      going.action = null;
+      return;
+    }
+
+    // It did not finish, and starting it already cleared whatever was signed
+    // in. Put that back, so changing your mind costs nothing.
+    const back = await putItBack(going.had);
+    going.sentence = 'That sign-in did not finish.';
+    going.action = back
+      ? 'The account you had is signed back in. Nothing changed.'
+      : 'Try again, or use the code at github.com/login/device.';
   });
 
   // Nobody stands at a sign-in page for a quarter of an hour.
@@ -134,8 +189,12 @@ export function begin() {
       try { going.child.kill(); } catch { /* already gone */ }
       going.finished = Date.now();
       going.ok = false;
-      going.sentence = 'That sign-in was left too long, so it was stopped.';
-      going.action = 'Start it again when you are ready.';
+      putItBack(going.had).then((back) => {
+        going.sentence = 'That sign-in was left too long, so it was stopped.';
+        going.action = back
+          ? 'The account you had is signed back in. Nothing changed.'
+          : 'Start it again when you are ready.';
+      });
     }
   }, 15 * 60 * 1000).unref?.();
 

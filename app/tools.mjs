@@ -47,15 +47,35 @@ const programsX86 = process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)
  * `at` is the page that opens in your browser. `by` is what actually authorises
  * the app on this computer, where that is a thing the manager can run.
  */
-const SERVICE = {
-  anthropic: { id: 'anthropic', name: 'Anthropic', initial: 'A', tint: '#d97757', at: 'https://claude.ai/login' },
-  anthropicKey: { id: 'anthropicKey', name: 'Anthropic key', initial: 'A', tint: '#d97757', at: 'https://console.anthropic.com/settings/keys' },
-  openai: { id: 'openai', name: 'OpenAI', initial: 'O', tint: '#10a37f', at: 'https://chatgpt.com/' },
-  openaiKey: { id: 'openaiKey', name: 'OpenAI key', initial: 'O', tint: '#10a37f', at: 'https://platform.openai.com/api-keys' },
-  google: { id: 'google', name: 'Google', initial: 'G', tint: '#4285f4', at: 'https://accounts.google.com/', mark: 'google' },
-  github: { id: 'github', name: 'GitHub', initial: 'G', tint: '#6e7681', at: 'https://github.com/login', mark: 'github' },
-  openrouter: { id: 'openrouter', name: 'OpenRouter', initial: 'R', tint: '#8b5cf6', at: 'https://openrouter.ai/keys' },
+/**
+ * How each app officially signs you in.
+ *
+ * `run` is the load-bearing field. It is the app's *own* sign-in command, and
+ * running it is what opens the provider's real flow — Google's account picker,
+ * GitHub's device page, Anthropic's consent screen. The manager never tries to
+ * be the thing signing you in; it starts the thing that is.
+ *
+ * This replaces what was here before, which opened a web address instead. That
+ * is how pressing Google landed somebody on their Google *account settings*
+ * page: a page about their account rather than a way to sign in to anything.
+ *
+ * `kind` is `account` for a real sign-in and `key` for pasting a secret. Only
+ * accounts are offered on the card. Keys are how a couple of these tools work
+ * and they are still reachable, but they are not a sign-in and are not dressed
+ * up as one.
+ */
+const WAY = {
+  anthropic: { id: 'anthropic', kind: 'account', name: 'Anthropic', mark: 'anthropic', tint: '#d97757', initial: 'A' },
+  openai: { id: 'openai', kind: 'account', name: 'OpenAI', mark: 'openai', tint: '#10a37f', initial: 'O' },
+  google: { id: 'google', kind: 'account', name: 'Google', mark: 'google', tint: '#4285f4', initial: 'G' },
+  github: { id: 'github', kind: 'account', name: 'GitHub', mark: 'github', tint: '#6e7681', initial: 'G' },
+  openrouter: { id: 'openrouter', kind: 'account', name: 'OpenRouter', mark: null, tint: '#8b5cf6', initial: 'R' },
+  anthropicKey: { id: 'anthropicKey', kind: 'key', name: 'Anthropic key', mark: 'anthropic', tint: '#d97757', initial: 'A' },
+  openaiKey: { id: 'openaiKey', kind: 'key', name: 'OpenAI key', mark: 'openai', tint: '#10a37f', initial: 'O' },
 };
+
+/** One way in, with the command that actually starts it. */
+const signInWith = (way, run, then) => ({ ...way, run, then });
 
 /**
  * The apps the manager knows how to start.
@@ -90,7 +110,12 @@ export const KNOWN = [
         elsewhere: 'https://claude.com/download',
       },
     },
-    services: [SERVICE.anthropic, SERVICE.anthropicKey],
+    signIns: [
+      signInWith(WAY.anthropic, 'claude auth login',
+        'Your browser opens on Anthropic’s sign-in. Finish there and Claude Code is signed in.'),
+      signInWith(WAY.anthropicKey, 'claude auth login',
+        'Choose the key option in the window, then paste your key.'),
+    ],
     signIn: { way: 'terminal', command: 'claude auth login', then: 'Follow the steps in the window that opens.' },
     carryOn: ['--continue'],
     install: 'https://claude.com/product/claude-code',
@@ -107,7 +132,12 @@ export const KNOWN = [
       // why this is offered whenever Codex itself is here.
       desktop: { command: { bin: 'codex', args: ['app'], takesPath: true } },
     },
-    services: [SERVICE.openai, SERVICE.openaiKey],
+    signIns: [
+      signInWith(WAY.openai, 'codex login',
+        'Your browser opens on OpenAI’s sign-in. Finish there and Codex is signed in.'),
+      signInWith(WAY.openaiKey, 'codex login --api-key',
+        'Paste your key in the window that opens.'),
+    ],
     signIn: { way: 'terminal', command: 'codex login', then: 'Follow the steps in the window.' },
     carryOn: ['resume', '--last'],
     install: 'https://developers.openai.com/codex/cli',
@@ -118,7 +148,10 @@ export const KNOWN = [
     made: 'Google',
     config: '.gemini',
     ways: { terminal: { bin: 'gemini' } },
-    services: [SERVICE.google],
+    signIns: [
+      signInWith(WAY.google, 'gemini',
+        'Choose “Login with Google” in the window. Your browser opens on Google’s account picker.'),
+    ],
     signIn: { way: 'terminal', command: 'gemini', then: 'Choose Google when it asks, and your browser will open.' },
     install: 'https://github.com/google-gemini/gemini-cli',
   },
@@ -128,7 +161,10 @@ export const KNOWN = [
     made: 'GitHub',
     config: '.copilot',
     ways: { terminal: { bin: 'copilot' } },
-    services: [SERVICE.github],
+    signIns: [
+      signInWith(WAY.github, 'copilot',
+        'Type /login in the window. Your browser opens on GitHub’s device page.'),
+    ],
     signIn: { way: 'terminal', command: 'copilot', then: 'Type /login in the window that opens.' },
     install: 'https://github.com/features/copilot/cli',
   },
@@ -142,7 +178,12 @@ export const KNOWN = [
       // OpenCode's window is a page it serves and opens for you.
       desktop: { command: { bin: 'opencode', args: ['web'], takesPath: false }, inBrowser: true },
     },
-    services: [SERVICE.anthropicKey, SERVICE.openaiKey, SERVICE.google, SERVICE.openrouter],
+    signIns: [
+      signInWith(WAY.anthropic, 'opencode auth login', 'Choose Anthropic in the window that opens.'),
+      signInWith(WAY.openai, 'opencode auth login', 'Choose OpenAI in the window that opens.'),
+      signInWith(WAY.google, 'opencode auth login', 'Choose Google in the window that opens.'),
+      signInWith(WAY.openrouter, 'opencode auth login', 'Choose OpenRouter in the window that opens.'),
+    ],
     signIn: { way: 'terminal', command: 'opencode auth login', then: 'Pick a provider and paste its key.' },
     carryOn: ['--continue'],
     install: 'https://opencode.ai',
@@ -153,7 +194,10 @@ export const KNOWN = [
     made: 'open source',
     config: '.aider',
     ways: { terminal: { bin: 'aider' } },
-    services: [SERVICE.anthropicKey, SERVICE.openaiKey],
+    signIns: [
+      signInWith(WAY.anthropicKey, 'aider', 'Aider is signed in with a key rather than an account. Paste yours when it asks.'),
+      signInWith(WAY.openaiKey, 'aider', 'Aider is signed in with a key rather than an account. Paste yours when it asks.'),
+    ],
     signIn: { way: 'terminal', command: 'aider', then: 'Aider uses a key rather than a sign-in. Paste yours when it asks.' },
     install: 'https://aider.chat/docs/install.html',
   },
@@ -172,7 +216,7 @@ export const KNOWN = [
       },
       terminal: { bin: 'cursor-agent' },
     },
-    services: [],
+    signIns: [],
     newWindow: true,
     signIn: { way: 'inside', then: 'Cursor signs you in inside its own window.' },
     install: 'https://cursor.com/downloads',
@@ -185,7 +229,7 @@ export const KNOWN = [
     ways: {
       desktop: { bin: 'windsurf', at: [[local, 'Programs', 'Windsurf', 'Windsurf.exe']] },
     },
-    services: [],
+    signIns: [],
     newWindow: true,
     signIn: { way: 'inside', then: 'Windsurf signs you in inside its own window.' },
     install: 'https://windsurf.com/download',
@@ -198,7 +242,7 @@ export const KNOWN = [
     ways: {
       desktop: { bin: 'antigravity', at: [[local, 'Programs', 'antigravity', 'Antigravity.exe']] },
     },
-    services: [SERVICE.google],
+    signIns: [signInWith(WAY.google, null, 'Antigravity signs you in with Google, inside its own window.')],
     newWindow: true,
     signIn: { way: 'inside', then: 'Antigravity signs you in with Google, inside its own window.' },
     install: 'https://antigravity.google/download',
@@ -218,7 +262,7 @@ export const KNOWN = [
         ],
       },
     },
-    services: [],
+    signIns: [],
     newWindow: true,
     signIn: { way: 'inside', then: 'VS Code signs you in inside its own window.' },
     install: 'https://code.visualstudio.com/download',
@@ -231,7 +275,7 @@ export const KNOWN = [
     ways: {
       desktop: { bin: 'zed', at: [[local, 'Zed', 'Zed.exe'], [local, 'Programs', 'Zed', 'Zed.exe']] },
     },
-    services: [],
+    signIns: [],
     signIn: { way: 'inside', then: 'Zed signs you in inside its own window.' },
     install: 'https://zed.dev/download',
   },
@@ -390,7 +434,11 @@ export async function installed(extra = []) {
       // Whether this app can be asked to carry on the conversation you were
       // having, rather than starting a new one.
       canCarryOn: !!t.carryOn,
-      services: t.services ?? [],
+      // Only real sign-ins reach the card. A key is how a couple of these
+      // tools work, and it is still reachable, but it is not an account and is
+      // not dressed up as one.
+      signIns: (t.signIns ?? []).filter((w) => w.kind === 'account'),
+      keys: (t.signIns ?? []).filter((w) => w.kind === 'key'),
       signIn: t.signIn ?? null,
       install: t.install ?? null,
     });
@@ -514,19 +562,45 @@ export async function launch({ tool, dir, how = null, terminal = null, carryOn =
  * with a window of their own there is nothing to run — they ask inside
  * themselves — so we open the app and say so plainly.
  */
-export async function signIn({ tool, dir, terminal = null }) {
-  if (!tool?.signIn) {
+export async function signIn({ tool, dir, terminal = null, method = null }) {
+  if (!tool) {
+    return {
+      ok: false,
+      sentence: 'That app is not one this manager knows about.',
+      action: 'Pick another one from the list.',
+    };
+  }
+
+  // A named way in — Google, GitHub, Anthropic — runs that app's own sign-in,
+  // which is the thing that opens the provider's real flow. The manager starts
+  // it; it never tries to be it.
+  const chosen = method ? (tool.signIns ?? []).find((w) => w.id === method) : null;
+  if (method && !chosen) {
+    return {
+      ok: false,
+      sentence: `${tool.name} does not sign in that way.`,
+      action: 'Pick one of the ways on its card.',
+    };
+  }
+
+  const inside = tool.signIn?.way === 'inside' || (chosen && !chosen.run);
+  if (inside) {
+    const opened = await launch({ tool, dir, how: 'desktop' });
+    if (!opened.ok) return opened;
+    return {
+      ok: true,
+      sentence: `${tool.name} is opening.`,
+      action: chosen?.then ?? tool.signIn?.then ?? 'Sign in inside its own window.',
+    };
+  }
+
+  const command = chosen?.run ?? tool.signIn?.command;
+  if (!command) {
     return {
       ok: false,
       sentence: 'This manager does not know how to sign you in to that app.',
       action: 'Open the app and sign in there.',
     };
-  }
-
-  if (tool.signIn.way === 'inside') {
-    const opened = await launch({ tool, dir, how: 'desktop' });
-    if (!opened.ok) return opened;
-    return { ok: true, sentence: `${tool.name} is opening.`, action: tool.signIn.then };
   }
 
   const ways = await waysIn(tool);
@@ -538,12 +612,15 @@ export async function signIn({ tool, dir, terminal = null }) {
     };
   }
 
-  const started = await openTerminal({ dir, command: tool.signIn.command, which: terminal });
+  const started = await openTerminal({ dir, command, which: terminal });
   if (!started.ok) return started;
+
   return {
     ok: true,
-    sentence: `Signing in to ${tool.name} in the window that just opened.`,
-    action: tool.signIn.then,
+    sentence: chosen
+      ? `Signing in to ${tool.name} with ${chosen.name}.`
+      : `Signing in to ${tool.name}.`,
+    action: chosen?.then ?? tool.signIn?.then ?? 'Follow the steps in the window that opened.',
   };
 }
 

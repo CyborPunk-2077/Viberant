@@ -651,6 +651,34 @@ The order matters as much as the set: it is the order work actually goes, so the
 
 ---
 
+### D-59 `[DECIDED]` — A sign-in button runs the app's own sign-in, never a web address
+
+**Decision.** Every way in on an app's card carries the command that app uses to sign you in, and pressing it runs that. The manager starts the flow; it never tries to be the flow.
+
+**Why.** Found by looking at a screenshot. Pressing "Google" opened `accounts.google.com` — the *account settings* page. A page about your account rather than a way to sign in to anything, and nothing was signed in at the end of it. The old model stored a web address per service and opened it, which is a guess dressed as a feature.
+
+Running `gemini` and choosing "Login with Google" opens Google's real account picker, because that is what Gemini asks for. The same holds for every one of these: the provider's genuine OAuth flow is already implemented, by the app, correctly. **Knowing which command to run is the whole job.** Reimplementing somebody else's sign-in is not something this product should ever do, and could not do well.
+
+---
+
+### D-60 `[DECIDED]` — A key is not an account, and is not offered as one
+
+**Decision.** Only real accounts appear under "Sign in with". Pasting a key sits behind one line labelled as what it is, and only for the tools where a key is genuinely how they work.
+
+**Why.** They were listed side by side — "Anthropic" next to "Anthropic key" — as though they were two flavours of the same thing. They are not. A key identifies a project's billing rather than a person, it does not stop working when you sign out somewhere else, and pasting one is a different act with different consequences. Aider only works this way and says so; for everything else an account is the answer and the key is the way round.
+
+---
+
+### D-61 `[LOCKED]` — Signing in must never be the thing that loses an account
+
+**Decision.** Before a GitHub sign-in starts, the token already in use is read and kept. If the flow fails, times out, or is abandoned, that token is put straight back.
+
+**Why.** Found by pressing the button and then watching the app report "Not signed in" for an account that had been working all session. `gh auth login` **clears the active session the moment it begins**, before you have signed in to anything. Start it, change your mind, close the window — and you are signed out of the account everything else here depends on.
+
+This is exactly the promise profiles.mjs already makes about assistant accounts (D-15's neighbours), applied to the one account the rest of the product is built on. Locked for the same reason: an account you have to go and recover is the most expensive thing this app can cost somebody, and it cost it here for the least interesting possible reason — curiosity about a button.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

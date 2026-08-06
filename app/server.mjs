@@ -418,6 +418,7 @@ const routes = {
       tool,
       dir: whereabouts(body) ?? HOUSE,
       terminal: await settings.get('terminal'),
+      method: body.method ?? null,
     });
     return { ...r, ...(await routes['GET /tools']()) };
   },

@@ -1240,3 +1240,51 @@ select { cursor: pointer; }
 /* A panel with no room below it opens above; with none to the left, rightward. */
 .panel.above { top: auto; bottom: calc(100% + 6px); }
 .panel.leftward { right: auto; left: 0; }
+
+/* ========================================================================= */
+/* Corrections found by looking at it                                        */
+/* ========================================================================= */
+
+/*
+ * A card with an open menu has to sit above its neighbours.
+ *
+ * `.tile:hover` sets a transform, and a transform makes a stacking context —
+ * so a card later in the grid painted over a menu hanging out of a card
+ * earlier in it, whatever z-index the menu asked for. The menu appeared
+ * sliced in half by the next card along. Raising the card itself is what
+ * works, because the menu is inside it.
+ */
+.tile:has(.panel:not([hidden])),
+.slab:has(.panel:not([hidden])),
+.row:has(.panel:not([hidden])) { z-index: 70; }
+.tile, .slab, .row { position: relative; }
+
+/* The bar's own menu sits above the page it hangs over. */
+.topnav .drop { z-index: 80; }
+
+/*
+ * Long prose in a sign-in row must wrap inside the row.
+ *
+ * A flex child will not shrink below its content unless it is told it may, so
+ * the Google explanation ran off the right of the welcome card and off the
+ * window with it.
+ */
+.wayin > span:last-child { min-width: 0; flex: 1; }
+.wayin span { overflow-wrap: anywhere; }
+
+/* The same rule wherever a description sits beside a mark. */
+.menu .opt > span:last-child { min-width: 0; flex: 1; }
+.menu .opt .why { overflow-wrap: anywhere; }
+.pick .grow { overflow-wrap: anywhere; }
+.pick .sub { white-space: normal; }
+
+/* A provider's own mark needs no coloured disc behind it. */
+.service .badge.plain { background: transparent; }
+.service .badge.plain svg { width: 16px; height: 16px; }
+.menu .opt .glyph svg { display: inline-block; vertical-align: middle; }
+
+/* Panels never grow past the window they hang in. */
+.panel { max-width: calc(100vw - 2rem); }
+
+/* A card row of buttons wraps rather than pushing the card wider. */
+.tile .doing, .news .acts, .slab .acts { min-width: 0; }
