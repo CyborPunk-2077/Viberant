@@ -22,8 +22,20 @@ Optional, when relevant: `DESIGN_REVIEW_REPORT.md` (the analysis the original sp
 ## Layout
 
 ```
-app/          the thing you run: server.mjs, shell.html, tools, projects, profiles
+app/          the thing you run
+  server.mjs    the local server and every route
+  ui/           the page: shell.html, style.css, app.js
+  tools.mjs     AI apps, and the ways into each one
+  terminals.mjs terminals, deliberately kept apart from the AI apps
+  projects.mjs  projects, marks, saving and sending
+  profiles.mjs  more than one account per app
+  github.mjs    everything GitHub, said in plain English
+  deploy.mjs    a website and an application, as two separate errands
+  workspace.mjs your other computers, meeting through your own GitHub account
+  browse.mjs    picking a folder by clicking
+  jobs.mjs      long errands, watched while they run
 core/         the record of what happened and the rules about it (reference/src)
+desktop/      the Electron shell — starts the server, opens a window, nothing else
 experiments/  questions answered by measuring rather than arguing
 ```
 
@@ -36,7 +48,9 @@ node --test "core/reference/test/*.test.mjs"
 node --test "app/test/*.test.mjs"
 ```
 
-141 tests. **They must all pass before you finish a session.** They are not a safety net, they are where the decisions are enforced — if a change breaks a test, the likely cause is that the change broke a decision.
+200 tests. **They must all pass before you finish a session.** They are not a safety net, they are where the decisions are enforced — if a change breaks a test, the likely cause is that the change broke a decision.
+
+One of them is `app/test/words.test.mjs`, which reads every line of prose in the app and the page and fails on any version-control vocabulary. The rule below is not a discipline any more; it is a test.
 
 ---
 
@@ -77,8 +91,10 @@ Measure rather than argue where you can. Two decisions in this project came from
 
 ## Where things stand right now
 
-The app works and is tested, but **has never been run on Windows** — that is the largest open risk. Account switching is well tested against a stand-in tool but never against real Claude Code or Codex; if either keeps credentials outside the folder we swap, switching will half-work.
+The app runs on Windows, has its own window, and now covers the whole errand: projects, AI apps by whichever way they open, terminals, accounts, GitHub, putting things out into the world, and your other computers meeting through your own GitHub account with no server anywhere.
 
-Next planned, in order: a `start.bat` so it launches like an app · packaging as an `.exe` with Electron · watching for folder changes from inside other apps · custom app entries.
+**The open risks are all the same shape — paths that are fully tested but have never been pressed once for real:** joining the shared workspace (it makes a project on your account), signing in to an AI app through a terminal we opened, switching accounts against real Claude Code or Codex, and the last step of a deploy that actually reaches Vercel or makes a release.
+
+Next planned: an icon of its own · custom app entries · tidying up the shared workspace, which grows a small save every two minutes and never prunes.
 
 Full detail in `STATUS.md`.

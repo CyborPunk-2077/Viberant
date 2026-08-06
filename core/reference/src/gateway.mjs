@@ -60,6 +60,20 @@ const isMeaningful = (rel) =>
   !rel.split(sep).some((part) => NOT_MEANINGFUL.includes(part));
 
 /**
+ * Starting a command-line tool on Windows.
+ *
+ * Most of these assistants install as a small shim rather than a program —
+ * `claude.cmd`, `codex.cmd` — and a shim can only be started through a shell.
+ * Going through a shell means nothing quotes arguments for us any more, so
+ * anything holding a space has to carry its own quotes or it arrives cut in
+ * half. Both halves of that are Windows facts, and both belong here rather than
+ * in every caller.
+ */
+const WINDOWS = process.platform === 'win32';
+const quoted = (s) =>
+  WINDOWS && /\s/.test(s) && !s.startsWith('"') ? `"${s}"` : s;
+
+/**
  * An adapter teaches the Gateway one family of assistants. Four duties, and
  * deliberately no fifth:
  *
@@ -227,9 +241,10 @@ export class Session {
 
     this.#watch = new GroundWatch(this.ground, (f) => this.#report(f), { silence }).start();
 
-    this.#child = spawn(file, args, {
+    this.#child = spawn(quoted(file), args.map(quoted), {
       cwd: this.ground,
       stdio: ['pipe', 'pipe', 'pipe'],
+      shell: WINDOWS,
       env: { ...process.env },
     });
 

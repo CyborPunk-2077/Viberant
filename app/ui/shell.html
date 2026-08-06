@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Viberant</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="/ui/style.css">
+</head>
+<body>
+
+<!--
+  The opening. It runs once, while there is nothing to read yet, and then the
+  app stops moving on its own for the rest of the session.
+-->
+<div id="opening">
+  <div class="glow"></div>
+  <div class="mark">
+    <div class="word" id="word"></div>
+    <div class="rule"></div>
+    <div class="line">One project. Every app you use. One press to save it.</div>
+  </div>
+</div>
+
+<div id="frame">
+  <nav id="nav"></nav>
+  <main><div class="hold" id="view"></div></main>
+</div>
+
+<div id="layer"></div>
+
+<script>
+  // The letters are made here rather than written out, so each one can be given
+  // its own moment without eight lines of markup saying the same thing.
+  const word = document.getElementById('word');
+  [...'Viberant'].forEach((letter, i) => {
+    const s = document.createElement('span');
+    s.textContent = letter;
+    s.style.animationDelay = `${i * 55}ms`;
+    word.appendChild(s);
+  });
+</script>
+<script type="module" src="/ui/app.js"></script>
+</body>
+</html>

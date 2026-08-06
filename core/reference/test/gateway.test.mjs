@@ -10,7 +10,7 @@
 
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, mkdir, chmod } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,13 +27,27 @@ async function ground(name) {
   return dir;
 }
 
-/** An "assistant": a script that does something and stops. */
+/**
+ * An "assistant": a small program that does something and stops.
+ *
+ * Written in Node rather than a shell script because a shell script is not a
+ * thing Windows knows how to start, and Windows is the platform this is for.
+ * Returns the command to run it, which is what an adapter wants.
+ */
 async function assistant(name, body) {
-  const path = join(root, `${name}.sh`);
-  await writeFile(path, `#!/bin/bash\n${body}\n`);
-  await chmod(path, 0o755);
-  return path;
+  const path = join(root, `${name}.mjs`);
+  await writeFile(path, `${STANDIN_HELPERS}\n${body}\n`);
+  return [process.execPath, path];
 }
+
+/** The few things a stand-in assistant needs to be able to do. */
+const STANDIN_HELPERS = `
+import { writeFileSync } from 'node:fs';
+const write = (f, t) => writeFileSync(f, t);
+const say = (t) => process.stdout.write(t + '\\n');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const input = async () => { let s = ''; for await (const c of process.stdin) s += c; return s; };
+`;
 
 const settle = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -85,14 +99,14 @@ describe('running an assistant', () => {
   test('an unknown tool works by being watched alone', async () => {
     const where = await ground('run1');
     const tool = await assistant('scribbler', `
-      echo "working"
-      printf 'export function charge() {}\\n' > billing.js
-      sleep 0.1
-      printf 'export const rate = 0.2;\\n' > rates.js
-      echo "done"
+      say('working');
+      write('billing.js', 'export function charge() {}\\n');
+      await sleep(100);
+      write('rates.js', 'export const rate = 0.2;\\n');
+      say('done');
     `);
 
-    const gateway = new Gateway().register(observedOnly('some-new-tool', [tool]));
+    const gateway = new Gateway().register(observedOnly('some-new-tool', tool));
     const r = await gateway.delegate({
       effort: 'E1', assistant: 'some-new-tool', ground: where, context: 'add billing',
     });
@@ -110,8 +124,8 @@ describe('running an assistant', () => {
 
   test('an unknown tool is still told what the developer asked for', async () => {
     const where = await ground('run1b');
-    const tool = await assistant('reader', `cat > got.txt`);
-    const gateway = new Gateway().register(observedOnly('reader', [tool]));
+    const tool = await assistant('reader', `write('got.txt', await input());`);
+    const gateway = new Gateway().register(observedOnly('reader', tool));
     const { session } = await gateway.delegate({
       effort: 'E1b', assistant: 'reader', ground: where,
       context: 'the export flow needs a progress indicator\nThen: use the existing spinner',
@@ -126,8 +140,8 @@ describe('running an assistant', () => {
 
   test('a tool that fails is reported as failing, not as finishing', async () => {
     const where = await ground('run2');
-    const tool = await assistant('breaker', `printf 'half\\n' > partial.js\nexit 3`);
-    const gateway = new Gateway().register(observedOnly('breaker', [tool]));
+    const tool = await assistant('breaker', `write('partial.js', 'half\\n'); process.exit(3);`);
+    const gateway = new Gateway().register(observedOnly('breaker', tool));
     const { session } = await gateway.delegate({
       effort: 'E2', assistant: 'breaker', ground: where, context: 'x',
     });
@@ -144,13 +158,13 @@ describe('running an assistant', () => {
     // A tool that asks a question and waits. Its process stays alive and it
     // writes nothing — indistinguishable from thinking, unless it tells us.
     const tool = await assistant('asker', `
-      printf 'export const x = 1;\\n' > x.js
-      echo "May I remove the old column? [y/n]"
-      sleep 0.4
+      write('x.js', 'export const x = 1;\\n');
+      say('May I remove the old column? [y/n]');
+      await sleep(400);
     `);
 
     // First, with no adapter reading its output: we learn nothing.
-    const blind = new Gateway().register(observedOnly('asker', [tool]));
+    const blind = new Gateway().register(observedOnly('asker', tool));
     const a = await blind.delegate({ effort: 'E3', assistant: 'asker', ground: where, context: 'x' });
     await a.session.start({ silence: 10_000 });
     assert.equal(a.session.facts().some((f) => f.kind === 'asking'), false,
@@ -161,7 +175,7 @@ describe('running an assistant', () => {
     const taught = new Gateway().register(new Adapter({
       name: 'asker',
       present: async () => true,
-      command: () => ({ file: tool, args: [] }),
+      command: () => ({ file: tool[0], args: tool.slice(1) }),
       reads: (said) => (/\[y\/n\]/.test(said) ? { kind: 'asking', question: said.trim() } : null),
     }));
     const b = await taught.delegate({ effort: 'E4', assistant: 'asker', ground: where2, context: 'x' });
@@ -174,8 +188,8 @@ describe('running an assistant', () => {
 
   test('the developer can stop an assistant without waiting for it', async () => {
     const where = await ground('run4');
-    const tool = await assistant('dawdler', `printf 'x\\n' > a.js\nsleep 30`);
-    const gateway = new Gateway().register(observedOnly('dawdler', [tool]));
+    const tool = await assistant('dawdler', `write('a.js', 'x\\n'); await sleep(30000);`);
+    const gateway = new Gateway().register(observedOnly('dawdler', tool));
     const { session } = await gateway.delegate({
       effort: 'E5', assistant: 'dawdler', ground: where, context: 'x',
     });
@@ -192,11 +206,11 @@ describe('running an assistant', () => {
 
 describe('neutrality', () => {
   test('assistants are an unordered set with no favourite', async () => {
-    const tool = await assistant('any', 'true');
+    const tool = await assistant('any', '');
     const gateway = new Gateway()
-      .register(observedOnly('zebra', [tool]))
-      .register(observedOnly('aardvark', [tool]))
-      .register(observedOnly('mongoose', [tool]));
+      .register(observedOnly('zebra', tool))
+      .register(observedOnly('aardvark', tool))
+      .register(observedOnly('mongoose', tool));
 
     const found = await gateway.available();
     assert.equal(found.length, 3);
@@ -217,12 +231,12 @@ describe('neutrality', () => {
   });
 
   test('who answers our questions is decided mechanically, not by preference', async () => {
-    const tool = await assistant('any2', 'true');
+    const tool = await assistant('any2', '');
     const gateway = new Gateway()
-      .register(observedOnly('watched-only', [tool]))
+      .register(observedOnly('watched-only', tool))
       .register(new Adapter({
         name: 'can-answer', present: async () => true,
-        command: () => ({ file: tool, args: [] }),
+        command: () => ({ file: tool[0], args: tool.slice(1) }),
         inference: async (prompt) => `answering: ${prompt}`,
       }));
 

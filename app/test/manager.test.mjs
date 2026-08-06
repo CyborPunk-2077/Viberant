@@ -18,15 +18,24 @@ import { join } from 'node:path';
 const run = promisify(execFile);
 let root, oldHome;
 
+const restore = (name, was) => {
+  if (was === undefined) delete process.env[name]; else process.env[name] = was;
+};
+
 before(async () => {
   root = await mkdtemp(join(tmpdir(), 'viberant-mgr-'));
-  oldHome = process.env.HOME;
-  process.env.HOME = join(root, 'home');
-  await mkdir(process.env.HOME, { recursive: true });
+  // Windows reads the home directory from USERPROFILE and Linux from HOME.
+  // Moving only one of them lets these tests write into a real home folder.
+  oldHome = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const house = join(root, 'home');
+  process.env.HOME = house;
+  process.env.USERPROFILE = house;
+  await mkdir(house, { recursive: true });
 });
 after(async () => {
-  process.env.HOME = oldHome;
-  await rm(root, { recursive: true, force: true });
+  restore('HOME', oldHome.HOME);
+  restore('USERPROFILE', oldHome.USERPROFILE);
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 async function project(name, { withHistory = true } = {}) {
@@ -165,7 +174,7 @@ describe('launching a tool in your project', () => {
 
 describe('more than one account, without signing out', () => {
   const tool = { id: 'testtool', name: 'Test Tool', kind: 'cli', bin: 'definitely-not-running-xyz', config: '.testtool' };
-  const signedIn = () => join(process.env.HOME, '.testtool');
+  const signedIn = () => join(homedir(), '.testtool');
 
   const signIn = async (who) => {
     await mkdir(signedIn(), { recursive: true });
@@ -234,8 +243,8 @@ describe('more than one account, without signing out', () => {
   test('a tool that is open is never swapped underneath', async () => {
     const { use, save } = await import('../profiles.mjs');
     const busy = { ...tool, id: 'busytool', bin: 'node', config: '.busytool' };
-    await mkdir(join(process.env.HOME, '.busytool'), { recursive: true });
-    await writeFile(join(process.env.HOME, '.busytool', 'auth.json'), '{"account":"a"}');
+    await mkdir(join(homedir(), '.busytool'), { recursive: true });
+    await writeFile(join(homedir(), '.busytool', 'auth.json'), '{"account":"a"}');
     await save(busy, 'a');
 
     const r = await use(busy, 'a');

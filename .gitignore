@@ -1,3 +1,8 @@
 node_modules/
 *.log
 .DS_Store
+
+# The built installer, and the shortcut — both are made from what is here and
+# both hold paths that only mean something on the machine that made them.
+dist/
+Viberant.lnk

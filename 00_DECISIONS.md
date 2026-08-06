@@ -267,6 +267,126 @@ Keyboard-first, both appearances, and reduced-motion parity are **kept** — the
 
 ---
 
+### D-24 `[DECIDED]` — Electron, not Tauri, and it is the only dependency
+
+**Decision.** The desktop shell is Electron, packaged into a Windows installer with electron-builder. This reverses the shell half of D-6. Electron and electron-builder are the only dependencies this project has, they live at the root and are used for packaging only. Everything in `app/` and `core/` remains Node standard library with nothing installed.
+
+**Why.** D-6 chose Tauri as the partner to a Rust core: Rust for the domain, a webview for the shell, one toolchain across both. That premise is gone. D-18 made the domain running JavaScript, and the app that exists today is Node — `app/server.mjs` and the core it imports. Tauri would now mean introducing Rust solely to host a window, and shipping a sidecar Node runtime beside it anyway, because the product's actual logic is JavaScript. Electron already carries the Node the server needs; `ELECTRON_RUN_AS_NODE` turns the same binary into the runtime that runs `app/server.mjs`, which is what makes the installer work on a machine with no Node on it. One dependency replaces one language plus one runtime plus a seam between them.
+
+**The size cost, honestly.** D-6 rejected Electron for "bundled Chromium, slower start, heavier memory — all three fight constitutional guarantees." That objection was correct then and is still correct now; what changed is what the alternative costs, not what Electron costs. The numbers, measured on this build rather than recalled:
+
+| | Tauri (D-6's estimate) | Electron (measured, this build) |
+|---|---:|---:|
+| Installer | ~3–6 MB | **95 MB** |
+| Installed | ~10 MB | **347 MB** |
+| Idle memory | ~80 MB | **266 MB** across 4 processes |
+
+That is roughly **twenty times the download and thirty-five times the disk**. It is a real loss and it is not being dressed up: a person on a slow connection waits minutes rather than seconds, and the app sits alongside AI agents that are already eating the machine — the exact contention D-6 named. The memory figure is the honest one to watch, because it is the one paid continuously rather than once. Startup was the third objection and is the one that mostly survives contact: the window appears in about a second here, against Tauri's claimed near-instant. The ten-second orientation promise is about the *picture being readable*, not the binary being small, and it holds.
+
+The four processes are Electron's main process, the window, its graphics helper, and the manager's own server — that last one being the same `app/server.mjs` a terminal would start, running on the Node that Electron already carries.
+
+**Why the cost is worth paying anyway.** Under D-12 the only question is whether the founder stops reaching for their old workflow, and nothing in that sentence is about megabytes. A 3 MB installer for an app that does not exist is worth less than a 90 MB installer for one that runs tonight. The disk it costs is a rounding error next to the 14.6 GB a monorepo's ten grounds cost in Part III of this same document — a number we accepted without argument.
+
+**Alternatives considered.**
+- *Keep Tauri.* Rejected: it now means adding Rust to host a window, and bundling Node beside it regardless, for a project whose stated discipline is subtraction.
+- *Stay a browser tab.* Cheapest and honest. Rejected: it is not an app you launch, cannot go in the startup folder, and needs Node installed. `start.bat` keeps this available for anyone who prefers it, so nothing is lost by also having a window.
+- *Wrap the existing browser with a WebView2 host of our own.* Smallest real window. Rejected: it is writing a packaging tool instead of the product, and WebView2's presence is a per-machine assumption rather than a guarantee.
+
+**Consequences.** Amends D-6: the Rust core and the webview shell are both withdrawn; the substrate is Node with an Electron shell. Nothing else in D-6's reasoning is disturbed — the shell is still disposable and truth-free, still prose-first HTML and CSS, and the macOS port is still a port rather than a rewrite, because the shell is fifty lines that start a server and open a window. The packaged app runs unarchived (`asar: false`) because the server is a real file that Node has to be able to start, and a file inside an archive is not one.
+
+---
+
+### D-25 `[DECIDED]` — Your computers meet in a private project on your own GitHub account
+
+**Decision.** The shared workspace is a project called `viberant-workspace`, private, on the developer's own GitHub account. Every computer signed in to that account keeps a copy and writes exactly three files into it: who it is, what it is offering, and what it has said. **Each computer only ever writes its own three files.** The picture is read by putting every computer's files side by side.
+
+**Why.** The founder's stated problem opens with working across multiple computers, and D-13 already moved truth sync into v1 on that basis. The obvious mechanism is a server both computers talk to; that is barred permanently and D-13 rejected a relay for exactly this. GitHub is already in the loop — the developer is signed in to it, their projects are already there, and it is already trusted with the code itself. Using it as the meeting point adds no trust boundary and no service of ours.
+
+The per-computer file ownership is the load-bearing part. Two computers writing at the same moment cannot collide because there is no file they both write. That makes the merge a fold over independent files rather than a conflict-resolution problem, which is the same shape the event log already has (Architecture §11). It is tested with two computers and a stand-in for GitHub, including the case where both wrote.
+
+**The cost, stated plainly.** Being present at all writes a small save into that workspace every couple of minutes. Over a long day of two computers being open that is a few hundred tiny saves in a project nobody reads by hand. A server would not have needed them. Presence is written at most every two minutes and anything the developer actually did is written at once, which is the cheapest honest point on that curve. `[OPEN]` O-9: no compaction policy exists yet for a workspace left running for a year.
+
+**What does not travel.** Files. Each computer gets its own copy of a project from GitHub in the ordinary way. What travels is knowing what exists, who is about, and what was said. This is the same honest limit D-13 set for in-flight sessions.
+
+**Alternatives considered.**
+- *A relay service of ours.* Rejected by D-13 and by the constitution. Nothing has changed.
+- *Discovery over the local network.* Rejected: the founder asked specifically for this to work without a local network or a physical connection, which is the case that actually hurts.
+- *One file everybody writes.* Simpler to read, and wrong: two computers open at once would fight over it every two minutes.
+
+---
+
+### D-26 `[DECIDED]` — An app is offered by the ways into it, not by what kind of thing it is
+
+**Decision.** Each AI app declares its ways in — `terminal`, `desktop`, or both — and only the ways actually found on the computer are offered. An app with both gets two buttons. An app with one gets one. An app with neither is listed as absent rather than hidden.
+
+**Why.** The old model gave each app a single `kind`, which was already false for Cursor (a window and a command-line agent) and getting falser. More importantly it made the manager decide for the developer: opening Claude Code in a terminal and opening Cursor in its own window are different acts with different consequences for where your keyboard goes, and that is the developer's call. Offering a way that is not installed would be the one thing worse than not offering it.
+
+**Why absent apps are still listed.** "We looked and it is not here" is more useful than a shorter list, and it is where an offer to install one belongs. It is not a ranking — tested, along with the rule that nothing is ever marked as the one to use (D-9's neutrality, held mechanically).
+
+---
+
+### D-27 `[DECIDED]` — Terminals are their own place, never mixed with the AI apps
+
+**Decision.** Command Prompt, Windows PowerShell, PowerShell 7, Windows Terminal, Git Bash and WSL live in a tab of their own. No terminal ever appears in the list of AI apps, and no AI app appears among the terminals. There is a test that fails if the two sets ever intersect.
+
+**Why.** You go to the AI apps to hand a project to something that writes code. You come here to get a prompt in the right folder. Putting PowerShell in a list of assistants would be a small lie about what it is, and small lies about what things are is how a calm surface becomes a confusing one.
+
+---
+
+### D-28 `[DECIDED]` — One opening, once, and then the app never moves on its own again
+
+**Decision.** Opening Viberant plays a short animation of the name — under two seconds, before there is anything to read — and then nothing in the product animates for the rest of the session except in direct answer to something you pressed. Reduced-motion settings replace it with a fade.
+
+**Why.** D-3 is locked and stands: the ambient indicator never animates, never badges, never asks for you. This does not touch it. D-3's principle is "you look at it; it never looks at you" — an opening plays at the one moment you have already chosen to look, and it is finished before the first sentence appears. It costs nothing in attention because there is no attention to take yet.
+
+**Founder request, and worth saying why it is not merely indulged.** A tool you reach for daily should feel like something rather than nothing when it opens. The whole product is a bet that feel decides whether the old workflow gets abandoned (D-12), and two seconds at launch is the cheapest possible place to spend on that.
+
+---
+
+### D-29 `[DECIDED]` — Putting a website online and giving out an application are two errands, never one button
+
+**Decision.** The Ship surface has two panels that never merge. A website goes to a place and is replaced whole. An application is built into something installable and handed out under a version, and every version handed out stays out there.
+
+**Why.** They fail differently, they are undone differently, and they mean different things to the people on the other end. A single "deploy" button would have to guess which one you meant, and guessing wrong means either a half-uploaded folder or a version number in the world that you cannot take back. The panels say what each one costs before you press: replacing a site is total and immediate; a release is permanent.
+
+**Honest limit.** GitHub Pages serves files exactly as they sit, so a site that has to be built is declined with a sentence pointing at Vercel or Netlify, which build it themselves. Building the site and pushing the output elsewhere was considered and rejected — it is machinery that fails quietly, and this product does not have quiet failures.
+
+---
+
+### D-30 `[DECIDED]` — Program names are the only exception to the vocabulary contract, and the exception is a test
+
+**Decision.** The names of programs the developer already has — GitHub, GitHub Pages, GitHub CLI, Git Bash — may appear on surfaces. Nothing else borrowed may. A test reads every line of prose in the app and the page and fails the run on any other borrowed word.
+
+**Why.** The contract bans describing the developer's work in someone else's terms. It was never meant to ban naming a program on their own machine — the product has said "GitHub" since D-1 without anyone objecting, because a place with a name is not jargon. Refusing to say "Git Bash" would not spare anybody the vocabulary; it would leave them unable to find the entry in their own Start menu.
+
+**What changed.** This was previously a rule a person had to remember while writing a screen. Making it a test is the same move D-8 made for machine-written sentences, applied to the ones humans write. MVP release criterion 11.8 now has something that audits automatically rather than a week of somebody reading.
+
+---
+
+### D-31 `[DECIDED]` — Long errands show what they printed
+
+**Decision.** Building and putting things online run as watched errands: named steps in plain sentences, and underneath, every line the command printed, kept and shown.
+
+**Why.** This is the one place in the product where raw machine output reaches a surface, and it is deliberate. A build that fails at line four hundred cannot honestly be compressed into a shrug, and a spinner for four minutes is indistinguishable from a hang. The verdict is still the manager's — one plain sentence, one action. The lines underneath are evidence, which the design system already permits at depth.
+
+---
+
+### D-32 `[DECIDED]` — A folder is chosen by clicking, never by typing a path
+
+**Decision.** Projects are picked by walking a list of folders, which marks the ones that look like projects, or by handing off to the folder chooser Windows already has. The path box is gone.
+
+**Why.** Typing a path fails in ways the person cannot see — a backslash the wrong way, a folder renamed last week, a trailing space. Every one of those failures lands as "that folder is not there", which is true and useless. Clicking cannot produce a path that does not exist.
+
+---
+
+### D-33 `[DECIDED]` — Where you have got to is yours to say, not ours to infer
+
+**Decision.** A project can be marked *working on it*, *waiting*, or *finished*. The manager never sets or changes a mark by itself.
+
+**Why.** Everything else on a project card is a fact the manager worked out by looking — what is unsaved, when it was last saved, whether it has a copy on GitHub. A project can be perfectly saved and nowhere near done, and it can be a mess on disk and be something you decided months ago was finished. Only the developer knows which. Inferring it would produce exactly the kind of confident wrong statement that makes the whole picture stop being believable.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
@@ -352,6 +472,8 @@ Ground preparation moves from effort creation to first delegation (D-5). Contrad
 | ~~O-6~~ | ~~Event & reason schema v1~~ — **closed.** Specified, implemented and held to a 39-test conformance suite in `core/`. | — | Done |
 | `[OPEN]` O-7 | Every remaining numeric parameter (grace period, staleness, Home ceilings) | Both | Before MVP |
 | `[OPEN]` O-8 | Business model. Untouched in the corpus; every conventional lever is constitutionally banned | Founder | Not blocking build |
+| `[OPEN]` O-9 | Compaction for a shared workspace left running for months — presence writes a small save every two minutes and nothing prunes them yet (D-25) | Eng | Before it is a year old |
+| `[ASSUMED]` R-2 | That signing in to an AI app inside a terminal the manager opened leaves that app signed in the same way it would be otherwise. Believed, never checked against a real provider (see also the untested half of profiles) | Eng | Verify with a throwaway account |
 | `[ASSUMED]` R-1 | That the founder's own repositories live on Windows filesystems, not inside WSL. If false, D-7 breaks the dogfooding loop that justified D-2 | Founder | Verify now |
 
 ---

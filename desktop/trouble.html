@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Viberant</title>
+<style>
+  :root { --ink:#1a1a19; --quiet:#6b6a66; --page:#faf9f7; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#edecea; --quiet:#9d9b96; --page:#171715; }
+  }
+  html,body{margin:0;height:100%}
+  body{background:var(--page);color:var(--ink);display:grid;place-items:center;padding:2rem;
+       font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased}
+  main{max-width:26rem}
+  p{margin:0 0 .6rem}
+  .action{color:var(--quiet)}
+</style>
+<main>
+  <p>Viberant did not finish starting on this computer.</p>
+  <p class="action">Close this window and open it again. If it keeps happening, run
+     <code>node app\server.mjs</code> from the folder you installed it in — whatever is
+     wrong will say so there.</p>
+</main>

@@ -28,16 +28,75 @@ export async function remembered() {
 
 export async function remember(path) {
   const dir = resolve(path);
-  const list = (await remembered()).filter((p) => p.path !== dir);
-  list.unshift({ path: dir, name: basename(dir), lastOpened: Date.now() });
+  const all = await remembered();
+  const was = all.find((p) => p.path === dir);
+  const list = all.filter((p) => p.path !== dir);
+  list.unshift({ ...was, path: dir, name: basename(dir), lastOpened: Date.now() });
   await mkdir(HOUSE, { recursive: true });
-  await writeFile(REMEMBERED, JSON.stringify(list.slice(0, 30), null, 2), 'utf8');
+  await writeFile(REMEMBERED, JSON.stringify(list.slice(0, 60), null, 2), 'utf8');
   return list[0];
 }
 
 export async function forget(path) {
   const list = (await remembered()).filter((p) => p.path !== resolve(path));
   await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// Where you have got to
+// ---------------------------------------------------------------------------
+
+/**
+ * What you decided about a project, as opposed to what is true about it.
+ *
+ * A project can be perfectly saved and still unfinished, and it can be a mess
+ * on disk and be something you have decided is done. Only you know which, so
+ * this is the one thing here that is yours to set rather than ours to work out.
+ */
+export const MARKS = [
+  { id: 'working', name: 'Working on it', blurb: 'This is what you are in the middle of.' },
+  { id: 'waiting', name: 'Waiting', blurb: 'Parked for now, and you mean to come back.' },
+  { id: 'finished', name: 'Finished', blurb: 'Done. Nothing owed.' },
+];
+
+/** Set, or clear, how a project stands with you. */
+export async function mark(path, value) {
+  const dir = resolve(path);
+  const known = value === null || MARKS.some((m) => m.id === value);
+  if (!known) {
+    return { ok: false, sentence: 'That is not one of the ways a project can be marked.', action: 'Pick one from the list.' };
+  }
+
+  const list = await remembered();
+  const one = list.find((p) => p.path === dir);
+  if (!one) {
+    return { ok: false, sentence: 'That project is not one this manager is keeping.', action: 'Open it once first.' };
+  }
+  one.mark = value;
+  one.markedAt = value ? Date.now() : null;
+  await mkdir(HOUSE, { recursive: true });
+  await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
+
+  const named = MARKS.find((m) => m.id === value);
+  return { ok: true, sentence: value ? `${one.name} is marked ${named.name.toLowerCase()}.` : `${one.name} is no longer marked.` };
+}
+
+/** Offer a project to your other computers, or stop offering it. */
+export async function offer(path, yes) {
+  const dir = resolve(path);
+  const list = await remembered();
+  const one = list.find((p) => p.path === dir);
+  if (!one) {
+    return { ok: false, sentence: 'That project is not one this manager is keeping.', action: 'Open it once first.' };
+  }
+  one.offered = !!yes;
+  await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
+  return {
+    ok: true,
+    sentence: yes
+      ? `${one.name} is now offered to your other computers.`
+      : `${one.name} is kept to this computer.`,
+  };
 }
 
 /**
@@ -94,12 +153,25 @@ export async function situation(dir) {
   }
 
   try {
-    const { stdout } = await git(dir, 'log', '-1', '--format=%s|%cr');
-    const [subject, when] = stdout.trim().split('|');
-    out.last = subject ? { subject, when } : null;
+    const { stdout } = await git(dir, 'log', '-1', '--format=%s|%cr|%cI');
+    const [subject, when, at] = stdout.trim().split('|');
+    out.last = subject ? { subject, when, at } : null;
   } catch { out.last = null; }
 
   return { tracked: true, ...out };
+}
+
+/**
+ * When this was last saved, as a person would say it.
+ *
+ * Its own sentence rather than part of the one above, because "what is unsaved"
+ * and "when did I last stop" are two different questions and a card has room
+ * for both.
+ */
+export function lastSavedInWords(s) {
+  if (!s.tracked) return 'Never saved.';
+  if (!s.last) return 'Nothing saved here yet.';
+  return `Saved ${s.last.when}.`;
 }
 
 /** A one-line, jargon-free reading of that. */

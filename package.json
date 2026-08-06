@@ -1,0 +1,46 @@
+{
+  "name": "viberant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open one project across your AI apps.",
+  "main": "desktop/main.js",
+  "scripts": {
+    "start": "node app/server.mjs",
+    "desktop": "electron .",
+    "build": "electron-builder --win --x64",
+    "test": "node --test \"core/reference/test/*.test.mjs\" && node --test \"app/test/*.test.mjs\""
+  },
+  "build": {
+    "appId": "com.viberant.manager",
+    "productName": "Viberant",
+    "artifactName": "Viberant-Setup-${version}.${ext}",
+    "asar": false,
+    "files": [
+      "desktop/**",
+      "app/**",
+      "core/reference/src/**",
+      "package.json",
+      "!**/test/**",
+      "!**/*.md"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Viberant"
+    }
+  },
+  "devDependencies": {
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3"
+  }
+}

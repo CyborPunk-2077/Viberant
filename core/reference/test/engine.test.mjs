@@ -23,6 +23,15 @@ import { ulid } from '../src/identity.mjs';
 const run = promisify(execFile);
 let root;
 
+/**
+ * What a file says, with Windows line endings folded back.
+ *
+ * Git rewrites line endings on the way out of history on Windows, so a file
+ * written here as one thing comes back as another. None of these tests are
+ * about line endings, so none of them should fail over them.
+ */
+const text = async (...p) => (await readFile(join(...p), 'utf8')).replace(/\r\n/g, '\n');
+
 before(async () => { root = await mkdtemp(join(tmpdir(), 'viberant-engine-')); });
 after(async () => { await rm(root, { recursive: true, force: true }); });
 
@@ -70,7 +79,7 @@ describe('isolated ground', () => {
 
     assert.equal(r.ok, true);
     assert.ok(existsSync(r.ground));
-    assert.equal(await readFile(join(r.ground, 'app.js'), 'utf8'), 'export const version = 1;\n',
+    assert.equal(await text(r.ground, 'app.js'), 'export const version = 1;\n',
       'the effort starts from settled reality');
   });
 
@@ -85,7 +94,7 @@ describe('isolated ground', () => {
 
     assert.match(await readFile(join(ga, 'app.js'), 'utf8'), /\/\/ A/);
     assert.match(await readFile(join(gb, 'app.js'), 'utf8'), /\/\/ B/);
-    assert.equal(await readFile(join(p.dir, 'app.js'), 'utf8'), 'export const version = 1;\n',
+    assert.equal(await text(p.dir, 'app.js'), 'export const version = 1;\n',
       'the project itself is untouched while efforts are in flight');
   });
 
@@ -161,7 +170,7 @@ describe('settling accepted work', () => {
     const entries = await p.log();
     assert.equal(entries.length, 2, 'one entry for the effort, on top of what was there');
     assert.equal(entries[0], 'make billing charge the right amount');
-    assert.equal(await readFile(join(p.dir, 'billing.js'), 'utf8'),
+    assert.equal(await text(p.dir, 'billing.js'),
       'export function charge(amount) { return amount; }\n');
   });
 
@@ -219,7 +228,7 @@ describe('settling accepted work', () => {
 
     const { stdout } = await p.git('status', '--porcelain');
     assert.equal(stdout.trim(), '', 'a refusal leaves the project exactly as it was');
-    assert.equal(await readFile(join(p.dir, 'app.js'), 'utf8'),
+    assert.equal(await text(p.dir, 'app.js'),
       'export const version = 99; // by hand\n');
   });
 
@@ -260,7 +269,7 @@ describe('letting go', () => {
     assert.equal(r.ok, true);
 
     assert.ok(existsSync(join(gk, 'keep.js')), 'the other effort is untouched');
-    assert.equal(await readFile(join(p.dir, 'app.js'), 'utf8'), 'export const version = 1;\n',
+    assert.equal(await text(p.dir, 'app.js'), 'export const version = 1;\n',
       'the project never knew about it');
     assert.equal((await p.log()).length, 1);
   });

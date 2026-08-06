@@ -14,8 +14,11 @@ import { promisify } from 'node:util';
 import { mkdtemp, rm, writeFile, mkdir, chmod, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { platform } from 'node:process';
+
+const WINDOWS = platform === 'win32';
 
 const run = promisify(execFile);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -53,12 +56,28 @@ before(async () => {
   await git('remote', 'add', 'origin', shared);
 
   // A stand-in for a desktop AI app: it records the folder it was opened in.
-  const tool = join(bin, 'cursor');
-  await writeFile(tool, `#!/bin/bash\necho "$1" > ${join(root, 'opened-at.txt')}\n`);
-  await chmod(tool, 0o755);
+  // Two versions, because the two platforms start programs differently and this
+  // test is about the manager, not about that difference.
+  const openedAt = join(root, 'opened-at.txt');
+  if (WINDOWS) {
+    await writeFile(join(bin, 'cursor.cmd'), `@echo off\r\n>"${openedAt}" echo %~1\r\n`);
+  } else {
+    const tool = join(bin, 'cursor');
+    await writeFile(tool, `#!/bin/bash\necho "$1" > ${openedAt}\n`);
+    await chmod(tool, 0o755);
+  }
 
   server = spawn(process.execPath, [SERVER], {
-    env: { ...process.env, HOME: house, PORT: String(PORT), PATH: `${bin}:${process.env.PATH}` },
+    env: {
+      ...process.env,
+      // Windows reads the home directory from USERPROFILE and Linux from HOME.
+      // Setting only one of them lets a test write into the real home folder,
+      // which is how this test suite quietly polluted a real one.
+      HOME: house,
+      USERPROFILE: house,
+      PORT: String(PORT),
+      PATH: `${bin}${delimiter}${process.env.PATH}`,
+    },
     stdio: 'ignore',
   });
   for (let i = 0; i < 80; i++) {
@@ -69,7 +88,9 @@ before(async () => {
 after(async () => {
   server?.kill('SIGTERM');
   await settle(150);
-  await rm(root, { recursive: true, force: true });
+  // Windows holds files open a moment after the process using them dies, so
+  // clearing up needs to be willing to wait rather than to fail the run.
+  await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 // ---------------------------------------------------------------------------
