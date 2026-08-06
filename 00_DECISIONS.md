@@ -488,6 +488,44 @@ The cause: being signed in to the GitHub helper does not let *git* send anything
 
 ---
 
+### D-43 `[DECIDED]` — Some apps open their window through their own command
+
+**Decision.** A way into an app can be a *command* rather than a file: `codex app <folder>` opens Codex's window at that folder, `opencode web` opens OpenCode's. Where an app has a window that this computer does not, the Open button still appears and says where to get it.
+
+**Why.** D-34 established that a window has to prove it is a window, and on the evidence Claude Code, Codex and OpenCode were all terminal-only here. That was true about the *files* and wrong about the *apps* — reading their own help showed Codex ships `codex app`, which takes a workspace path and even fetches the window if it is missing, and OpenCode ships `opencode web`. Both are real windows, opened the way those apps expect.
+
+The general lesson, which is the reason this is written down: **checking what is installed answers a different question from checking what the app can do.** The first was measured carefully and confidently produced the wrong answer to the second.
+
+**Claude Code stays honest.** Its window is a separate download that its command-line half cannot start, so its Open button opens the download page and the card says which one is installed here. A button that explains beats a button that is missing.
+
+---
+
+### D-44 `[DECIDED]` — Projects are a stack, and your other computers see them unless you say otherwise
+
+**Decision.** Projects are one per line, most recent on top, each carrying four things: what state it is in, when you last stopped, what you were doing when you stopped, and where it is. Every project is visible to your other computers; private is a per-project opt-out, and private means *left out of the list entirely* rather than refused on request.
+
+**Why.** The grid looked tidier and told you less — three words and a path, in a box sized for a phone. The thing that actually gets somebody back into work is the last line they wrote about it, and there was nowhere to put it.
+
+On the default: they are your own computers, signed in to your own account. Hiding your own work from yourself as the starting position is a strange place to begin, and it made the common case a chore. Private as an absence rather than a permission also means there is nothing to get around — a private project is simply not in what this computer tells the others.
+
+---
+
+### D-45 `[DECIDED]` — One folder for the page, not one per card
+
+**Decision.** The Apps and Terminals pages have a single "Start in" control. The per-card folder chips are gone.
+
+**Why.** Eleven cards each saying "in Viberant" is a lot of ink to say one fact once. The override existed for a case nobody has yet had — opening two different folders in two different apps in the same minute — and cost a line of furniture on every card to serve it.
+
+---
+
+### D-46 `[DECIDED]` — Getting an app you do not have is a page, not an errand
+
+**Decision.** An app that is not installed offers its own install page. The manager no longer runs the install itself.
+
+**Why.** Every one of these has an install page with the current instructions, the right package name, and the notes about what else is needed. Running `npm install -g` from inside the manager duplicated that, went stale the moment a package moved, and failed in ways the manager then had to explain. Deleting it removed a route, a job, and a class of failure.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

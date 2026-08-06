@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 6 August 2026
-**Tests:** 221 passing on Windows — 107 in the core, 114 in the app
+**Tests:** 222 passing on Windows — 107 in the core, 115 in the app
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ---
@@ -24,15 +24,15 @@ To start it with Windows: run `make-shortcut.ps1`, press Win+R, type `shell:star
 
 Six places, and the number keys 1 to 6 go straight to them. Your GitHub account sits in the bottom-left corner, always, with switching and signing in behind it.
 
-**Projects.** Every project is a card: what is unsaved, when you last saved, whether it has a copy on GitHub, and where *you* have got to with it — working on it, waiting, finished, which only you ever set. "What is in it" opens the whole picture without leaving the list. Folders are chosen by clicking down to them or with the Windows folder chooser. **Nothing is typed.**
+**Projects.** A stack, newest on top, one per line. Each carries the four things worth knowing at a glance: what state it is in, when you last stopped, **what you were doing when you stopped**, and where it is — plus what kind of project it is and whether it has a copy on GitHub. Mark one working on it, waiting or finished; that is yours to set and the manager never touches it. Any project can be kept private to this computer in one press. Folders are chosen by clicking down to them or with the Windows folder chooser. **Nothing is typed.**
 
-**AI apps.** Eleven of them, each offered by the ways it actually opens on this computer — a window, a terminal, or both — and **"has a window" is read out of the program's own header rather than guessed.** That matters: what is installed here under the names Claude Code, Codex and OpenCode are command-line programs, and the card says so instead of showing an Open button that would start something invisible. Apps you do not have are still listed, with a button that installs them.
+**AI apps.** Eleven of them, each offered by the ways it actually opens on this computer. Some open a window through a file; some open one through their own command — `codex app` takes the folder and even fetches the window if it is missing, and OpenCode serves its own page. Claude Code's window is a separate download, so its Open button says so and offers the page. Apps you do not have are listed with a link to their own install guide. One "Start in" for the page rather than a folder on every card.
 
 **Accounts, where you use them.** No separate accounts page. Each app's card has its own account control: the services it signs in with along the top, the accounts kept on this computer below. Pick one, press Open, and it opens as that account. The old promise still holds underneath — nothing is replaced without being kept first, and nothing is swapped underneath a running app.
 
 **Terminals, in their own place.** Command Prompt, Windows PowerShell, PowerShell 7, Windows Terminal, Git Bash and WSL. A test fails if a terminal ever appears among the AI apps.
 
-**Every card can start somewhere else.** One "Start in" for the page, and a folder chip on every card to override it for that one app.
+**One "Start in" per page.** Everything on the Apps and Terminals pages opens in the folder named at the top, which is the project you have open unless you pick another.
 
 **Save and send, and everything behind it.** One button most days. Behind More: save here only, get the latest, make a copy on GitHub, let anyone see it, take back the last save, see what changed, open it on GitHub, and let this computer send to GitHub. Anything not possible right now is visibly not possible.
 
@@ -84,7 +84,11 @@ Three real faults, all of which would have hit you first:
 
 **Being a real window costs 95 MB to download and 347 MB on disk.** The argument is D-24.
 
-**A program says whether it is a window or a terminal thing, and has since 1993.** Fifteen lines reads it. Three apps on this computer that look like desktop apps are not.
+**A program says whether it is a window or a terminal thing, and has since 1993.** Fifteen lines reads it. Every Claude, Codex and OpenCode executable on this computer is a console program.
+
+**And that answered the wrong question.** Reading their own help showed Codex ships `codex app`, which opens its window at a folder and fetches it if missing, and OpenCode ships `opencode web`. Checking what is *installed* is not the same as checking what an app *can do* — the first was measured carefully and confidently produced the wrong answer to the second.
+
+**A CSS selector that matches nothing fails silently and looks like a layout bug.** The corner menu ran off two edges of the screen because it was styled with `.who .panel`, and the panel is that button's sibling rather than its child.
 
 **The same Windows trap has now been hit three times in three files:** a folder with a space in its name, handed to a shell, arrives as half a path. Launching, then the build runner, then the parcel of arguments to a release. All three fixed, all three commented.
 

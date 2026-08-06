@@ -82,27 +82,29 @@ async function refreshMe() {
 function drawNav() {
   $('#nav').innerHTML = `
     <div class="brand"><span class="bead"></span><span>Viberant</span></div>
-    ${TABS.map((t, i) => `
-      <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}">
-        <span aria-hidden="true">${t.glyph}</span>
-        <span class="label">${esc(t.name)}</span>
-        <span class="key">${i + 1}</span>
-      </button>`).join('')}
-    <div class="sep"></div>
-    <div class="foot" style="border:0;padding:.5rem .2rem">
+    <div class="places">
+      ${TABS.map((t, i) => `
+        <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}">
+          <span aria-hidden="true">${t.glyph}</span>
+          <span class="label">${esc(t.name)}</span>
+          <span class="key">${i + 1}</span>
+        </button>`).join('')}
+    </div>
+    <div class="corner">
       <div class="drop">
         <button class="who" id="who">
           <span class="dot ${me.github ? 'live' : 'off'}"></span>
           <span class="grow">
             <span class="name">${esc(me.github ?? 'Not signed in')}</span>
-            <span class="what">${me.github ? 'GitHub' : 'sign in to GitHub'}</span>
+            <span class="what">${me.github ? 'GitHub account' : 'sign in to GitHub'}</span>
           </span>
           <span style="color:var(--faint)">▾</span>
         </button>
         <div class="panel" hidden id="who-panel"></div>
       </div>
-      <div style="padding:.5rem .35rem 0;color:var(--faint);font-size:.74rem">
-        ${esc(me.machineName || 'This computer')}${me.currentName ? ` · ${esc(me.currentName)}` : ''}
+      <div class="thisone">
+        <span class="dot ${me.sharingHere ? 'live' : 'off'}"></span>
+        <span>${esc(me.machineName || 'This computer')}</span>
       </div>
     </div>`;
 

@@ -209,14 +209,34 @@ body {
 }
 #frame.up { opacity: 1; }
 
+/*
+ * The sidebar must not clip. The account menu opens upwards out of the corner,
+ * and an `overflow` anywhere above it cuts it in half — which is exactly what
+ * happened: the menu appeared sliced down its left edge and running off the
+ * bottom of the screen. So the column itself never scrolls; only the list of
+ * places inside it does, and the corner sits outside that list.
+ */
 nav {
   border-right: 1px solid var(--line);
-  background: color-mix(in srgb, var(--card) 60%, var(--page));
-  padding: 1.1rem .7rem;
+  background: color-mix(in srgb, var(--card) 55%, var(--page));
+  padding: 1.1rem .7rem .8rem;
   display: flex;
   flex-direction: column;
   gap: .15rem;
+  overflow: visible;
+  min-height: 0;
+}
+
+nav .places {
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0 -.2rem;
+  padding: 0 .2rem;
 }
 
 .brand {
@@ -800,7 +820,27 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
   white-space: nowrap;
 }
 .who .what { color: var(--faint); font-size: .74rem; }
-.who .panel { right: auto; left: 0; bottom: calc(100% + 6px); top: auto; width: 17rem; }
+/*
+ * The corner menu opens upward and is allowed to be wider than the column it
+ * comes out of — it lays over the page rather than being squeezed into 232px.
+ * It also has a ceiling of its own, so a person with eight accounts gets a
+ * menu that scrolls rather than one that runs off the top of the screen.
+ *
+ * Note the selector. The panel is the button's *sibling*, not its child, so
+ * `.who .panel` matches nothing at all — which is why this menu spent a while
+ * quietly using the ordinary drop-down rule instead: below the button and
+ * right-aligned inside a 232px column, so it ran off two edges of the screen
+ * at once.
+ */
+.corner .panel {
+  right: auto;
+  left: 0;
+  bottom: calc(100% + 6px);
+  top: auto;
+  width: max(17rem, 100%);
+  max-height: min(26rem, 70vh);
+  overflow-y: auto;
+}
 
 /* --------------------------------------------------------------- settings */
 
@@ -933,3 +973,133 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
 
 .lane { display: flex; flex-direction: column; gap: .5rem; }
 .lane .empty { padding: 1.1rem; }
+
+/* =========================================================================
+ * Polish
+ *
+ * Nothing below changes what anything does. It is the pass over spacing,
+ * weight and edges that decides whether a thing feels made or assembled —
+ * which, for a product whose whole bet is feel, is not decoration.
+ * ========================================================================= */
+
+/* --------------------------------------------------------- the corner */
+
+nav .corner {
+  flex: none;
+  border-top: 1px solid var(--line);
+  padding-top: .7rem;
+  margin-top: .5rem;
+}
+
+nav .corner .thisone {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  padding: .55rem .5rem .1rem;
+  font-size: .74rem;
+  color: var(--faint);
+}
+nav .corner .thisone span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.who .what { display: block; }
+
+/* ------------------------------------------------------------ scrollbars */
+
+/*
+ * A scrollbar is furniture. It should be there when you need it and invisible
+ * when you do not, rather than a grey slab down the side of every panel.
+ */
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--quiet); background-clip: content-box; }
+
+/* ------------------------------------------------------------- rhythm */
+
+main { padding: 2.4rem 2.4rem 6rem; }
+.hold { max-width: 64rem; }
+
+h1 { font-size: 1.55rem; line-height: 1.2; }
+.sub { max-width: 46rem; line-height: 1.6; }
+h2 { margin: 2.2rem 0 .8rem; }
+
+/* Long paths and long names never widen a card past the page. */
+.slab, .tile, .row, .card { min-width: 0; overflow-wrap: anywhere; }
+.slab .line1 b, .tile .title { overflow-wrap: anywhere; }
+
+/* ------------------------------------------------------------- controls */
+
+button.small { padding: .3rem .65rem; font-size: .84rem; border-radius: 8px; }
+button.go { box-shadow: 0 1px 2px color-mix(in srgb, var(--vibe-a) 30%, transparent); }
+button.go:active:not(:disabled) { box-shadow: none; }
+
+/* A row of actions on a card should read as one group, not five loose items. */
+.acts button, .doing button { white-space: nowrap; }
+
+.chip { line-height: 1.5; }
+.chip.live { background: color-mix(in srgb, var(--live) 10%, var(--page)); }
+.chip.attention { background: color-mix(in srgb, var(--attention) 10%, var(--page)); }
+.chip.cool { background: color-mix(in srgb, var(--cool) 10%, var(--page)); }
+
+/* The dot carries meaning, so it gets a little more presence. */
+.dot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--faint) 14%, transparent); }
+
+/* ------------------------------------------------------------- the sheet */
+
+.sheet header b { font-size: 1.02rem; }
+.sheet .body { padding: 1.15rem 1.25rem 1.35rem; }
+.sheet .body > h2:first-child { margin-top: 0; }
+.sheet .body .sub { margin-bottom: 1rem; }
+
+.menu .opt { align-items: center; }
+.menu .opt .why { line-height: 1.45; display: block; margin-top: .1rem; }
+
+/* ------------------------------------------------------------ the tiles */
+
+.grid { grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr)); gap: .7rem; }
+.tile { padding: 1rem 1.05rem; gap: .3rem; }
+.tile .title { font-size: 1rem; font-weight: 600; letter-spacing: -.012em; }
+.tile .note { line-height: 1.45; }
+.tile.away .doing { margin-top: .65rem; }
+
+/* --------------------------------------------------------- empty states */
+
+.empty {
+  padding: 2rem 1.6rem;
+  line-height: 1.6;
+  background: color-mix(in srgb, var(--card) 45%, transparent);
+}
+.empty b { font-size: 1rem; margin-bottom: .35rem; }
+
+/* --------------------------------------------------------------- saying */
+
+.said { padding: .85rem 1.05rem; border-left-width: 3px; }
+.said b { line-height: 1.45; }
+.said span { display: block; margin-top: .15rem; line-height: 1.45; }
+
+/* ----------------------------------------------------------------- talk */
+
+.talk { padding: .2rem .1rem; gap: .45rem; }
+.talk .bubble { line-height: 1.5; padding: .5rem .8rem; }
+
+/* --------------------------------------------------------------- narrow */
+
+@media (max-width: 68rem) {
+  main { padding: 2rem 1.5rem 5rem; }
+}
+@media (max-width: 60rem) {
+  nav .corner .thisone { display: none; }
+  .who .grow { display: none; }
+  .who { justify-content: center; }
+  .corner .panel { width: 17rem; }
+}
