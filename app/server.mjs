@@ -394,22 +394,31 @@ const routes = {
     });
 
     if (started.ok) {
-      await noteLaunch({ tool, dir, how: started.how, profile: body.profile ?? null });
+      // Writing down what happened, and re-reading the project, are both worth
+      // doing and neither is worth waiting for. The app is already starting;
+      // holding the answer until the bookkeeping is filed makes the button feel
+      // dead for a second on top of the several these apps take to appear.
+      noteLaunch({ tool, dir, how: started.how, profile: body.profile ?? null }).catch(() => {});
+
       const where = started.how === 'terminal' ? 'a terminal' : 'its own window';
       const carried = started.carriedOn
         ? ' Carrying on the conversation you were having.'
         : (body.carryOn && started.how === 'terminal'
           ? ` ${tool.name} has no way to be asked to carry on, so this is a fresh start.`
           : '');
+      // Several of these take ten seconds to put a window on screen, so the
+      // sentence says what is true now rather than what will be true later.
       return {
         ...started,
-        sentence: `${tool.name} is opening in ${where}, already in ${basename(dir)}.`
+        sentence: `${tool.name} is starting in ${where}, already in ${basename(dir)}.`
           + (body.profile ? ` Using the account you called “${body.profile}”.` : '')
           + carried,
-        ...(await routes['GET /project']()),
+        action: started.how === 'desktop'
+          ? 'Big apps take a few seconds to appear.'
+          : null,
       };
     }
-    return { ...started, ...(await routes['GET /project']()) };
+    return started;
   },
 
   async 'POST /signin/tool'({ body }) {
@@ -467,7 +476,9 @@ const routes = {
         action: 'Install GitHub CLI from cli.github.com, then come back.',
       };
     }
-    return { ok: true, ...signin.begin() };
+    // The attempt's own ok is null while it runs; it must not overwrite the
+    // fact that starting it worked.
+    return { ...signin.begin(), ok: true, started: true };
   },
 
   async 'GET /github/signin'() {
@@ -522,16 +533,21 @@ const routes = {
   async 'POST /publish'({ body }) {
     if (!current) return noProject;
     const r = await projects.publish(current.dir, { message: body.message, private: body.private !== false });
+    projects.forgetSituations();
     return { ...r, ...(await routes['GET /project']()) };
   },
 
   async 'POST /github/save'({ body }) {
     if (!current) return noProject;
-    return { ...(await github.saveOnly(current.dir, body.message)), ...(await routes['GET /project']()) };
+    const saved = await github.saveOnly(current.dir, body.message);
+    projects.forgetSituations();
+    return { ...saved, ...(await routes['GET /project']()) };
   },
   async 'POST /github/latest'() {
     if (!current) return noProject;
-    return { ...(await github.getLatest(current.dir)), ...(await routes['GET /project']()) };
+    const got = await github.getLatest(current.dir);
+    projects.forgetSituations();
+    return { ...got, ...(await routes['GET /project']()) };
   },
   async 'POST /github/copy'({ body }) {
     if (!current) return noProject;
@@ -543,7 +559,9 @@ const routes = {
   },
   async 'POST /github/undo'() {
     if (!current) return noProject;
-    return { ...(await github.undoLastSave(current.dir)), ...(await routes['GET /project']()) };
+    const undone = await github.undoLastSave(current.dir);
+    projects.forgetSituations();
+    return { ...undone, ...(await routes['GET /project']()) };
   },
   async 'GET /github/history'() {
     if (!current) return { ok: true, saves: [] };

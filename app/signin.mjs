@@ -91,17 +91,13 @@ export async function forget() {
 export function begin() {
   if (going && going.finished === null) return state();
 
-  start();
-  return state();
-}
-
-async function start() {
-
-  const had = await tokenInUse();
-
+  // The new attempt exists before anything asynchronous happens. It used to be
+  // created inside the async half, so `begin()` returned whatever the *last*
+  // attempt had ended as — and a previous failure came straight back as the
+  // answer to starting a new one, which read as a button that did nothing.
   going = {
     child: null,
-    had,
+    had: null,
     code: null,
     at: 'https://github.com/login/device',
     lines: [],
@@ -110,6 +106,14 @@ async function start() {
     sentence: null,
     action: null,
   };
+
+  start(going);
+  return state();
+}
+
+async function start(mine) {
+  mine.had = await tokenInUse();
+  if (going !== mine) return state();
 
   let child;
   try {

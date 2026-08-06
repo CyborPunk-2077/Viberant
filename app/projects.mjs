@@ -149,44 +149,59 @@ const git = (dir, ...args) => run('git', args, { cwd: dir, maxBuffer: 32 * 1024 
  * A plain account of where a project stands: is anything unsaved, is there a
  * copy on GitHub, is this computer behind or ahead of it.
  */
+/**
+ * Kept as a no-op on purpose.
+ *
+ * There was a two-second cache here, and it made the list able to say
+ * "everything here is saved" moments after you had changed a file. Two tests
+ * caught it immediately, which is the system working: **speed is never worth
+ * being wrong about where somebody's work is.** The speed came from asking the
+ * four questions at once instead of one after another, which costs nothing and
+ * cannot go stale.
+ *
+ * The callers stay, so the next person who reaches for a cache finds this note
+ * rather than an empty space.
+ */
+export function forgetSituations() {}
+
 export async function situation(dir) {
   if (!existsSync(join(dir, '.git'))) {
     return { tracked: false, unsaved: 0, shared: null, waitingToSend: 0 };
   }
-  const out = {};
-  try {
-    const { stdout } = await git(dir, 'status', '--porcelain');
-    out.unsaved = stdout.split('\n').filter((l) => l.trim()).length;
-  } catch { out.unsaved = 0; }
 
-  try {
-    const { stdout } = await git(dir, 'remote', 'get-url', 'origin');
-    out.shared = stdout.trim() || null;
-  } catch { out.shared = null; }
+  // Four separate questions that do not depend on each other. Asked one after
+  // another they were four process starts deep; asked together they cost about
+  // as much as the slowest one. With a dozen projects on a page that is the
+  // difference between the list appearing and the list arriving.
+  const quiet = async (fn, fallback) => { try { return await fn(); } catch { return fallback; } };
 
-  try {
-    const { stdout } = await git(dir, 'rev-list', '--count', '@{upstream}..HEAD');
-    out.waitingToSend = Number(stdout.trim());
-  } catch {
-    // There is a copy on GitHub, but this computer has never sent to it, so we
-    // cannot say whether it is up to date. Saying nothing is better than
+  const [unsaved, shared, waitingToSend, last] = await Promise.all([
+    quiet(async () => {
+      const { stdout } = await git(dir, 'status', '--porcelain');
+      return stdout.split(String.fromCharCode(10)).filter((l) => l.trim()).length;
+    }, 0),
+
+    quiet(async () => (await git(dir, 'remote', 'get-url', 'origin')).stdout.trim() || null, null),
+
+    // There may be a copy on GitHub, but this computer has never sent to it, so
+    // we cannot say whether it is up to date. Saying nothing is better than
     // claiming "sent" and being wrong about where someone's work is.
-    out.waitingToSend = null;
-  }
+    quiet(async () => Number((await git(dir, 'rev-list', '--count', '@{upstream}..HEAD')).stdout.trim()), null),
 
-  try {
-    const { stdout } = await git(dir, 'log', '-1', '--format=%s|%cr|%cI');
-    const [subject, when, at] = stdout.trim().split('|');
-    out.last = subject ? { subject, when, at } : null;
-  } catch { out.last = null; }
+    quiet(async () => {
+      const { stdout } = await git(dir, 'log', '-1', '--format=%s|%cr|%cI');
+      const [subject, when, at] = stdout.trim().split('|');
+      return subject ? { subject, when, at } : null;
+    }, null),
+  ]);
 
-  return { tracked: true, ...out };
+  return { tracked: true, unsaved, shared, waitingToSend, last };
 }
 
 /**
  * When this was last saved, as a person would say it.
  *
- * Its own sentence rather than part of the one above, because "what is unsaved"
+ * Its own sentence rather than part of the one below, because "what is unsaved"
  * and "when did I last stop" are two different questions and a card has room
  * for both.
  */

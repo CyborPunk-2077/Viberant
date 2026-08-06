@@ -244,19 +244,27 @@ async function openWhoPanel() {
   openPanel(panel);
 
   const g = await get('/github');
+  const signedIn = g.accounts.length > 0;
+
   panel.innerHTML = `
-    <div class="head">Signed in on this computer</div>
-    ${g.accounts.length ? g.accounts.map((a) => `
+    <div class="head">${signedIn ? 'Accounts on this computer' : 'GitHub'}</div>
+    ${signedIn ? g.accounts.map((a) => `
       <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
         <span class="dot ${a.active ? 'live' : 'off'}"></span>
         <span class="grow"><b>${esc(a.name)}</b><br>
           <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
       </button>`).join('')
-    : '<div class="pick"><span class="sub">No account yet.</span></div>'}
+    : `<div class="pick"><span class="sub">Not signed in. Your work stays on this computer
+         until you are — everything here still works without it.</span></div>`}
     <hr>
-    <button class="pick" id="gh-add"><span>＋</span><span class="grow">Sign in to another account</span></button>
-    <button class="pick" id="gh-name"><span>✎</span><span class="grow">Your name on saved work</span></button>
-    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span><span class="grow">Sign ${esc(g.active)} out</span></button>` : ''}`;
+    <button class="pick" id="gh-add"><span>＋</span>
+      <span class="grow">${signedIn ? 'Sign in to another account' : 'Sign in to GitHub'}
+        <span class="sub">Opens your browser with a code.</span></span></button>
+    <button class="pick" id="gh-name"><span>✎</span>
+      <span class="grow">Your name on saved work</span></button>
+    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span>
+      <span class="grow">Sign ${esc(g.active)} out
+        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}`;
 
   for (const b of panel.querySelectorAll('[data-gh-use]')) {
     b.onclick = async () => {
@@ -266,7 +274,9 @@ async function openWhoPanel() {
       draw();
     };
   }
-  $('#gh-add').onclick = async () => { closePanels(); say(await post('/github/signin')); draw(); };
+  // Starting a sign-in and then showing nothing is why this looked broken:
+  // the flow began, the code appeared nowhere, and the menu simply closed.
+  $('#gh-add').onclick = async () => { closePanels(); signInToGitHub(); };
   $('#gh-name').onclick = async () => { closePanels(); identitySheet(g); };
   $('#gh-out')?.addEventListener('click', async () => {
     closePanels();
@@ -556,7 +566,9 @@ SCREENS.projects = async () => {
     $('#p-refresh').onclick = () => drawCloud(d.projects, { again: true });
   }
 
-  for (const b of document.querySelectorAll('[data-open-now]')) b.onclick = () => openProject(b.dataset.openNow);
+  for (const b of document.querySelectorAll('[data-open-now]')) {
+    b.onclick = () => { b.classList.add('working'); openProject(b.dataset.openNow); };
+  }
   for (const b of document.querySelectorAll('[data-mark]')) b.onclick = () => markSheet(b.dataset.mark, d.marks);
   for (const b of document.querySelectorAll('[data-look]')) b.onclick = () => statusSheet(b.dataset.look);
   for (const b of document.querySelectorAll('[data-private]')) {
@@ -1412,6 +1424,10 @@ function wireAppCards(t, p) {
   for (const b of document.querySelectorAll('[data-launch]')) {
     b.onclick = async () => {
       const { launch, how } = b.dataset;
+      // The press is acknowledged before anything is asked of the server. These
+      // apps take seconds to put a window up, and a button that looks untouched
+      // for that long reads as a button that did not work.
+      b.classList.add('working');
       b.disabled = true;
       say(await post('/launch', {
         tool: launch, how, dir: whereFor(launch, p), profile: chosen.account[launch] ?? null,
@@ -1616,6 +1632,7 @@ SCREENS.terminals = async () => {
 
   for (const b of document.querySelectorAll('[data-open-term]')) {
     b.onclick = async () => {
+      b.classList.add('working');
       say(await post('/terminal', { terminal: b.dataset.openTerm, dir: whereFor(null, p) }));
       draw();
     };
@@ -2470,69 +2487,101 @@ function showGate() {
     </div>`;
 
   $('#in-github').onclick = async () => {
-    const b = $('#in-github');
-    b.disabled = true;
-    const r = await post('/github/signin');
-    if (!r.ok) { say(r); hideGate(); draw(); return; }
-    waitForSignIn();
+    $('#in-github').disabled = true;
+    signInToGitHub({ inGate: true });
   };
   $('#in-google').onclick = () => withGoogle();
   $('#in-later').onclick = () => { hideGate(); draw(); };
 }
 
 /**
- * Waiting for the sign-in that is happening in the browser.
+ * Signing in to GitHub, from wherever you pressed it.
+ *
+ * One path, used by the welcome and by the account menu. Before, the menu
+ * started the flow and then closed, showing nothing — the sign-in was running
+ * and the code it needed was nowhere on screen, which looks exactly like a
+ * button that does not work.
  *
  * The code is the whole of it. It is shown large, because the one thing being
- * asked of somebody at this moment is to carry eight characters from here to
- * there, and everything else on the screen is in the way of that.
+ * asked of anybody at this moment is to carry eight characters from here to
+ * there, and everything else on screen is in the way of that.
  */
-function waitForSignIn() {
-  const paint = (code) => {
-    const welcome = $('#gate .welcome');
-    if (!welcome) return;
-    welcome.innerHTML = `
-      <div class="bead"></div>
-      <h1>Type this code in your browser</h1>
-      <p>Your browser is opening at github.com/login/device. Put this code in, and
-        this page will notice by itself.</p>
-      <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
-      <div class="ways">
-        <button class="wayin" id="in-again"><span class="mark">${GITHUB_MARK}</span>
-          <span><b>Open the page again</b><span>github.com/login/device</span></span></button>
-      </div>
-      <div class="later"><button class="quiet" id="in-later">Carry on without it</button></div>`;
+async function signInToGitHub({ inGate = false } = {}) {
+  // Who was signed in before this started. Without it, "sign in to another
+  // account" looked at the account you already had, decided it had succeeded,
+  // and closed itself half a second after opening.
+  const before = me.github ?? null;
+  const started = await post('/github/signin');
+  if (!started.ok) {
+    say(started);
+    if (inGate) hideGate();
+    return draw();
+  }
 
-    $('#in-again').onclick = () => post('/open/page', { at: 'https://github.com/login/device' });
-    $('#in-later').onclick = () => { clearInterval(look); hideGate(); draw(); };
+  let watching = null;
+
+  const stop = async ({ giveUp = false } = {}) => {
+    clearInterval(watching);
+    if (giveUp) await post('/github/signin/stop');
+    closeLayer();
+    if (inGate) hideGate();
+  };
+
+  const paint = (code) => {
+    sheet({
+      title: 'Signing in to GitHub',
+      narrow: true,
+      body: `
+        <p class="sub">Your browser is opening at github.com/login/device. Put this
+          code in, and this page will notice by itself.</p>
+        <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
+        <div class="menu">
+          <button class="opt" id="in-again">
+            <span class="glyph">${GITHUB_MARK}</span>
+            <span><span class="what">Open the page again</span><br>
+              <span class="why">github.com/login/device</span></span>
+          </button>
+        </div>`,
+      foot: '<button class="quiet" id="in-later">Never mind</button>',
+      onOpen: () => {
+        $('#in-again').onclick = () => post('/open/page', { at: 'https://github.com/login/device' });
+        $('#in-later').onclick = async () => { await stop({ giveUp: true }); draw(); };
+      },
+    });
   };
 
   paint(null);
 
-  const look = setInterval(async () => {
+  watching = setInterval(async () => {
     const r = await get('/github/signin');
-    if (r.signin?.code && $('#gate .code')?.textContent.trim() !== r.signin.code) paint(r.signin.code);
 
-    if (r.github) {
-      clearInterval(look);
+    if (r.signin?.code && $('#layer .code')?.textContent.trim() !== r.signin.code) paint(r.signin.code);
+
+    // Done means the sign-in itself finished, or the account actually changed.
+    // Not merely "somebody is signed in", which was true before we started.
+    const finished = r.signin && !r.signin.running && r.signin.ok === true;
+    const changed = r.github && r.github !== before;
+
+    if (finished || changed) {
+      await stop();
       await refreshMe();
-      hideGate();
       say({
         ok: true,
-        sentence: `Signed in as ${r.github}.`,
-        action: 'Everything on this computer now has a home to go to.',
+        sentence: `Signed in as ${r.github ?? 'your GitHub account'}.`,
+        action: before && r.github !== before
+          ? `${before} is still signed in here too — switch between them from the account menu.`
+          : 'Everything on this computer now has a home to go to.',
       });
-      draw();
-      return;
+      return draw();
     }
 
     if (r.signin && !r.signin.running && r.signin.ok === false) {
-      clearInterval(look);
+      await stop();
       say(r.signin);
-      hideGate();
+      await refreshMe();
       draw();
     }
-  }, 1500);
+  }, 1200);
 }
 
 function hideGate() {

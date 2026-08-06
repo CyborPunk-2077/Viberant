@@ -679,6 +679,36 @@ This is exactly the promise profiles.mjs already makes about assistant accounts 
 
 ---
 
+### D-62 `[DECIDED]` — A press is acknowledged before anything is asked of the server
+
+**Decision.** Buttons that start something slow mark themselves the instant they are pressed, and the server answers as soon as the thing has *started* rather than when the bookkeeping is filed.
+
+**Why.** Antigravity was reported as not launching. It launched every time — five processes, a language server starting — and took about ten seconds to put a window up. In the meantime the button looked untouched, because the answer waited on writing an event and re-reading the project first. Two seconds of that was ours and the rest was the app's, and neither was visible.
+
+**Speed and the appearance of speed are different problems and both are real.** The first was fixed by answering earlier; the second by acknowledging at once. Neither one alone would have fixed the complaint.
+
+---
+
+### D-63 `[LOCKED]` — Speed is never bought with being wrong about somebody's work
+
+**Decision.** No caching of a project's state. The list asks the four questions in parallel instead of one after another, which is a pure win, and asks them fresh every time.
+
+**Why.** A two-second cache went in and two tests failed immediately: the list could say "everything here is saved" moments after a file had changed. That is the constitution's central promise traded away for a fraction of a second, and it is the exact shape of the two bugs already caught in this product's history.
+
+The parallel version is most of the speed with none of the risk. `forgetSituations()` is kept as a no-op so the next person to reach for a cache finds the reasoning rather than an empty space.
+
+---
+
+### D-64 `[DECIDED]` — A new attempt exists before anything asynchronous happens
+
+**Decision.** Starting a sign-in creates its record synchronously, before the first `await`.
+
+**Why.** Two faults in one week from the same shape. `begin()` created its state inside the async half, so it returned whatever the *previous* attempt had ended as — a failure from ten minutes ago came straight back as the answer to starting a new one, and the button appeared to do nothing. Separately, the page decided a sign-in had succeeded because *somebody* was signed in, which was true before it started; "sign in to another account" closed itself half a second after opening.
+
+Both are the same mistake: **reading a state that belongs to a previous run and treating it as this one's.** The fix in both cases is to establish what "this attempt" means before doing anything that can interleave — a fresh record on one side, and remembering who was signed in before on the other.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
