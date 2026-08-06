@@ -6,9 +6,9 @@
  * file kept its own idea of how things stand, it would eventually show you
  * something that is not true, and being believable is the whole product.
  *
- * The shape of every answer from the server is the same — it either worked, or
- * it comes back with one plain sentence and one thing to do about it. There is
- * exactly one place in here that renders that, and no other error path.
+ * The two exceptions are choices you have made but not yet acted on — which
+ * account an app should open with, which folder it should open in. Those live
+ * here until you press the button, because until then they have not happened.
  */
 
 const $ = (s) => document.querySelector(s);
@@ -34,7 +34,10 @@ const ago = (at) => {
   return `${Math.floor(secs / 86400)} days ago`;
 };
 
-const size = (bytes) => (bytes > 1e6 ? `${Math.round(bytes / 1e6)} MB` : `${Math.round(bytes / 1e3)} KB`);
+const size = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
+  : bytes >= 1e6 ? `${Math.round(bytes / 1e6)} MB` : `${Math.round(bytes / 1e3)} KB`);
+
+const tail = (path) => String(path ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
 
 // ---------------------------------------------------------------------------
 // The one place a sentence is shown
@@ -58,16 +61,21 @@ const TABS = [
   { id: 'projects', name: 'Projects', glyph: '◳' },
   { id: 'apps', name: 'AI apps', glyph: '✦' },
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
-  { id: 'accounts', name: 'Accounts', glyph: '☺' },
+  { id: 'workspace', name: 'Shared workspace', glyph: '⌸' },
   { id: 'ship', name: 'Put it out', glyph: '↗' },
-  { id: 'workspace', name: 'My computers', glyph: '⌸' },
+  { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
 
 const at = { tab: 'projects', inside: false };
-let me = { machine: null, machineName: '', github: null, workspace: {}, current: null };
+let me = { machine: null, machineName: '', github: null, workspace: {}, settings: {}, current: null };
+
+/** Choices made but not yet acted on. */
+const chosen = { account: {}, folder: {} };
 
 async function refreshMe() {
   me = await api('/me');
+  document.documentElement.dataset.theme = me.settings?.appearance === 'system'
+    ? '' : (me.settings?.appearance ?? '');
   drawNav();
 }
 
@@ -81,15 +89,96 @@ function drawNav() {
         <span class="key">${i + 1}</span>
       </button>`).join('')}
     <div class="sep"></div>
-    <div class="foot">
-      <b>${esc(me.machineName || 'This computer')}</b>
-      ${me.github ? `signed in as ${esc(me.github)}` : 'not signed in to GitHub'}
-      ${me.current ? `<br>open: ${esc(me.current.split(/[\\/]/).pop())}` : ''}
+    <div class="foot" style="border:0;padding:.5rem .2rem">
+      <div class="drop">
+        <button class="who" id="who">
+          <span class="dot ${me.github ? 'live' : 'off'}"></span>
+          <span class="grow">
+            <span class="name">${esc(me.github ?? 'Not signed in')}</span>
+            <span class="what">${me.github ? 'GitHub' : 'sign in to GitHub'}</span>
+          </span>
+          <span style="color:var(--faint)">▾</span>
+        </button>
+        <div class="panel" hidden id="who-panel"></div>
+      </div>
+      <div style="padding:.5rem .35rem 0;color:var(--faint);font-size:.74rem">
+        ${esc(me.machineName || 'This computer')}${me.currentName ? ` · ${esc(me.currentName)}` : ''}
+      </div>
     </div>`;
 
-  for (const b of document.querySelectorAll('[data-tab]')) {
-    b.onclick = () => go(b.dataset.tab);
+  for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
+  $('#who').onclick = (e) => { e.stopPropagation(); openWhoPanel(); };
+}
+
+async function openWhoPanel() {
+  const panel = $('#who-panel');
+  if (!panel.hidden) { panel.hidden = true; return; }
+  closePanels();
+  panel.hidden = false;
+  panel.innerHTML = '<div class="head">GitHub</div><div class="pick"><span class="spin"></span> looking…</div>';
+
+  const g = await api('/github');
+  panel.innerHTML = `
+    <div class="head">Signed in on this computer</div>
+    ${g.accounts.length ? g.accounts.map((a) => `
+      <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
+        <span class="dot ${a.active ? 'live' : 'off'}"></span>
+        <span class="grow"><b>${esc(a.name)}</b><br>
+          <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
+      </button>`).join('')
+    : '<div class="pick"><span class="sub">No account yet.</span></div>'}
+    <hr>
+    <button class="pick" id="gh-add"><span>＋</span><span class="grow">Sign in to another account</span></button>
+    <button class="pick" id="gh-name"><span>✎</span><span class="grow">Your name on saved work</span></button>
+    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span><span class="grow">Sign ${esc(g.active)} out</span></button>` : ''}`;
+
+  for (const b of panel.querySelectorAll('[data-gh-use]')) {
+    b.onclick = async () => {
+      closePanels();
+      say(await api('/github/switch', { name: b.dataset.ghUse }));
+      await refreshMe();
+      draw();
+    };
   }
+  $('#gh-add').onclick = async () => { closePanels(); say(await api('/github/signin')); draw(); };
+  $('#gh-name').onclick = async () => { closePanels(); identitySheet(g); };
+  $('#gh-out')?.addEventListener('click', async () => {
+    closePanels();
+    const sure = await confirmThat({
+      title: 'Sign out',
+      what: `${g.active} will be signed out on this computer.`,
+      why: 'Nothing on GitHub itself changes. You can sign back in whenever you like.',
+      confirm: 'Sign out',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await api('/github/signout', { name: g.active }));
+    await refreshMe();
+    draw();
+  });
+}
+
+function identitySheet(g) {
+  sheet({
+    title: 'Your name on saved work',
+    narrow: true,
+    body: `
+      <p class="sub">Everything you save is signed with this. It is not shown to anyone
+        except people who look at the project itself.</p>
+      <label class="field">Name</label>
+      <input id="id-name" style="width:100%;margin-bottom:.7rem" value="${esc(g.identity.name ?? '')}" placeholder="Your name">
+      <label class="field">Email</label>
+      <input id="id-mail" style="width:100%" value="${esc(g.identity.email ?? '')}" placeholder="you@example.com">`,
+    foot: '<button class="quiet" id="id-no">Never mind</button><button class="go" id="id-yes">Save</button>',
+    onOpen: () => {
+      $('#id-no').onclick = closeLayer;
+      $('#id-yes').onclick = async () => {
+        closeLayer();
+        say(await api('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
+        draw();
+      };
+    },
+  });
 }
 
 const SCREENS = {};
@@ -97,25 +186,27 @@ const SCREENS = {};
 async function go(tab, { keepSaid = false } = {}) {
   at.tab = tab;
   if (!keepSaid) said = null;
+  closePanels();
   drawNav();
   await draw();
 }
 
 async function draw() {
-  const render = SCREENS[at.tab];
-  if (render) await render();
+  await SCREENS[at.tab]?.();
 }
 
+function closePanels() {
+  for (const p of document.querySelectorAll('.panel')) p.hidden = true;
+}
+
+addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels(); });
+
 // ---------------------------------------------------------------------------
-// Layers: a sheet, a question, a folder
+// Layers
 // ---------------------------------------------------------------------------
 
 function closeLayer() { layer.innerHTML = ''; }
 
-/**
- * A sheet. `build` gets a place to put its body and a way to close.
- * Everything modal in this app is one of these — there is no other kind.
- */
 function sheet({ title, body, foot = '', narrow = false, onOpen }) {
   layer.innerHTML = `
     <div class="veil">
@@ -133,8 +224,8 @@ function sheet({ title, body, foot = '', narrow = false, onOpen }) {
 /**
  * Ask for one line of text.
  *
- * The browser's own box for this does not exist inside the app's own window,
- * so asking for it would silently do nothing. This is that, in the app.
+ * The browser's own box for this does not exist inside the app's own window, so
+ * asking for it would silently do nothing. This is that, in the app.
  */
 function ask({ title, label, value = '', placeholder = '', confirm = 'Done' }) {
   return new Promise((resolve) => {
@@ -161,7 +252,6 @@ function ask({ title, label, value = '', placeholder = '', confirm = 'Done' }) {
   });
 }
 
-/** Ask a yes or no question, with the cost of yes spelled out. */
 function confirmThat({ title, what, why, confirm = 'Yes, do it', danger = false }) {
   return new Promise((resolve) => {
     sheet({
@@ -179,13 +269,8 @@ function confirmThat({ title, what, why, confirm = 'Yes, do it', danger = false 
   });
 }
 
-/**
- * Pick a folder by clicking down to it.
- *
- * Two ways out of the same sheet: walk the list, or hand it to the folder
- * chooser this computer already has. Nobody types a path here.
- */
-function pickFolder({ title = 'Choose a folder', confirm = 'Open this folder' } = {}) {
+/** Pick a folder by clicking down to it, or by using the one Windows has. */
+function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', startAt = null } = {}) {
   return new Promise((resolve) => {
     let herePath = null;
 
@@ -193,14 +278,12 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Open this folder' } 
       const box = $('#walk-box');
       box.innerHTML = '<div class="item"><span class="spin"></span> looking…</div>';
       const r = await api(`/browse?at=${encodeURIComponent(path ?? '')}`);
-      if (!r.ok) {
-        box.innerHTML = `<div class="item">${esc(r.sentence)}</div>`;
-        return;
-      }
+      if (!r.ok) { box.innerHTML = `<div class="item">${esc(r.sentence)}</div>`; return; }
+
       herePath = r.at;
       $('#walk-here').textContent = r.at;
       $('#walk-up').disabled = !r.up;
-      $('#walk-take').textContent = r.project ? `${confirm} ✓ looks like a project` : confirm;
+      $('#walk-take').textContent = r.project ? `${confirm} ✓ a project` : confirm;
       box.innerHTML = r.folders.length
         ? r.folders.map((f) => `
             <div class="item" data-into="${esc(f.path)}">
@@ -210,9 +293,7 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Open this folder' } 
             </div>`).join('')
         : '<div class="item"><span class="leaf">·</span> nothing inside this one</div>';
 
-      for (const item of box.querySelectorAll('[data-into]')) {
-        item.onclick = () => paint(item.dataset.into);
-      }
+      for (const item of box.querySelectorAll('[data-into]')) item.onclick = () => paint(item.dataset.into);
       $('#walk-up').onclick = () => paint(r.up);
     };
 
@@ -231,18 +312,25 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Open this folder' } 
         $('#walk-no').onclick = () => { closeLayer(); resolve(null); };
         $('#walk-take').onclick = () => { closeLayer(); resolve(herePath); };
         $('#walk-native').onclick = async () => {
+          const button = $('#walk-native');
+          button.disabled = true;
+          button.textContent = 'Waiting for the chooser…';
           const r = await api('/browse/choose', { startAt: herePath });
+          button.disabled = false;
+          button.textContent = 'Use the Windows folder chooser';
           if (r.ok) { closeLayer(); resolve(r.path); return; }
-          if (!r.cancelled) { say(r); closeLayer(); resolve(null); draw(); }
+          if (r.cancelled) return;
+          say(r);
+          closeLayer();
+          resolve(null);
+          draw();
         };
 
         const { places } = await api('/browse/starts');
         $('#walk-starts').innerHTML = places
           .map((p) => `<button class="small" data-start="${esc(p.path)}">${esc(p.name)}</button>`).join('');
-        for (const b of document.querySelectorAll('[data-start]')) {
-          b.onclick = () => paint(b.dataset.start);
-        }
-        await paint(places[0]?.path ?? null);
+        for (const b of document.querySelectorAll('[data-start]')) b.onclick = () => paint(b.dataset.start);
+        await paint(startAt ?? places[0]?.path ?? null);
       },
     });
   });
@@ -275,15 +363,13 @@ SCREENS.projects = async () => {
 
     ${d.projects.length ? `
       <h2>${d.projects.length} project${d.projects.length === 1 ? '' : 's'}</h2>
-      <div class="grid">
-        ${d.projects.map(projectTile).join('')}
-      </div>`
+      <div class="grid">${d.projects.map(projectTile).join('')}</div>`
     : `<div class="empty"><b>Nothing here yet.</b>
          Choose a folder above and it becomes the project every app opens into.</div>`}`;
   said = null;
 
   $('#p-add').onclick = async () => {
-    const path = await pickFolder();
+    const path = await pickFolder({ title: 'Which folder is the project?', confirm: 'Open this folder' });
     if (path) await openProject(path);
   };
   $('#p-scan').onclick = async () => {
@@ -304,12 +390,8 @@ SCREENS.projects = async () => {
   for (const el of document.querySelectorAll('[data-open]')) {
     el.onclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
   }
-  for (const b of document.querySelectorAll('[data-mark]')) {
-    b.onclick = () => markSheet(b.dataset.mark, d.marks);
-  }
-  for (const b of document.querySelectorAll('[data-look]')) {
-    b.onclick = () => statusSheet(b.dataset.look);
-  }
+  for (const b of document.querySelectorAll('[data-mark]')) b.onclick = () => markSheet(b.dataset.mark, d.marks);
+  for (const b of document.querySelectorAll('[data-look]')) b.onclick = () => statusSheet(b.dataset.look);
 };
 
 function projectTile(p) {
@@ -366,7 +448,6 @@ function markSheet(path, marks) {
   });
 }
 
-/** What is actually in a project right now — the pop-up the list points at. */
 async function statusSheet(path) {
   const opened = await api('/open', { path });
   if (opened.ok === false) { say(opened); return draw(); }
@@ -421,7 +502,10 @@ async function fromGitHub() {
     body: '<div class="row"><span class="spin"></span><div class="grow">Asking GitHub what you have…</div></div>',
     onOpen: async (body) => {
       const r = await api('/github/mine');
-      if (!r.ok) { body.innerHTML = `<p><b>${esc(r.sentence)}</b><br><span style="color:var(--quiet)">${esc(r.action ?? '')}</span></p>`; return; }
+      if (!r.ok) {
+        body.innerHTML = `<p><b>${esc(r.sentence)}</b><br><span style="color:var(--quiet)">${esc(r.action ?? '')}</span></p>`;
+        return;
+      }
       body.innerHTML = `
         <p class="sub" style="margin-bottom:1rem">Pick one and it comes down to this computer, ready to open.</p>
         ${r.projects.map((p) => `
@@ -483,15 +567,16 @@ async function drawOpenProject() {
     </div>
 
     ${efforts.length ? `
-      <h2>Going on here</h2>
+      <h2>What you have open here
+        <button class="quiet small" id="tidy" style="float:right;text-transform:none;letter-spacing:0">clear the list</button>
+      </h2>
       ${efforts.map((e) => `
         <div class="row">
           <span class="dot ${e.rank === 'moving' ? 'live' : e.rank === 'waiting on you' ? 'attention' : 'off'}"></span>
           <div class="grow"><div class="name">${esc(e.intent)}</div>
-            <div class="note">${esc(e.says || e.account || e.rank)} · ${esc(e.ago)}</div></div>
-          ${e.rank !== 'settled' ? `
-            <button class="quiet small" data-done="${esc(e.id)}">done</button>
-            <button class="quiet small" data-drop="${esc(e.id)}">drop</button>` : ''}
+            <div class="note">${esc(e.rank === 'moving' ? 'open' : e.rank)} · last opened ${esc(e.ago)}</div></div>
+          <button class="quiet small" data-done="${esc(e.id)}">finished</button>
+          <button class="quiet small" data-drop="${esc(e.id)}">remove</button>
         </div>`).join('')}` : ''}`;
   said = null;
 
@@ -502,6 +587,17 @@ async function drawOpenProject() {
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');
   $('#to-ship').onclick = () => go('ship');
+  $('#tidy')?.addEventListener('click', async () => {
+    const sure = await confirmThat({
+      title: 'Clear the list',
+      what: 'Everything on this list stops being listed.',
+      why: 'Nothing that is running is stopped, and no file is touched. This is only the note of what you opened.',
+      confirm: 'Clear it',
+    });
+    if (!sure) return;
+    say(await api('/tidy'));
+    draw();
+  });
 
   for (const b of document.querySelectorAll('[data-done]')) {
     b.onclick = async () => { await api('/done', { effort: b.dataset.done }); draw(); };
@@ -519,63 +615,32 @@ async function saveAndSend() {
   draw();
 }
 
-/**
- * Everything else GitHub can do, said in words rather than in its own
- * vocabulary, and with the ones that are not possible right now visibly not
- * possible rather than quietly failing.
- */
 function gitHubSheet(p) {
   const s = p.situation ?? {};
   const has = !!s.shared;
 
   const options = [
-    {
-      id: 'save', glyph: '⌂', what: 'Save here only',
-      why: 'Keep a point you can come back to, without sending it anywhere.',
-      can: true,
-    },
-    {
-      id: 'latest', glyph: '↓', what: 'Get the latest from GitHub',
-      why: has
-        ? 'Bring down anything your other computers have sent. Refuses if you have unsaved work.'
-        : 'Nothing to get — this project has no copy on GitHub yet.',
-      can: has,
-    },
-    {
-      id: 'copy', glyph: '＋', what: 'Make a copy on GitHub',
-      why: has ? 'It already has one.' : 'Puts this project on your GitHub account so it is safe and reachable.',
-      can: !has,
-    },
-    {
-      id: 'visibility', glyph: '◎',
-      what: s.visibility === 'public' ? 'Make it private again' : 'Let anyone see it',
-      why: has
-        ? (s.visibility === 'public'
-          ? 'Right now anyone with the address can read it. This puts it back to just you.'
-          : 'Right now only you can see it. This makes it readable by anybody.')
-        : 'It needs a copy on GitHub first.',
-      can: has,
-    },
-    {
-      id: 'undo', glyph: '↺', what: 'Take back the last save',
-      why: 'Undoes the act of saving. Every file stays exactly as it is. Only works if it has not gone to GitHub.',
-      can: (s.saves ?? 0) > 1 || !has,
-    },
-    {
-      id: 'changes', glyph: '≡', what: 'See what changed',
-      why: 'A plain list of every file that is different since you last saved.',
-      can: true,
-    },
-    {
-      id: 'history', glyph: '⏱', what: 'See everything you have saved',
-      why: 'The trail of what you did, newest first.',
-      can: true,
-    },
-    {
-      id: 'open', glyph: '↗', what: 'Open it on GitHub',
-      why: has ? 'In your browser.' : 'It needs a copy on GitHub first.',
-      can: has,
-    },
+    { id: 'save', glyph: '⌂', what: 'Save here only', can: true,
+      why: 'Keep a point you can come back to, without sending it anywhere.' },
+    { id: 'latest', glyph: '↓', what: 'Get the latest from GitHub', can: has,
+      why: has ? 'Bring down anything your other computers have sent. Refuses if you have unsaved work.'
+        : 'Nothing to get — this project has no copy on GitHub yet.' },
+    { id: 'copy', glyph: '＋', what: 'Make a copy on GitHub', can: !has,
+      why: has ? 'It already has one.' : 'Puts this project on your GitHub account so it is safe and reachable.' },
+    { id: 'visibility', glyph: '◎',
+      what: s.visibility === 'public' ? 'Make it private again' : 'Let anyone see it', can: has,
+      why: has ? (s.visibility === 'public'
+        ? 'Right now anyone with the address can read it. This puts it back to just you.'
+        : 'Right now only you can see it. This makes it readable by anybody.')
+        : 'It needs a copy on GitHub first.' },
+    { id: 'undo', glyph: '↺', what: 'Take back the last save', can: (s.saves ?? 0) > 1 || !has,
+      why: 'Undoes the act of saving. Every file stays exactly as it is. Only works if it has not gone to GitHub.' },
+    { id: 'changes', glyph: '≡', what: 'See what changed', can: true,
+      why: 'A plain list of every file that is different since you last saved.' },
+    { id: 'open', glyph: '↗', what: 'Open it on GitHub', can: has,
+      why: has ? 'In your browser.' : 'It needs a copy on GitHub first.' },
+    { id: 'allow', glyph: '🔑', what: 'Let this computer send to GitHub', can: true,
+      why: 'If sending says it cannot prove who you are, this fixes it for every project on this computer. Asked once.' },
   ];
 
   sheet({
@@ -594,9 +659,7 @@ function gitHubSheet(p) {
           </button>`).join('')}
       </div>`,
     onOpen: () => {
-      for (const b of document.querySelectorAll('[data-do]')) {
-        b.onclick = () => doGitHub(b.dataset.do, p);
-      }
+      for (const b of document.querySelectorAll('[data-do]')) b.onclick = () => doGitHub(b.dataset.do, p);
     },
   });
 }
@@ -604,10 +667,21 @@ function gitHubSheet(p) {
 async function doGitHub(what, p) {
   const s = p.situation ?? {};
 
-  if (what === 'changes' || what === 'history') {
+  if (what === 'changes') { closeLayer(); return statusSheet(p.dir); }
+
+  if (what === 'allow') {
     closeLayer();
-    return statusSheet(p.dir);
+    const sure = await confirmThat({
+      title: 'Let this computer send to GitHub',
+      what: 'This computer will use the GitHub account you are signed in to here whenever it sends anything.',
+      why: 'It changes one setting for every project on this computer, and it is the setting GitHub itself recommends. Nothing about your projects changes.',
+      confirm: 'Set it up',
+    });
+    if (!sure) return;
+    say(await api('/github/allowSending'));
+    return draw();
   }
+
   if (what === 'open') {
     closeLayer();
     const picture = await api('/github');
@@ -631,29 +705,25 @@ async function doGitHub(what, p) {
 
   if (what === 'copy') {
     closeLayer();
-    const open = await confirmThat({
+    const keepPrivate = await confirmThat({
       title: 'Make a copy on GitHub',
       what: `${p.name} will get a copy on your GitHub account.`,
       why: 'Choose whether anyone can see it. You can change this later either way.',
       confirm: 'Only I can see it',
     });
-    say(await api('/github/copy', { visibility: open ? 'private' : 'public' }));
+    say(await api('/github/copy', { visibility: keepPrivate ? 'private' : 'public' }));
     return draw();
   }
 
   if (what === 'visibility') {
     closeLayer();
     const toPublic = s.visibility !== 'public';
-    const sure = await confirmThat({
-      title: toPublic ? 'Let anyone see it' : 'Make it private again',
-      what: toPublic
-        ? `Anybody who finds ${p.name} on GitHub will be able to read all of it.`
-        : `${p.name} will go back to being visible only to you.`,
-      why: toPublic
-        ? 'Check there are no passwords or keys in the files first. Once it is out, assume somebody has a copy.'
-        : 'Anyone who already took a copy still has it.',
-      confirm: toPublic ? 'Yes, let anyone see it' : 'Make it private',
-      danger: toPublic,
+    const sure = !toPublic || !me.settings?.confirmPublic || await confirmThat({
+      title: 'Let anyone see it',
+      what: `Anybody who finds ${p.name} on GitHub will be able to read all of it.`,
+      why: 'Check there are no passwords or keys in the files first. Once it is out, assume somebody has a copy.',
+      confirm: 'Yes, let anyone see it',
+      danger: true,
     });
     if (!sure) return;
     say(await api('/github/visibility', { visibility: toPublic ? 'public' : 'private' }));
@@ -694,63 +764,272 @@ SCREENS.apps = async () => {
 
   view.innerHTML = `
     <h1>AI apps</h1>
-    <p class="sub">${p.open
-      ? `Whichever you pick opens already inside <b>${esc(p.name)}</b>. You never add the folder by hand again.`
-      : 'Open a project first, then any of these starts inside it.'}</p>
+    <p class="sub">Each one opens already inside the folder shown on its card, with the
+      account you picked. You never add the folder by hand again.</p>
+    ${whereBar(p)}
     ${saidHtml()}
 
     ${here.length ? `
       <h2>On this computer</h2>
-      <div class="grid">${here.map((x) => appTile(x, p.open)).join('')}</div>` : `
+      <div class="grid">${here.map((x) => appTile(x, p, t)).join('')}</div>` : `
       <div class="empty"><b>None of the AI apps were found here.</b>
-        Install one and it appears in this list by itself.</div>`}
+        Any of the ones below can be installed from this page.</div>`}
 
     ${away.length ? `
       <h2>Not on this computer</h2>
-      <div class="grid">${away.map((x) => appTile(x, false)).join('')}</div>` : ''}`;
+      <div class="grid">${away.map((x) => appTile(x, p, t)).join('')}</div>` : ''}
+
+    <div id="job"></div>`;
   said = null;
 
+  wireWhereBar();
+  wireAppCards(t, p);
+  if (watching) paintJob();
+};
+
+/** Which folder everything on this page will start in. */
+function whereBar(p) {
+  const dir = chosen.folder.all ?? p.dir ?? null;
+  return `
+    <div class="bar">
+      <span style="color:var(--quiet);font-size:.86rem">Start in</span>
+      <button class="folderchip" id="where-all">
+        <span>📁</span><b>${esc(dir ? tail(dir) : 'no folder chosen')}</b>
+        <span style="color:var(--faint)">${esc(dir ?? 'pick one')}</span>
+      </button>
+      ${chosen.folder.all ? '<button class="quiet small" id="where-clear">use the open project</button>' : ''}
+    </div>`;
+}
+
+function wireWhereBar() {
+  $('#where-all')?.addEventListener('click', async () => {
+    const path = await pickFolder({ title: 'Start everything in which folder?', confirm: 'Start in here' });
+    if (!path) return;
+    chosen.folder.all = path;
+    draw();
+  });
+  $('#where-clear')?.addEventListener('click', () => { delete chosen.folder.all; draw(); });
+}
+
+const whereFor = (id, p) => chosen.folder[id] ?? chosen.folder.all ?? p?.dir ?? null;
+
+function appTile(x, p, t) {
+  const ways = x.ways ?? [];
+  const dir = whereFor(x.id, p);
+  const account = chosen.account[x.id] ?? x.active ?? null;
+
+  if (!x.here) {
+    return `
+      <div class="tile flat away">
+        <div class="top"><span class="dot off"></span><span class="title">${esc(x.name)}</span>
+          ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}</div>
+        <div class="note">${esc(x.howToInstall?.why ?? 'Not installed here.')}</div>
+        <div class="doing">
+          ${x.howToInstall?.can
+            ? `<button class="small" data-install="${esc(x.id)}">Install it</button>`
+            : ''}
+          ${x.howToInstall?.at ? `<button class="quiet small" data-getpage="${esc(x.howToInstall.at)}">Its download page</button>` : ''}
+        </div>
+        ${x.howToInstall?.can ? `<div class="note" style="color:var(--faint);font-size:.76rem">Runs ${esc(x.howToInstall.what)}</div>` : ''}
+      </div>`;
+  }
+
+  return `
+    <div class="tile flat">
+      <div class="top">
+        <span class="dot ${account || x.signedIn ? 'live' : 'off'}"></span>
+        <span class="title">${esc(x.name)}</span>
+        ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}
+      </div>
+      <div class="note">${account
+        ? `Will open as “${esc(account)}”`
+        : x.signedIn ? 'Signed in on this computer'
+          : x.config ? 'Not signed in yet' : 'Signs you in inside its own window'}</div>
+      ${x.terminalOnlyBecause ? `<div class="note" style="color:var(--faint);font-size:.78rem">${esc(x.terminalOnlyBecause)}</div>` : ''}
+
+      <div class="doing">
+        ${ways.includes('desktop')
+          ? `<button class="go small" data-launch="${esc(x.id)}" data-how="desktop">Open</button>` : ''}
+        ${ways.includes('terminal') ? `
+          <span class="pair">
+            <button class="${ways.includes('desktop') ? '' : 'go '}small"
+              data-launch="${esc(x.id)}" data-how="terminal">Terminal</button>
+            <button class="${ways.includes('desktop') ? '' : 'go '}small" data-which="${esc(x.id)}">▾</button>
+          </span>` : ''}
+        <span class="drop">
+          <button class="small" data-account="${esc(x.id)}">Account ▾</button>
+          <div class="panel" hidden id="acct-${esc(x.id)}">${accountPanel(x, t)}</div>
+        </span>
+      </div>
+
+      <button class="folderchip" data-where="${esc(x.id)}" style="margin-top:.5rem;align-self:flex-start">
+        in <b>${esc(dir ? tail(dir) : 'no folder')}</b>
+      </button>
+    </div>`;
+}
+
+/**
+ * The account panel: the services this app can sign you in with, and the
+ * accounts already kept for it. Both in the place you are about to press Open.
+ */
+function accountPanel(x, t) {
+  const services = x.services ?? [];
+  const keeps = x.profiles ?? [];
+  const account = chosen.account[x.id] ?? x.active ?? null;
+
+  return `
+    ${services.length ? `
+      <div class="head">Sign in with</div>
+      <div class="services">
+        ${services.map((s) => `
+          <button class="service" data-service="${esc(x.id)}|${esc(s.id)}|${esc(s.at)}">
+            <span class="badge" style="background:${esc(s.tint)}">${esc(s.initial)}</span>
+            ${esc(s.name)}
+          </button>`).join('')}
+      </div>` : ''}
+
+    <div class="head">${x.config ? 'Accounts kept on this computer' : 'Accounts'}</div>
+    ${!x.config
+      ? `<div class="pick"><span class="sub">${esc(x.name)} keeps its account inside itself, so this
+           manager cannot hold more than one for it.</span></div>`
+      : keeps.length ? keeps.map((k) => `
+          <button class="pick ${k.name === account ? 'on' : ''}" data-use="${esc(x.id)}|${esc(k.name)}">
+            <span class="dot ${k.name === account ? 'live' : 'off'}"></span>
+            <span class="grow"><b>${esc(k.name)}</b><br>
+              <span class="sub">${k.active ? 'signed in right now' : `last used ${ago(k.lastUsed)}`}</span></span>
+            <span class="sub" data-forget="${esc(x.id)}|${esc(k.name)}">✕</span>
+          </button>`).join('')
+        : '<div class="pick"><span class="sub">None kept yet. Sign in above, then keep it under a name — after that you can switch without signing out of either.</span></div>'}
+
+    ${x.config ? `<hr>
+      <button class="pick" data-keep="${esc(x.id)}"><span>＋</span>
+        <span class="grow">Keep the one I am signed in to…</span></button>` : ''}
+    ${x.signIn?.way === 'terminal' ? `
+      <button class="pick" data-signin="${esc(x.id)}"><span>❯</span>
+        <span class="grow">Run ${esc(x.name)}'s own sign-in<br><span class="sub">Opens a terminal, then your browser.</span></span></button>` : ''}`;
+}
+
+function wireAppCards(t, p) {
   for (const b of document.querySelectorAll('[data-launch]')) {
     b.onclick = async () => {
       const { launch, how } = b.dataset;
       b.disabled = true;
-      say(await api('/launch', { tool: launch, how }));
+      say(await api('/launch', {
+        tool: launch, how, dir: whereFor(launch, p), profile: chosen.account[launch] ?? null,
+      }));
       await draw();
     };
   }
-  for (const b of document.querySelectorAll('[data-terminal-pick]')) {
-    b.onclick = () => whichTerminal(b.dataset.terminalPick);
-  }
-};
 
-function appTile(x, canLaunch) {
-  const ways = x.ways ?? [];
-  return `
-    <div class="tile flat ${x.here ? '' : 'away'}">
-      <div class="top">
-        <span class="dot ${x.here ? (x.active || x.signedIn ? 'live' : 'off') : 'off'}"></span>
-        <span class="title">${esc(x.name)}</span>
-        ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}
-      </div>
-      <div class="note">${x.here
-        ? (x.active ? `Using the account you called “${esc(x.active)}”`
-          : x.signedIn ? 'Signed in on this computer'
-            : x.config ? 'Not signed in yet' : 'Signs you in inside its own window')
-        : 'Not installed here.'}</div>
-      ${x.here ? `
-        <div class="foot">
-          ${ways.includes('desktop') ? `<button class="go small" data-launch="${esc(x.id)}" data-how="desktop"
-             ${canLaunch ? '' : 'disabled'}>Open in its own window</button>` : ''}
-          ${ways.includes('terminal') ? `<button class="${ways.includes('desktop') ? '' : 'go '}small"
-             data-launch="${esc(x.id)}" data-how="terminal" ${canLaunch ? '' : 'disabled'}>Open in a terminal</button>` : ''}
-          ${ways.includes('terminal') ? `<button class="quiet small" data-terminal-pick="${esc(x.id)}"
-             ${canLaunch ? '' : 'disabled'}>in which terminal…</button>` : ''}
-        </div>` : ''}
-    </div>`;
+  for (const b of document.querySelectorAll('[data-which]')) {
+    b.onclick = () => whichTerminal(b.dataset.which, whereFor(b.dataset.which, p), t.terminals);
+  }
+
+  for (const b of document.querySelectorAll('[data-where]')) {
+    b.onclick = async () => {
+      const path = await pickFolder({
+        title: 'Which folder should this one open in?',
+        confirm: 'Open in here',
+        startAt: whereFor(b.dataset.where, p),
+      });
+      if (!path) return;
+      chosen.folder[b.dataset.where] = path;
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-account]')) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const panel = $(`#acct-${CSS.escape(b.dataset.account)}`);
+      const wasOpen = !panel.hidden;
+      closePanels();
+      panel.hidden = wasOpen;
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-service]')) {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      const [tool, , where] = b.dataset.service.split('|');
+      window.open(where, '_blank');
+      closePanels();
+      say({
+        ok: true,
+        sentence: 'The sign-in page is opening in your browser.',
+        action: `When you are signed in there, run ${t.tools.find((x) => x.id === tool)?.name ?? 'the app'}'s own sign-in to let this computer use it.`,
+      });
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-use]')) {
+    b.onclick = (e) => {
+      if (e.target.dataset.forget) return;
+      e.stopPropagation();
+      const [tool, name] = b.dataset.use.split('|');
+      chosen.account[tool] = name;
+      closePanels();
+      draw();
+    };
+  }
+
+  for (const s of document.querySelectorAll('[data-forget]')) {
+    s.onclick = async (e) => {
+      e.stopPropagation();
+      const [tool, name] = s.dataset.forget.split('|');
+      const sure = await confirmThat({
+        title: 'Throw this account away',
+        what: `The kept copy of “${name}” is deleted from this computer.`,
+        why: 'You would have to sign in to that account again to get it back.',
+        confirm: 'Throw it away',
+        danger: true,
+      });
+      if (!sure) return;
+      if (chosen.account[tool] === name) delete chosen.account[tool];
+      say(await api('/profile/forget', { tool, name }));
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-keep]')) {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      closePanels();
+      const name = await ask({
+        title: 'Keep this account',
+        label: 'What should it be called? Something you will recognise — “work”, “personal”.',
+        placeholder: 'work',
+        confirm: 'Keep it',
+      });
+      if (!name) return;
+      say(await api('/profile/save', { tool: b.dataset.keep, name }));
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-signin]')) {
+    b.onclick = async (e) => {
+      e.stopPropagation();
+      closePanels();
+      say(await api('/signin/tool', { tool: b.dataset.signin, dir: whereFor(b.dataset.signin, p) }));
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-install]')) {
+    b.onclick = async () => {
+      const r = await api('/install', { tool: b.dataset.install });
+      if (r.ok) watchJob(r.job); else { say(r); draw(); }
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-getpage]')) {
+    b.onclick = () => window.open(b.dataset.getpage, '_blank');
+  }
 }
 
-async function whichTerminal(toolId) {
-  const { terminals } = await api('/terminals');
+function whichTerminal(toolId, dir, terminals) {
   sheet({
     title: 'Which terminal?',
     narrow: true,
@@ -763,7 +1042,10 @@ async function whichTerminal(toolId) {
       for (const b of document.querySelectorAll('[data-in]')) {
         b.onclick = async () => {
           closeLayer();
-          say(await api('/launch', { tool: toolId, how: 'terminal', terminal: b.dataset.in }));
+          say(await api('/launch', {
+            tool: toolId, how: 'terminal', terminal: b.dataset.in, dir,
+            profile: chosen.account[toolId] ?? null,
+          }));
           draw();
         };
       }
@@ -776,169 +1058,64 @@ async function whichTerminal(toolId) {
 // ---------------------------------------------------------------------------
 
 SCREENS.terminals = async () => {
-  const [{ terminals }, p] = await Promise.all([api('/terminals'), api('/project')]);
+  const [{ terminals, preferred }, p] = await Promise.all([api('/terminals'), api('/project')]);
 
   view.innerHTML = `
     <h1>Terminals</h1>
-    <p class="sub">${p.open
-      ? `Each of these opens already inside <b>${esc(p.name)}</b>, so the first thing you type is the thing you meant to type.`
-      : 'Open a project first, then any of these starts inside it.'}</p>
+    <p class="sub">Each of these opens already inside the folder on its card, so the first
+      thing you type is the thing you meant to type.</p>
+    ${whereBar(p)}
     ${saidHtml()}
 
     <h2>On this computer</h2>
     <div class="grid">
-      ${terminals.map((t) => `
+      ${terminals.map((t) => {
+    const dir = whereFor(`t:${t.id}`, p);
+    return `
         <div class="tile flat">
-          <div class="top"><span class="dot live"></span><span class="title">${esc(t.name)}</span></div>
+          <div class="top"><span class="dot live"></span><span class="title">${esc(t.name)}</span>
+            ${preferred === t.id ? '<span class="chip cool" style="margin-left:auto">your usual</span>' : ''}</div>
           <div class="note">${esc(t.blurb)}</div>
-          <div class="foot">
-            <button class="go small" data-open-term="${esc(t.id)}" ${p.open ? '' : 'disabled'}>Open here</button>
+          <div class="doing">
+            <button class="go small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Open here</button>
+            ${preferred === t.id ? '' : `<button class="quiet small" data-usual="${esc(t.id)}">make this my usual</button>`}
           </div>
-        </div>`).join('')}
+          <button class="folderchip" data-where="t:${esc(t.id)}" style="margin-top:.5rem;align-self:flex-start">
+            in <b>${esc(dir ? tail(dir) : 'no folder')}</b>
+          </button>
+        </div>`;
+  }).join('')}
     </div>`;
   said = null;
 
+  wireWhereBar();
+
   for (const b of document.querySelectorAll('[data-open-term]')) {
     b.onclick = async () => {
-      say(await api('/terminal', { terminal: b.dataset.openTerm }));
+      say(await api('/terminal', { terminal: b.dataset.openTerm, dir: whereFor(`t:${b.dataset.openTerm}`, p) }));
       draw();
     };
   }
-};
-
-// ---------------------------------------------------------------------------
-// Accounts
-// ---------------------------------------------------------------------------
-
-SCREENS.accounts = async () => {
-  const [g, t] = await Promise.all([api('/github'), api('/tools')]);
-  const apps = t.tools.filter((x) => x.here);
-
-  view.innerHTML = `
-    <h1>Accounts</h1>
-    <p class="sub">Sign in to anything from here, and keep more than one account for each
-      without signing out. Nothing is ever replaced without being kept first.</p>
-    ${saidHtml()}
-
-    <h2>GitHub</h2>
-    <div class="card" style="margin-bottom:.6rem">
-      <div class="bar" style="margin-bottom:${g.accounts.length ? '1rem' : '0'}">
-        <span class="dot ${g.active ? 'live' : 'off'}"></span>
-        <b>${g.active ? `Signed in as ${esc(g.active)}` : 'Not signed in on this computer'}</b>
-        <span style="flex:1"></span>
-        <button class="go small" id="gh-in">${g.active ? 'Sign in to another account' : 'Sign in to GitHub'}</button>
-      </div>
-      ${g.accounts.map((a) => `
-        <div class="row" style="margin-bottom:.35rem">
-          <span class="dot ${a.active ? 'live' : 'off'}"></span>
-          <div class="grow"><div class="name">${esc(a.name)}</div>
-            <div class="note">${a.active ? 'in use right now' : 'signed in, not in use'}</div></div>
-          ${a.active ? '' : `<button class="small" data-gh-use="${esc(a.name)}">Use this one</button>`}
-          <button class="quiet small danger" data-gh-out="${esc(a.name)}">Sign out</button>
-        </div>`).join('')}
-    </div>
-
-    <div class="card">
-      <label class="field">Everything you save is signed with this name. It is not shown to anyone but you and your team.</label>
-      <div class="bar" style="margin:0">
-        <input id="id-name" placeholder="Your name" value="${esc(g.identity.name ?? '')}" style="flex:1">
-        <input id="id-mail" placeholder="you@example.com" value="${esc(g.identity.email ?? '')}" style="flex:1">
-        <button id="id-save">Save</button>
-      </div>
-    </div>
-
-    <h2>AI apps</h2>
-    ${apps.length ? apps.map(accountCard).join('') : '<div class="empty"><b>No AI apps found on this computer.</b></div>'}`;
-  said = null;
-
-  $('#gh-in').onclick = async () => { say(await api('/github/signin')); draw(); };
-  $('#id-save').onclick = async () => {
-    say(await api('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
-    draw();
-  };
-  for (const b of document.querySelectorAll('[data-gh-use]')) {
-    b.onclick = async () => { say(await api('/github/switch', { name: b.dataset.ghUse })); await refreshMe(); draw(); };
-  }
-  for (const b of document.querySelectorAll('[data-gh-out]')) {
+  for (const b of document.querySelectorAll('[data-usual]')) {
     b.onclick = async () => {
-      const sure = await confirmThat({
-        title: 'Sign out',
-        what: `${b.dataset.ghOut} will be signed out on this computer.`,
-        why: 'Nothing on GitHub itself changes. You can sign back in whenever you like.',
-        confirm: 'Sign out',
-        danger: true,
-      });
-      if (!sure) return;
-      say(await api('/github/signout', { name: b.dataset.ghOut }));
+      say(await api('/settings', { id: 'terminal', value: b.dataset.usual }));
       await refreshMe();
       draw();
     };
   }
-
-  for (const b of document.querySelectorAll('[data-sign]')) {
-    b.onclick = async () => { say(await api('/signin/tool', { tool: b.dataset.sign })); draw(); };
-  }
-  for (const b of document.querySelectorAll('[data-keep]')) {
+  for (const b of document.querySelectorAll('[data-where]')) {
     b.onclick = async () => {
-      const name = await ask({
-        title: 'Keep this account',
-        label: 'What should this account be called? Something you will recognise — “work”, “personal”.',
-        placeholder: 'work',
-        confirm: 'Keep it',
+      const path = await pickFolder({
+        title: 'Which folder should this one open in?',
+        confirm: 'Open in here',
+        startAt: whereFor(b.dataset.where, p),
       });
-      if (!name) return;
-      say(await api('/profile/save', { tool: b.dataset.keep, name }));
-      draw();
-    };
-  }
-  for (const b of document.querySelectorAll('[data-use]')) {
-    b.onclick = async () => { say(await api('/profile/use', { tool: b.dataset.use, name: b.dataset.name })); draw(); };
-  }
-  for (const b of document.querySelectorAll('[data-drop-account]')) {
-    b.onclick = async () => {
-      const sure = await confirmThat({
-        title: 'Throw this account away',
-        what: `The kept copy of “${b.dataset.name}” is deleted from this computer.`,
-        why: 'You would have to sign in to that account again to get it back.',
-        confirm: 'Throw it away',
-        danger: true,
-      });
-      if (!sure) return;
-      say(await api('/profile/forget', { tool: b.dataset.dropAccount, name: b.dataset.name }));
+      if (!path) return;
+      chosen.folder[b.dataset.where] = path;
       draw();
     };
   }
 };
-
-function accountCard(x) {
-  const keeps = x.profiles ?? [];
-  return `
-    <div class="card" style="margin-bottom:.6rem">
-      <div class="bar" style="margin-bottom:${keeps.length || x.config ? '.9rem' : '0'}">
-        <span class="dot ${x.active || x.signedIn ? 'live' : 'off'}"></span>
-        <b>${esc(x.name)}</b>
-        <span class="chip">${x.active ? `using “${esc(x.active)}”` : x.signedIn ? 'signed in' : 'not signed in'}</span>
-        <span style="flex:1"></span>
-        <button class="go small" data-sign="${esc(x.id)}">Sign in to ${esc(x.name)}</button>
-        ${x.config ? `<button class="small" data-keep="${esc(x.id)}">Keep the one I am signed in to…</button>` : ''}
-      </div>
-
-      ${!x.config ? `<p class="note" style="margin:0;color:var(--quiet);font-size:.86rem">
-          ${esc(x.name)} keeps its account inside itself, so this manager cannot hold more than one for it.
-          Signing in opens the app.</p>`
-      : keeps.length ? keeps.map((k) => `
-          <div class="row" style="margin-bottom:.35rem">
-            <span class="dot ${k.active ? 'live' : 'off'}"></span>
-            <div class="grow"><div class="name">${esc(k.name)}</div>
-              <div class="note">${k.active ? 'in use right now' : `last used ${ago(k.lastUsed)}`}</div></div>
-            ${k.active ? '' : `<button class="small" data-use="${esc(x.id)}" data-name="${esc(k.name)}">Switch to this</button>`}
-            <button class="quiet small danger" data-drop-account="${esc(x.id)}" data-name="${esc(k.name)}">Throw away</button>
-          </div>`).join('')
-        : `<p class="note" style="margin:0;color:var(--quiet);font-size:.86rem">
-             No accounts kept yet. Sign in above, then keep it under a name — after that you can
-             switch between accounts without signing out of either.</p>`}
-    </div>`;
-}
 
 // ---------------------------------------------------------------------------
 // Putting it out into the world
@@ -954,8 +1131,7 @@ SCREENS.ship = async () => {
     return;
   }
 
-  const site = d.site;
-  const app = d.app;
+  const { site, app } = d;
 
   view.innerHTML = `
     <h1>Put it out into the world</h1>
@@ -979,10 +1155,6 @@ SCREENS.ship = async () => {
               <button class="${pl.ready ? 'go ' : ''}small" data-site="${esc(pl.id)}" ${pl.ready ? '' : 'disabled'}>Put it up</button>
             </div>`).join('')}
         </div>
-        ${site.places.some((pl) => pl.ready) ? '' : `
-          <p class="note" style="color:var(--quiet);font-size:.85rem;margin-top:.6rem">
-            Nowhere is ready yet. The quickest is GitHub Pages — give this project a copy
-            on GitHub from the Projects tab and it turns on here.</p>`}
       </div>
 
       <div class="card">
@@ -1061,9 +1233,7 @@ async function paintJob() {
         ${j.running ? '' : '<button class="quiet small" id="job-close">clear</button>'}
       </div>
       ${j.action && !j.running ? `<p class="note" style="color:var(--quiet);margin:0 0 .7rem">${esc(j.action)}</p>` : ''}
-      <ul class="steps">
-        ${j.steps.map((s) => `<li><span class="tick">✓</span> ${esc(s.sentence)}</li>`).join('')}
-      </ul>
+      <ul class="steps">${j.steps.map((s) => `<li><span class="tick">✓</span> ${esc(s.sentence)}</li>`).join('')}</ul>
       <details ${j.ok === false ? 'open' : ''}>
         <summary style="cursor:pointer;color:var(--quiet);font-size:.85rem">What it printed</summary>
         <div class="log" style="margin-top:.5rem">${esc(j.lines.join('\n'))}</div>
@@ -1073,11 +1243,11 @@ async function paintJob() {
   $('#job-close')?.addEventListener('click', () => { watching = null; draw(); });
 
   if (j.running) setTimeout(paintJob, 1000);
-  else if (at.tab === 'ship') setTimeout(() => { if (at.tab === 'ship') draw(); }, 400);
+  else setTimeout(() => { if (!layer.innerHTML) draw(); }, 600);
 }
 
 // ---------------------------------------------------------------------------
-// My computers
+// Shared workspace
 // ---------------------------------------------------------------------------
 
 let workspaceTimer = null;
@@ -1088,22 +1258,25 @@ SCREENS.workspace = async () => {
 
   if (!w.joined) {
     view.innerHTML = `
-      <h1>My computers</h1>
-      <p class="sub">Your desktop and your laptop, working on the same things, without a
-        server anywhere between them.</p>
+      <h1>Shared workspace</h1>
+      <p class="sub">Every computer signed in to the same GitHub account, in one place —
+        and folders that go straight from one to another across your own network.</p>
       ${saidHtml()}
       <div class="card">
         <p style="margin-top:0">Joining makes one small private project on your own GitHub
           account called <b>viberant-workspace</b>. Every computer you sign in on puts three
           things in it: who it is, which projects it is offering, and anything you type here.
-          That is all it is — there is no service of ours in the middle, and nothing about
-          your work leaves your own account.</p>
-        <p style="color:var(--quiet);font-size:.89rem">Your files do not travel this way. Each
-          computer gets its own copy of a project from GitHub in the ordinary way. What travels
-          is knowing what exists, who is about, and what was said.</p>
+          There is no service of ours in the middle.</p>
+        <p style="color:var(--quiet);font-size:.89rem">It also puts one random number in there,
+          which is what lets two computers on the same network recognise each other as
+          <b>yours</b> — being signed in to the same account is a claim anybody nearby could
+          make, and holding a number out of a project only you can read is not.</p>
+        <p style="color:var(--quiet);font-size:.89rem">Folders never go through GitHub. They go
+          straight from one computer to the other across your own network, and only when
+          somebody asks for one.</p>
         <div class="bar" style="margin:1rem 0 0">
           <button class="go" id="w-join" ${me.github ? '' : 'disabled'}>Join my shared workspace</button>
-          ${me.github ? '' : '<span class="note" style="color:var(--quiet)">Sign in to GitHub first, on the Accounts tab.</span>'}
+          ${me.github ? '' : '<span class="note" style="color:var(--quiet)">Sign in to GitHub first — the account button is at the bottom left.</span>'}
         </div>
       </div>`;
     said = null;
@@ -1118,58 +1291,74 @@ SCREENS.workspace = async () => {
     return;
   }
 
-  const others = (w.machines ?? []).filter((m) => !m.you);
-  const mine = (w.machines ?? []).find((m) => m.you);
+  const known = w.machines ?? [];
+  const nearby = new Map((w.around ?? []).map((m) => [m.machine, m]));
+  const mine = known.find((m) => m.you);
+  const others = known.filter((m) => !m.you);
   const theirs = (w.projects ?? []).filter((p) => !p.yours);
-  const ours = (w.projects ?? []).filter((p) => p.yours);
 
   view.innerHTML = `
-    <h1>My computers</h1>
-    <p class="sub">Everything here goes through <b>${esc(w.account ?? '')}</b> on GitHub.
+    <h1>Shared workspace</h1>
+    <p class="sub">Everything here belongs to <b>${esc(w.account ?? '')}</b> on GitHub.
       ${w.mismatch ? '<b style="color:var(--attention)">You are signed in as somebody else right now, so this is out of step.</b>' : ''}</p>
     ${saidHtml()}
 
-    <h2>Computers</h2>
+    <h2>Your computers</h2>
     <div class="grid">
-      ${[mine, ...others].filter(Boolean).map((m) => `
+      ${[mine, ...others].filter(Boolean).map((m) => {
+    const near = nearby.get(m.id);
+    return `
         <div class="tile flat">
           <div class="top">
-            <span class="dot ${m.hereNow ? 'live' : 'off'}"></span>
+            <span class="dot ${near ? 'live' : m.hereNow ? 'attention' : 'off'}"></span>
             <span class="title">${esc(m.name)}</span>
             ${m.you ? '<span class="chip vibe" style="margin-left:auto">this one</span>' : ''}
           </div>
-          <div class="note">${esc(m.kind ?? '')} · ${m.hereNow ? 'here now' : `last here ${ago(m.lastHere)}`}</div>
+          <div class="note">${esc(m.kind ?? '')} · ${near ? 'on this network right now'
+      : m.hereNow ? 'about, but not on this network' : `last here ${ago(m.lastHere)}`}</div>
           ${m.workingOn ? `<div class="note" style="color:var(--faint)">working on ${esc(m.workingOn)}</div>` : ''}
-          ${m.you ? '<div class="foot"><button class="quiet small" id="w-rename">Rename this computer</button></div>' : ''}
-        </div>`).join('')}
+          <div class="doing">
+            ${m.you
+      ? `<button class="quiet small" id="w-rename">Rename</button>
+                 ${w.sharingHere ? '' : '<button class="small" id="w-share-on">Let the others reach this one</button>'}`
+      : near ? `<button class="go small" data-peek="${esc(m.id)}">See what it is offering</button>`
+        : '<span class="note" style="color:var(--faint);font-size:.78rem">Files can only move when both are on the same network.</span>'}
+          </div>
+        </div>`;
+  }).join('')}
     </div>
 
-    <h2>Projects your other computers are offering</h2>
+    <h2>What this computer is offering across the network</h2>
+    ${(w.offers ?? []).length ? (w.offers ?? []).map((o) => `
+      <div class="row">
+        <span class="dot live"></span>
+        <div class="grow"><div class="name">${esc(o.name)}</div>
+          <div class="note">${o.files} files · ${esc(size(o.bytes))}${o.everything ? ' · everything included' : ''}${o.about ? ` · ${esc(o.about)}` : ''}</div></div>
+        <button class="quiet small" data-unoffer="${esc(o.id)}">Stop offering</button>
+      </div>`).join('')
+    : '<div class="empty"><b>Nothing offered from this computer yet.</b> Offer a folder and your other computers can take a copy — when they ask for it.</div>'}
+    <div class="bar" style="margin-top:.6rem">
+      <button class="go" id="w-offer-folder">Offer a folder…</button>
+      <span class="note" style="color:var(--quiet);font-size:.84rem">Nothing moves until another computer asks for it.</span>
+    </div>
+
+    <h2>Projects your other computers list</h2>
     ${theirs.length ? theirs.map((p) => `
       <div class="row">
         <span class="dot ${p.url ? 'live' : 'off'}"></span>
         <div class="grow"><div class="name">${esc(p.name)}</div>
-          <div class="note">from ${esc(p.fromName)} · ${esc(p.says ?? '')}${p.url ? '' : ' · no copy on GitHub, so it cannot travel'}</div></div>
-        <button class="go small" data-bring='${esc(JSON.stringify(p))}' ${p.url ? '' : 'disabled'}>Bring it here</button>
+          <div class="note">from ${esc(p.fromName)} · ${esc(p.says ?? '')}${p.url ? '' : ' · no copy on GitHub, so it can only come across the network'}</div></div>
+        <button class="small" data-bring='${esc(JSON.stringify(p))}' ${p.url ? '' : 'disabled'}>Bring it from GitHub</button>
       </div>`).join('')
-    : '<div class="empty"><b>Nothing offered yet.</b> On your other computer, mark a project as offered and it turns up here.</div>'}
-
-    <h2>What this computer is offering</h2>
-    ${ours.length ? ours.map((p) => `
-      <div class="row">
-        <span class="dot live"></span>
-        <div class="grow"><div class="name">${esc(p.name)}</div><div class="note">${esc(p.says ?? '')}</div></div>
-        <button class="quiet small" data-stop="${esc(p.id)}">Stop offering</button>
-      </div>`).join('')
-    : ''}
-    <div class="bar" style="margin-top:.6rem"><button id="w-offer">Choose what to offer…</button></div>
+    : '<div class="empty"><b>Nothing listed yet.</b> On your other computer, mark a project as offered and it turns up here.</div>'}
+    <div class="bar" style="margin-top:.6rem"><button id="w-list">Choose what to list…</button></div>
 
     <h2>Between your computers</h2>
     <div class="card">
       <div class="talk" id="talk">
         ${(w.said ?? []).map((s) => `
           <div class="bubble ${s.you ? 'mine' : ''}">
-            <div class="who">${esc(s.fromName)} · ${ago(s.at)}</div>
+            <div class="who" style="all:unset;display:block;font-size:.74rem;color:var(--faint)">${esc(s.fromName)} · ${ago(s.at)}</div>
             ${esc(s.text)}
           </div>`).join('') || '<p style="color:var(--quiet);margin:0">Nothing said yet.</p>'}
       </div>
@@ -1182,7 +1371,9 @@ SCREENS.workspace = async () => {
     <div class="bar" style="margin-top:1.6rem">
       <button class="quiet small" id="w-refresh">Check again now</button>
       <button class="quiet small danger" id="w-leave">Take this computer out of the workspace</button>
-    </div>`;
+    </div>
+
+    <div id="job"></div>`;
   said = null;
 
   const talk = $('#talk');
@@ -1198,15 +1389,22 @@ SCREENS.workspace = async () => {
     draw();
   };
   $('#w-refresh').onclick = async () => { await api('/workspace/refresh'); draw(); };
+  $('#w-share-on')?.addEventListener('click', async () => { say(await api('/local/on')); await refreshMe(); draw(); });
   $('#w-rename')?.addEventListener('click', async () => {
-    const name = await ask({ title: 'Name this computer', label: 'What should your other computers call it?', value: me.machineName, confirm: 'Call it that' });
+    const name = await ask({
+      title: 'Name this computer',
+      label: 'What should your other computers call it?',
+      value: me.machineName,
+      confirm: 'Call it that',
+    });
     if (!name) return;
-    say(await api('/me/name', { name }));
+    say(await api('/settings', { id: 'machineName', value: name }));
     await api('/workspace/refresh');
     await refreshMe();
     draw();
   });
-  $('#w-offer').onclick = offerSheet;
+  $('#w-list').onclick = listSheet;
+  $('#w-offer-folder').onclick = offerFolder;
   $('#w-leave').onclick = async () => {
     const sure = await confirmThat({
       title: 'Take this computer out',
@@ -1221,10 +1419,14 @@ SCREENS.workspace = async () => {
     draw();
   };
 
+  for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekAt(b.dataset.peek, w);
+  for (const b of document.querySelectorAll('[data-unoffer]')) {
+    b.onclick = async () => { say(await api('/local/withdraw', { id: b.dataset.unoffer })); draw(); };
+  }
   for (const b of document.querySelectorAll('[data-bring]')) {
     b.onclick = async () => {
       const entry = JSON.parse(b.dataset.bring);
-      const into = await pickFolder({ title: `Where should ${entry.name} go?`, confirm: 'Put it in here' });
+      const into = await pickFolder({ title: `Where should ${entry.name} go?`, confirm: 'Put it in here', startAt: w.workFolder });
       if (!into) return;
       say({ sentence: `Bringing ${entry.name} to this computer…` });
       draw();
@@ -1233,42 +1435,247 @@ SCREENS.workspace = async () => {
       draw();
     };
   }
-  for (const b of document.querySelectorAll('[data-stop]')) {
-    b.onclick = async () => { say(await api('/projects/offer', { path: b.dataset.stop, offered: false })); draw(); };
-  }
 
-  // Quietly keep in step while this page is the one you are looking at.
-  workspaceTimer = setTimeout(() => { if (at.tab === 'workspace' && !layer.innerHTML) draw(); }, 20000);
+  if (watching) paintJob();
+  workspaceTimer = setTimeout(() => {
+    if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw();
+  }, 20000);
 };
 
-async function offerSheet() {
-  const d = await api('/projects');
+/** Offer a folder to the other computers on this network. */
+async function offerFolder() {
+  const path = await pickFolder({ title: 'Which folder do you want to offer?', confirm: 'Offer this folder' });
+  if (!path) return;
+
+  const light = await api('/local/weigh', { path, everything: false });
+  const heavy = await api('/local/weigh', { path, everything: true });
+
   sheet({
-    title: 'What should your other computers see?',
+    title: `Offer ${tail(path)}`,
+    narrow: true,
     body: `
-      <p class="sub">Anything you offer here is listed on your other computers, with the
-        name of this one beside it. A project with no copy on GitHub can be seen but not
-        brought across.</p>
-      ${d.projects.map((p) => `
-        <div class="row">
-          <span class="dot ${p.offered ? 'live' : 'off'}"></span>
-          <div class="grow"><div class="name">${esc(p.name)}</div>
-            <div class="note">${esc(p.says)}${p.shared ? '' : ' · only on this computer'}</div></div>
-          <button class="small" data-offer="${esc(p.path)}" data-now="${p.offered ? '1' : '0'}">
-            ${p.offered ? 'Keep it to this computer' : 'Offer it'}</button>
-        </div>`).join('')}`,
-    onOpen: (body) => {
-      for (const b of body.querySelectorAll('[data-offer]')) {
+      <p class="sub">Your other computers will see this in their list. Nothing moves until
+        one of them asks for it, and it goes straight across your network — never through
+        GitHub and never through anything of ours.</p>
+      <div class="menu">
+        <button class="opt" data-offer="0">
+          <span class="glyph">◔</span>
+          <span><span class="what">Just the work — ${esc(light.says)}</span><br>
+            <span class="why">Leaves out the folders that get rebuilt anyway, like node_modules and build output.
+              ${light.skipped ? `${light.skipped} of them here.` : ''}</span></span>
+        </button>
+        <button class="opt" data-offer="1">
+          <span class="glyph">●</span>
+          <span><span class="what">Everything — ${esc(heavy.says)}</span><br>
+            <span class="why">Exactly what is in the folder, including everything that could be rebuilt.</span></span>
+        </button>
+      </div>`,
+    onOpen: () => {
+      for (const b of document.querySelectorAll('[data-offer]')) {
         b.onclick = async () => {
-          await api('/projects/offer', { path: b.dataset.offer, offered: b.dataset.now !== '1' });
           closeLayer();
-          await api('/workspace/refresh');
-          offerSheet();
+          say(await api('/local/offer', { path, everything: b.dataset.offer === '1' }));
           draw();
         };
       }
     },
   });
+}
+
+/** What one of your computers has on offer right now. */
+async function peekAt(machineId, w) {
+  const which = (w.machines ?? []).find((m) => m.id === machineId);
+  sheet({
+    title: `What ${which?.name ?? 'it'} is offering`,
+    body: '<div class="row"><span class="spin"></span><div class="grow">Asking it…</div></div>',
+    onOpen: async (body) => {
+      const r = await api(`/local/offers?machine=${encodeURIComponent(machineId)}`);
+      if (!r.ok) {
+        body.innerHTML = `<p><b>${esc(r.sentence)}</b><br><span style="color:var(--quiet)">${esc(r.action ?? '')}</span></p>`;
+        return;
+      }
+      if (!r.offers.length) {
+        body.innerHTML = `<div class="empty"><b>${esc(r.from)} is not offering anything.</b>
+          On that computer, use “Offer a folder” and it will show up here.</div>`;
+        return;
+      }
+      body.innerHTML = `
+        <p class="sub">Choose one and say where it should go. It comes straight across your
+          network. Nothing on this computer is changed until you pick a folder.</p>
+        ${r.offers.map((o) => `
+          <div class="row">
+            <span class="dot live"></span>
+            <div class="grow"><div class="name">${esc(o.name)}</div>
+              <div class="note">${o.files} files · ${esc(size(o.bytes))}${o.everything ? ' · everything included' : ''}
+                ${o.about ? ` · ${esc(o.about)}` : ''}</div></div>
+            <button class="go small" data-take="${esc(o.id)}" data-name="${esc(o.name)}">Bring it here…</button>
+          </div>`).join('')}`;
+
+      for (const b of body.querySelectorAll('[data-take]')) {
+        b.onclick = async () => {
+          closeLayer();
+          const into = await pickFolder({
+            title: `Where should ${b.dataset.name} go on this computer?`,
+            confirm: 'Put it in here',
+            startAt: w.workFolder,
+          });
+          if (!into) return;
+          const started = await api('/local/take', {
+            machine: machineId, offer: b.dataset.take, name: b.dataset.name, into,
+          });
+          if (started.ok) watchJob(started.job); else { say(started); draw(); }
+        };
+      }
+    },
+  });
+}
+
+async function listSheet() {
+  const d = await api('/projects');
+  sheet({
+    title: 'What should your other computers see listed?',
+    body: `
+      <p class="sub">Anything listed here shows on your other computers with the name of
+        this one beside it. Listing a project does not move it — it says it exists.</p>
+      ${d.projects.map((p) => `
+        <div class="row">
+          <span class="dot ${p.offered ? 'live' : 'off'}"></span>
+          <div class="grow"><div class="name">${esc(p.name)}</div>
+            <div class="note">${esc(p.says)}${p.shared ? '' : ' · only on this computer'}</div></div>
+          <button class="small" data-list="${esc(p.path)}" data-now="${p.offered ? '1' : '0'}">
+            ${p.offered ? 'Stop listing' : 'List it'}</button>
+        </div>`).join('')}`,
+    onOpen: (body) => {
+      for (const b of body.querySelectorAll('[data-list]')) {
+        b.onclick = async () => {
+          await api('/projects/offer', { path: b.dataset.list, offered: b.dataset.now !== '1' });
+          closeLayer();
+          await api('/workspace/refresh');
+          listSheet();
+          draw();
+        };
+      }
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+SCREENS.settings = async () => {
+  const [{ settings, record }, { terminals }] = await Promise.all([api('/settings'), api('/terminals')]);
+
+  view.innerHTML = `
+    <h1>Settings</h1>
+    <p class="sub">Everything here changes how the manager behaves, never what it tells you
+      is true.</p>
+    ${saidHtml()}
+
+    <div class="card">
+      ${settings.map((s) => `
+        <div class="setting">
+          <div class="about"><b>${esc(s.name)}</b><span>${esc(s.why)}</span></div>
+          <div class="set">${control(s, terminals)}</div>
+        </div>`).join('')}
+    </div>
+
+    <h2>This computer</h2>
+    <div class="card">
+      <div class="setting">
+        <div class="about"><b>Everything the manager has written down</b>
+          <span>A folder of plain text files. Open it in Explorer, read any of it, delete the
+            folder and it is as if this never ran.</span></div>
+        <div class="set"><button class="small" id="open-record">Open the folder</button></div>
+      </div>
+      <div class="setting">
+        <div class="about"><b>Where it keeps them</b><span>${esc(record)}</span></div>
+        <div class="set"></div>
+      </div>
+      <div class="setting">
+        <div class="about"><b>Put every setting back</b>
+          <span>Only the settings above. Your projects, accounts and history are untouched.</span></div>
+        <div class="set"><button class="small danger" id="reset">Put them back</button></div>
+      </div>
+    </div>`;
+  said = null;
+
+  for (const b of document.querySelectorAll('[data-toggle]')) {
+    b.onclick = async () => {
+      await api('/settings', { id: b.dataset.toggle, value: b.dataset.now !== '1' });
+      await refreshMe();
+      draw();
+    };
+  }
+  for (const b of document.querySelectorAll('[data-text]')) {
+    b.onclick = async () => {
+      const value = await ask({
+        title: b.dataset.title,
+        label: b.dataset.title,
+        value: b.dataset.value,
+        confirm: 'Save',
+      });
+      if (!value) return;
+      say(await api('/settings', { id: b.dataset.text, value }));
+      await refreshMe();
+      draw();
+    };
+  }
+  for (const b of document.querySelectorAll('[data-folder]')) {
+    b.onclick = async () => {
+      const path = await pickFolder({ title: b.dataset.title, confirm: 'Use this folder', startAt: b.dataset.value });
+      if (!path) return;
+      say(await api('/settings', { id: b.dataset.folder, value: path }));
+      await refreshMe();
+      draw();
+    };
+  }
+  for (const sel of document.querySelectorAll('[data-choose]')) {
+    sel.onchange = async () => {
+      say(await api('/settings', { id: sel.dataset.choose, value: sel.value }));
+      await refreshMe();
+      draw();
+    };
+  }
+
+  $('#open-record').onclick = async () => { say(await api('/settings/openRecord')); draw(); };
+  $('#reset').onclick = async () => {
+    const sure = await confirmThat({
+      title: 'Put every setting back',
+      what: 'Every setting goes back to how it started.',
+      why: 'Your projects, your accounts and everything written down are untouched.',
+      confirm: 'Put them back',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await api('/settings/reset'));
+    await refreshMe();
+    draw();
+  };
+};
+
+function control(s, terminals) {
+  if (s.kind === 'yesNo') {
+    return `<button class="switch ${s.value ? 'on' : ''}" data-toggle="${esc(s.id)}"
+      data-now="${s.value ? '1' : '0'}" aria-label="${esc(s.name)}"></button>`;
+  }
+  if (s.kind === 'choice') {
+    return `<select data-choose="${esc(s.id)}">
+      ${s.choices.map((c) => `<option value="${esc(c.id)}" ${c.id === s.value ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+    </select>`;
+  }
+  if (s.kind === 'terminal') {
+    return `<select data-choose="${esc(s.id)}">
+      <option value="">Whichever is here</option>
+      ${terminals.map((t) => `<option value="${esc(t.id)}" ${t.id === s.value ? 'selected' : ''}>${esc(t.name)}</option>`).join('')}
+    </select>`;
+  }
+  if (s.kind === 'folder') {
+    return `<button class="small" data-folder="${esc(s.id)}" data-title="${esc(s.name)}"
+      data-value="${esc(s.value ?? '')}">${esc(tail(s.value) || 'Choose…')}</button>`;
+  }
+  return `<button class="small" data-text="${esc(s.id)}" data-title="${esc(s.name)}"
+    data-value="${esc(s.value ?? '')}">${esc(s.value || 'Set…')}</button>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,7 +1685,7 @@ async function offerSheet() {
 let lastPulse = null;
 
 async function checkPulse() {
-  if (document.hidden || layer.innerHTML) return;
+  if (document.hidden || layer.innerHTML || watching) return;
   try {
     const { pulse } = await api('/pulse');
     if (lastPulse !== null && pulse !== lastPulse && at.tab === 'projects') await draw();
@@ -1292,8 +1699,13 @@ setInterval(checkPulse, 4000);
 // ---------------------------------------------------------------------------
 
 addEventListener('keydown', (e) => {
-  if (e.target.matches('input, textarea')) return;
-  if (e.key === 'Escape') { if (layer.innerHTML) closeLayer(); else if (at.inside) { at.inside = false; api('/close').then(refreshMe).then(draw); } return; }
+  if (e.target.matches('input, textarea, select')) return;
+  if (e.key === 'Escape') {
+    if (layer.innerHTML) closeLayer();
+    else if (document.querySelector('.panel:not([hidden])')) closePanels();
+    else if (at.inside) { at.inside = false; api('/close').then(refreshMe).then(draw); }
+    return;
+  }
   const n = Number(e.key);
   if (n >= 1 && n <= TABS.length) go(TABS[n - 1].id);
 });
@@ -1308,13 +1720,13 @@ const start = async () => {
   at.inside = !!p.open;
   await draw();
 
-  // The opening runs once and then gets out of the way for good.
-  const hold = matchMedia('(prefers-reduced-motion: reduce)').matches ? 250 : 1750;
+  const skip = me.settings?.opening === false
+    || matchMedia('(prefers-reduced-motion: reduce)').matches;
   setTimeout(() => {
-    $('#opening').classList.add('going');
+    $('#opening')?.classList.add('going');
     $('#frame').classList.add('up');
-    setTimeout(() => $('#opening').remove(), 500);
-  }, hold);
+    setTimeout(() => $('#opening')?.remove(), 500);
+  }, skip ? 120 : 1750);
 };
 
 start();

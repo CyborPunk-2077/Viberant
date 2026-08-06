@@ -49,7 +49,11 @@ async function proseIn(file) {
   const withoutComments = text
     .replace(/\/\*[\s\S]*?\*\//g, ' ')
     .replace(/^\s*\/\/.*$/gm, ' ')
-    .replace(/<!--[\s\S]*?-->/g, ' ');
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    // Attributes nobody reads: a class called "head" is not somebody being told
+    // about a head. The ones a person does read — what a box says before you
+    // type in it, what a screen reader says out loud — are kept.
+    .replace(/\s(?:class|id|style|href|src|data-[\w-]+)\s*=\s*"[^"]*"/g, ' ');
 
   const found = [];
 

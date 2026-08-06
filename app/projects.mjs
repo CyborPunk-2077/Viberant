@@ -251,6 +251,12 @@ export async function publish(dir, { message, makeIfMissing = true, private: isP
       await run('gh', ['repo', 'create', basename(dir),
         isPrivate ? '--private' : '--public', '--source', '.', '--remote', 'origin'],
       { cwd: dir });
+      // Being signed in to the GitHub helper does not by itself let sending
+      // reach GitHub, and adding ours to the end of the list changes nothing
+      // because whatever the computer already had is asked first. The empty
+      // value clears that list. Set for this folder only. See github.mjs.
+      await git(dir, 'config', '--local', '--replace-all', 'credential.helper', '').catch(() => {});
+      await git(dir, 'config', '--local', '--add', 'credential.helper', '!gh auth git-credential').catch(() => {});
     } catch {
       return { ok: false, saved: true, sent: false,
         sentence: 'Saved here, but a copy on GitHub could not be made.',
@@ -262,7 +268,16 @@ export async function publish(dir, { message, makeIfMissing = true, private: isP
     const branch = (await git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim();
     await git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch);
     return { ok: true, saved: true, sent: true, sentence: 'Saved and sent to GitHub.' };
-  } catch {
+  } catch (e) {
+    // Two very different reasons look identical from here unless you read what
+    // came back, and telling somebody to wait until they are online when they
+    // are online is the sort of wrong answer that wastes an afternoon.
+    const said = String(e.stderr ?? e.message ?? '');
+    if (/not found|Authentication failed|could not read Username|403|denied/i.test(said)) {
+      return { ok: false, saved: true, sent: false, blocked: true,
+        sentence: 'Saved here, but this computer could not prove to GitHub that it is you.',
+        action: 'Open More, then “Let this computer send to GitHub”. It takes a second and is asked once.' };
+    }
     return { ok: false, saved: true, sent: false,
       sentence: 'Saved here, but GitHub could not be reached.',
       action: 'Send it again when you are back online.' };

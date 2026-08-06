@@ -135,6 +135,66 @@ export async function setIdentity({ name, email }) {
   return { ok: true, sentence: `Saved work will be signed ${String(name).trim()}.` };
 }
 
+/**
+ * Let one folder send to GitHub as the account you are signed in as here.
+ *
+ * Found by pressing the button rather than by reasoning, which is the honest
+ * way to report it. Signing in to GitHub with the helper does not, by itself,
+ * let *saving* reach GitHub: the helper keeps its own token, while sending goes
+ * out through whatever this computer keeps its passwords in — on Windows that is
+ * the credential store, and if it has never been told about GitHub, every send
+ * comes back as "not found", which reads like the project does not exist rather
+ * than like a sign-in problem.
+ *
+ * The usual fix changes a setting for every folder on the computer. This sets it
+ * for one folder — the folder the manager made — so nothing outside what the
+ * manager put there is altered. Anything else can be fixed by pressing the
+ * button that says so, which is the one place a global change gets asked for.
+ */
+export async function useOwnCredentials(dir) {
+  return !!(await quiet(async () => {
+    // The empty value first is the load-bearing line, and it is not obvious.
+    // Helpers are a list, not a setting: whatever the computer already had is
+    // asked first and wins, so adding ours to the end changes nothing at all —
+    // which is exactly what happened, and it took a real push to find out.
+    // An empty value clears the list; ours then stands alone for this folder.
+    await git(dir, 'config', '--local', '--replace-all', 'credential.helper', '');
+    await git(dir, 'config', '--local', '--add', 'credential.helper', '!gh auth git-credential');
+    return true;
+  }));
+}
+
+/** The same, for every folder, once and on purpose. */
+export async function fixSendingEverywhere() {
+  if (!(await haveGitHubTool())) return notSetUp;
+  if (!(await who())) return notSignedIn;
+
+  const done = await quiet(() => gh(['auth', 'setup-git']));
+  if (!done) {
+    return {
+      ok: false,
+      sentence: 'Sending could not be set up on this computer.',
+      action: 'Try signing in to GitHub again first.',
+    };
+  }
+  return {
+    ok: true,
+    sentence: 'This computer can now prove to GitHub that it is you, for every project.',
+    action: 'Try sending again.',
+  };
+}
+
+/** Does a failure to send look like a sign-in problem rather than a lost network? */
+export async function sendingIsBlocked(dir) {
+  const said = await quiet(async () => {
+    try {
+      await git(dir, 'push', '--dry-run');
+      return '';
+    } catch (e) { return String(e.stderr ?? e.message ?? ''); }
+  }, '');
+  return /not found|Authentication failed|could not read Username|403|denied/i.test(String(said));
+}
+
 // ---------------------------------------------------------------------------
 // Where a project stands
 // ---------------------------------------------------------------------------
@@ -364,6 +424,7 @@ export async function makeCopy(dir, { visibility = 'private' } = {}) {
       '--source', '.', '--remote', 'origin'],
     { cwd: dir },
   ));
+  if (made) await useOwnCredentials(dir);
   if (!made) {
     return {
       ok: false,
@@ -484,6 +545,7 @@ export async function bringDown({ url, into }) {
   }
 
   const done = await quiet(() => gh(['repo', 'clone', String(url), target]));
+  if (done) await useOwnCredentials(target);
   if (!done) {
     return {
       ok: false,

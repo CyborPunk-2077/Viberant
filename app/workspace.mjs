@@ -38,6 +38,7 @@ import { readFile, writeFile, mkdir, readdir, rm, appendFile } from 'node:fs/pro
 import { existsSync } from 'node:fs';
 import * as path from 'node:path';
 import { hostname, platform, release } from 'node:os';
+import { randomBytes } from 'node:crypto';
 
 import { HOUSE } from './projects.mjs';
 import * as github from './github.mjs';
@@ -152,12 +153,69 @@ export async function join({ machine, name = null } = {}) {
     }
   }
 
+  // Sending to a private workspace needs this computer to prove it is you, and
+  // being signed in to the helper is not by itself enough. Set for this folder
+  // only, so nothing outside what the manager made is changed. Done every time
+  // rather than only on the first, so a workspace made before this existed is
+  // repaired by joining again.
+  await github.useOwnCredentials(HERE);
+
   await setMarker({ account, full, name: name || hostname(), joinedAt: Date.now() });
   lastBeat = 0;
 
   const refreshed = await sync({ machine, name, force: true });
   if (!refreshed.ok) return refreshed;
+  if (refreshed.reached === false) {
+    // Joined here, but the others cannot see it yet. Saying "joined" and
+    // stopping would be true and misleading, which is the worse kind of true.
+    return {
+      ...refreshed,
+      ok: false,
+      sentence: 'This computer joined, but what it wrote has not reached GitHub yet.',
+      action: 'Press Join again in a moment — it will send what is waiting.',
+    };
+  }
   return { ok: true, sentence: 'This computer has joined your shared workspace.', ...refreshed };
+}
+
+/**
+ * The one secret the workspace holds.
+ *
+ * Written by whichever computer joins first and read by every other one. It is
+ * what lets two computers on the same network recognise each other as *yours*
+ * rather than merely as two computers on a network — being signed in to the
+ * same GitHub account is a claim anybody nearby could make, and holding a
+ * random number out of a project only you can read is not.
+ *
+ * This is the seam between the two halves: **GitHub says which computers are
+ * yours, and the local network moves the files.** Nothing here is ever sent
+ * anywhere; it stays in the workspace and in memory.
+ */
+export async function secret() {
+  const at = path.join(HERE, 'key');
+  if (!existsSync(path.join(HERE, '.git'))) return null;
+
+  if (existsSync(at)) {
+    const held = await quiet(() => readFile(at, 'utf8'), '');
+    const trimmed = String(held ?? '').trim();
+    if (trimmed.length >= 32) return trimmed;
+  }
+
+  await pull();
+  if (existsSync(at)) {
+    const held = await quiet(() => readFile(at, 'utf8'), '');
+    const trimmed = String(held ?? '').trim();
+    if (trimmed.length >= 32) return trimmed;
+  }
+
+  const made = randomBytes(32).toString('hex');
+  await writeFile(at, `${made}\n`, 'utf8');
+  const kept = await push('Set the key this workspace is recognised by');
+  if (!kept) return null;
+
+  // Somebody else may have written one first and won the race; theirs wins.
+  const settled = await quiet(() => readFile(at, 'utf8'), made);
+  return String(settled ?? made).trim();
 }
 
 /** Stop taking part, and take this computer's word out of the workspace. */
@@ -215,6 +273,7 @@ export async function sync({ machine, name = null, project = null, sharing = nul
 
   const me = thisMachine(machine, name || (await marker())?.name);
   const due = force || sharing !== null || Date.now() - lastBeat > HEARTBEAT;
+  let reached = null;
 
   if (due) {
     await mkdir(path.join(HERE, 'machines'), { recursive: true });
@@ -228,11 +287,11 @@ export async function sync({ machine, name = null, project = null, sharing = nul
         JSON.stringify(sharing, null, 2), 'utf8');
     }
 
-    await push(sharing ? `${me.name} changed what it is offering` : `${me.name} is here`);
+    reached = await push(sharing ? `${me.name} changed what it is offering` : `${me.name} is here`);
     lastBeat = Date.now();
   }
 
-  return { ok: true, ...(await read(machine)) };
+  return { ok: true, reached, ...(await read(machine)) };
 }
 
 /** Everything in the workspace, folded together. */

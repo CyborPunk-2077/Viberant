@@ -36,8 +36,13 @@
   --sidebar: 232px;
 }
 
+/*
+ * Light or dark. Following the computer is the default; choosing one and
+ * staying in it is a setting, and a setting has to win over the computer in
+ * both directions, which is why the choice is written twice.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --page: #121211;
     --card: #1a1a18;
     --raised: #201f1d;
@@ -57,6 +62,27 @@
     --shadow-lift: 0 2px 6px rgba(0, 0, 0, .5), 0 24px 60px -20px rgba(0, 0, 0, .8);
   }
 }
+
+:root[data-theme="dark"] {
+    --page: #121211;
+    --card: #1a1a18;
+    --raised: #201f1d;
+    --line: #2b2a27;
+    --line-strong: #3a3835;
+    --hover: #242320;
+    --ink: #edece9;
+    --quiet: #a09d97;
+    --faint: #6f6c67;
+
+    --live: #4fc39c;
+    --attention: #e0a33f;
+    --trouble: #e8735f;
+    --cool: #6fa8e8;
+
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 10px 30px -14px rgba(0, 0, 0, .7);
+    --shadow-lift: 0 2px 6px rgba(0, 0, 0, .5), 0 24px 60px -20px rgba(0, 0, 0, .8);
+  }
+
 
 * { box-sizing: border-box; }
 
@@ -642,3 +668,176 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
   nav button.tab .key { display: none; }
   main { padding: 1.6rem 1.1rem 4rem; }
 }
+
+/* ------------------------------------------------- opening the same app card */
+
+/*
+ * An app card is one row of controls, in the order you use them: open it, or
+ * open it in a terminal, or decide which account first. The account belongs
+ * here, beside the button, rather than on a page of its own — you choose which
+ * account at the moment you are about to open something, not an hour earlier.
+ */
+.doing {
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: .55rem;
+}
+
+.pair { display: flex; }
+.pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.pair > button:last-child {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+  padding-left: .5rem;
+  padding-right: .5rem;
+}
+.pair > button.go:last-child { border-left: 1px solid rgba(255, 255, 255, .25); }
+
+.drop { position: relative; }
+.panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: 19rem;
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+  padding: .7rem;
+  animation: sheetIn 140ms cubic-bezier(.22, 1, .36, 1);
+}
+.panel[hidden] { display: none; }
+.panel .head {
+  font-size: .7rem;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin: .2rem .2rem .45rem;
+}
+.panel .head + .head { margin-top: .8rem; }
+.panel .pick {
+  display: flex;
+  gap: .55rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: .4rem .45rem;
+  font-size: .88rem;
+}
+.panel .pick:hover { background: var(--hover); }
+.panel .pick.on { border-color: color-mix(in srgb, var(--live) 45%, var(--line)); }
+.panel .pick .sub { font-size: .76rem; color: var(--faint); }
+.panel hr { border: none; border-top: 1px solid var(--line); margin: .55rem 0; }
+
+/* The badge standing in for a service. No pictures are fetched from anywhere. */
+.services { display: flex; gap: .4rem; flex-wrap: wrap; padding: 0 .2rem; }
+.service {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 999px;
+  padding: .25rem .6rem .25rem .28rem;
+  font-size: .82rem;
+}
+.service:hover { background: var(--hover); border-color: var(--line-strong); }
+.service .badge {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: .7rem;
+  font-weight: 700;
+  flex: none;
+}
+
+.folderchip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .78rem;
+  color: var(--quiet);
+  border: 1px dashed var(--line-strong);
+  background: transparent;
+  border-radius: 999px;
+  padding: .2rem .6rem;
+  max-width: 100%;
+}
+.folderchip:hover { border-style: solid; background: var(--hover); }
+.folderchip b { font-weight: 500; color: var(--ink); }
+
+/* ------------------------------------------------- the account, bottom left */
+
+.who {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: 10px;
+  padding: .5rem .55rem;
+  font-size: .82rem;
+}
+.who:hover { background: var(--hover); border-color: var(--line-strong); }
+.who .grow { min-width: 0; flex: 1; }
+.who .name {
+  font-weight: 550;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.who .what { color: var(--faint); font-size: .74rem; }
+.who .panel { right: auto; left: 0; bottom: calc(100% + 6px); top: auto; width: 17rem; }
+
+/* --------------------------------------------------------------- settings */
+
+.setting {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: .95rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.setting:last-child { border-bottom: 0; }
+.setting .about { flex: 1; min-width: 0; }
+.setting .about b { font-weight: 550; display: block; }
+.setting .about span { color: var(--quiet); font-size: .86rem; }
+.setting .set { flex: none; display: flex; gap: .4rem; align-items: center; }
+
+.switch {
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--page);
+  position: relative;
+  padding: 0;
+  flex: none;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--faint);
+  transition: transform 140ms ease, background 140ms ease;
+}
+.switch.on { border-color: transparent; background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b)); }
+.switch.on::after { transform: translateX(18px); background: #fff; }
+@media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }

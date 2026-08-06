@@ -387,6 +387,107 @@ The per-computer file ownership is the load-bearing part. Two computers writing 
 
 ---
 
+### D-34 `[DECIDED]` — A window has to prove it is a window
+
+**Decision.** Before an app is offered as "open in its own window", the manager reads the program's own header and checks it is a windowed program. Evidence downgrades a way in; the absence of evidence never does — a file we cannot read that way (a `.cmd` or `.ps1` shim, which is how most windowed apps put themselves on the path) is taken at its word.
+
+**Why.** Measured rather than argued, after being asked to add desktop apps for Claude Code, Codex and OpenCode. What is installed on this machine under all three of those names is a *console* program — `claude.exe` is 253 MB of command-line assistant sitting in a folder that looks exactly like where a desktop app would live, and `codex.exe` is the same. Offering either as "open in its own window" would start something invisible and look like the button did nothing.
+
+Every Windows program has said which of the two it is since 1993, so the answer was available for the reading. Fifteen lines in `windowed.mjs` replaces a guess with a fact, and the card now says *why* an app has no Open button instead of leaving it a mystery.
+
+**Consequence.** The moment a real desktop version of any of these is installed, it appears with no change to this code.
+
+---
+
+### D-35 `[DECIDED]` — Accounts live on the app's own card, at the moment of opening
+
+**Decision.** The separate Accounts page is gone. Each AI app's card carries its own account control, holding the services it signs in with and the accounts kept for it. Choosing one selects it; pressing Open opens with it.
+
+**Why.** Which account to use is a decision you make *while opening something*, not an hour earlier on a different page. The old arrangement made you go somewhere else, switch, come back, and then remember what you had switched to. Putting the choice beside the button removes the remembering.
+
+**Consequence.** Switching an account no longer swaps files the moment you choose it — the swap happens when you press Open. That is strictly safer: choosing is now free and reversible, and nothing on disk moves until you commit to opening something.
+
+---
+
+### D-36 `[DECIDED]` — The GitHub account is always visible, bottom left
+
+**Decision.** Who you are on GitHub sits permanently in the bottom-left corner, with switching, signing in, signing out and your name on saved work behind it.
+
+**Why.** It is the one piece of identity that changes what every other button in the app does — which account a project is made under, which computers find each other, whose releases go out. Something with that much reach should not be reachable only through a page you have to think to visit. Bottom-left is where every other tool of this kind puts it, and being unsurprising is worth more here than being original.
+
+---
+
+### D-37 `[DECIDED]` — GitHub says which computers are yours; the network moves the files
+
+**Decision.** Folders never travel through GitHub or through anything of ours. They go directly from one computer to another across the local network. What GitHub provides is *identity*: joining the shared workspace puts one random key in a private project only your account can read, and holding that key is what makes a computer on the network yours.
+
+**Why.** Asked for directly: files should move locally, not "the cloud way". The hard part is not the moving, it is knowing who to move them to. Being signed in to the same GitHub account is a claim anybody on the same coffee-shop network could make, so it cannot be the proof. A random number out of a private repository can be, and the workspace from D-25 was already there to hold it.
+
+This splits the two halves along their honest lines: the thing that works everywhere (knowing what exists, who is about, what was said) goes through GitHub; the thing that should never leave the building (your files) never does.
+
+**Alternatives considered.**
+- *No proof at all, trust the network.* Rejected outright: anyone on the same Wi-Fi could take your projects.
+- *A pairing code typed on both computers.* Works, and is one more thing to do. Rejected because the workspace already establishes exactly this trust, and asking twice for the same fact is a tax.
+- *Sending folders through GitHub.* Rejected: it is what was explicitly not wanted, and it puts private work in a place it did not need to go.
+
+**Honest limit.** Both computers have to be on the same network. When they are not, the workspace still shows them and still carries what was said — it just cannot move a folder. That is said on the card rather than discovered.
+
+---
+
+### D-38 `[DECIDED]` — Nothing arrives on your computer without being asked for
+
+**Decision.** One computer *offers* a folder. The other sees the offer, chooses where it goes, and asks for it. There is no automatic sync, no watched folder, no "keep these in step".
+
+**Why.** Asked for, and right regardless. A folder appearing on your disk without being asked for is the behaviour of something you would uninstall, and automatic two-way syncing is the single most reliable way to destroy work — the failure mode is silent, and by the time you notice, the good copy is gone. Offering and asking are two deliberate acts by two people, which is exactly the number of decisions this deserves.
+
+**Consequence.** A parcel carries a closing line saying how many files and bytes it held, and a folder is only moved into place once that line arrives. A transfer cut off half way leaves nothing that looks finished, which is tested.
+
+---
+
+### D-39 `[DECIDED]` — Opening the same app again is the same thing, not another one
+
+**Decision.** Launching an assistant that is already open in a project records another account against the effort already there, rather than beginning a new one.
+
+**Why.** Opening Codex six times in an afternoon is one thing you are doing, not six. The old behaviour turned the most-looked-at list in the product into a list of times you had clicked — noise wearing the clothes of information, and precisely what D-23's compression rule exists to prevent. `effort.account_captured` (D-15) already meant "this assistant touched this effort", which is exactly what a second press is.
+
+**Also.** The list can now be cleared in one press, which stops nothing and touches no file. Needed because a list you cannot tidy becomes a list you stop reading.
+
+---
+
+### D-40 `[DECIDED]` — An app you do not have is one press away
+
+**Decision.** Apps that are not installed are still listed, and each one carries how it is installed. The ones that install as a command are installed from here as a watched errand; the ones that come as their own installer get their download page.
+
+**Why.** "We looked and it is not here" was already the honest thing to show (D-26). Showing it next to a button that fixes it costs one field per app and removes a search, a download page, and a guess about which package is the real one.
+
+**Never silently.** What would run is shown before you agree to it, and it runs in the open like every other long errand.
+
+---
+
+### D-41 `[DECIDED]` — Settings exist, and there are eight of them
+
+**Decision.** A settings page holding only things somebody would go looking for: what this computer is called, where work lives, which terminal is meant, light or dark, whether the opening plays, whether folders are watched, whether the other computers can reach this one, and whether letting anyone see a project asks twice.
+
+**Why.** Every one of these was previously either impossible or hidden behind a gesture nobody would find. The rule keeping the list short is that **nothing here changes what the manager tells you is true, only how it behaves while telling you** — a setting that could make the product less honest is not a setting, it is a bug with a switch on it.
+
+---
+
+### D-42 `[DECIDED]` — Folders the manager makes carry their own way of proving who you are
+
+**Decision.** Any folder the manager creates or brings down — the shared workspace, a project it puts on GitHub, a project it fetches — has its own credential helper set, pointing at the GitHub account you are signed in to *here*. Folders the manager did not make are left alone, and the setting that would fix all of them at once is offered as a button rather than done quietly.
+
+**Why.** Found by pressing the button, which is the honest way to report it. Joining the shared workspace made the project on GitHub, cloned it, wrote three files into it, and reported success — and nothing had reached GitHub. Every send came back **"Repository not found"**, which reads like the project does not exist rather than like a sign-in problem.
+
+The cause: being signed in to the GitHub helper does not let *git* send anything. They keep separate credentials. On this computer git was using the Windows credential store, which had never been told about GitHub.
+
+**The part that is not obvious, and cost a real attempt to find.** Credential helpers are a **list, not a setting**. Adding ours to the end changed nothing at all, because whatever the computer already had was asked first and won. An empty value clears the list; ours then stands alone. That one line is load-bearing and is commented as such in both places it appears.
+
+**Why not just fix it globally on join.** `gh auth setup-git` fixes every folder on the computer in one command, and it is what GitHub itself recommends. It is also a change to how *all* of somebody's version control behaves, made as a side effect of pressing Join on something else. Doing it per-folder needs no permission because it only touches folders the manager made. The global one is a button, with a sentence saying what it changes.
+
+**Consequence.** Sending failures now tell the two cases apart. "GitHub could not be reached" and "this computer could not prove to GitHub that it is you" have completely different fixes, and telling somebody to wait until they are back online while they are online is the sort of wrong answer that wastes an afternoon.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

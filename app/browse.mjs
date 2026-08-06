@@ -130,17 +130,33 @@ export async function chooseFolder({ startAt = null } = {}) {
     };
   }
 
+  /*
+   * Windows has two folder choosers and they are not equally good.
+   *
+   * The one in the forms library is the older tree, it starts at Desktop with
+   * no way up to the drives, and it has no owner window — which on this machine
+   * meant it opened behind everything and looked like nothing happened at all.
+   *
+   * This is the other one: the shell's own browser, asked for in its modern
+   * form, rooted at the computer so every drive is reachable, and given the
+   * window that is in front as its owner so it opens on top of it. Typing a
+   * path into it is allowed too, for anyone who would rather.
+   */
+  const start = startAt ? String(startAt).replace(/'/g, "''") : '';
   const script = `
-    Add-Type -AssemblyName System.Windows.Forms | Out-Null
-    $d = New-Object System.Windows.Forms.FolderBrowserDialog
-    $d.Description = 'Choose a project folder'
-    $d.ShowNewFolderButton = $true
-    ${startAt ? `$d.SelectedPath = '${String(startAt).replace(/'/g, "''")}'` : ''}
-    $top = New-Object System.Windows.Forms.Form
-    $top.TopMost = $true
-    $top.ShowInTaskbar = $false
-    if ($d.ShowDialog($top) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }
-    $top.Dispose()
+    Add-Type -Namespace Native -Name Win -MemberDefinition '
+      [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
+    $owner = [Native.Win]::GetForegroundWindow()
+    $shell = New-Object -ComObject Shell.Application
+    $NEW_STYLE = 64; $EDIT_BOX = 16; $ONLY_FOLDERS = 1
+    $MY_COMPUTER = 17
+    $chosen = $shell.BrowseForFolder(
+      [int]$owner, 'Choose a project folder',
+      $NEW_STYLE -bor $EDIT_BOX -bor $ONLY_FOLDERS,
+      ${start ? `'${start}'` : '$MY_COMPUTER'})
+    if ($chosen -ne $null) {
+      try { Write-Output $chosen.Self.Path } catch { Write-Output '' }
+    }
   `;
 
   try {
@@ -150,7 +166,17 @@ export async function chooseFolder({ startAt = null } = {}) {
       { windowsHide: true, timeout: 5 * 60 * 1000 },
     );
     const picked = stdout.trim();
+    // Some places in this tree are not folders on a disk at all — This PC
+    // itself, or a phone plugged in. Those come back with nothing usable, and
+    // saying so is better than handing back a path that does not exist.
     if (!picked) return { ok: false, cancelled: true };
+    if (!existsSync(picked)) {
+      return {
+        ok: false,
+        sentence: 'That is not a folder on this computer.',
+        action: 'Choose a folder on one of your drives.',
+      };
+    }
     return { ok: true, path: picked, project: looksLikeAProject(picked) };
   } catch {
     return {

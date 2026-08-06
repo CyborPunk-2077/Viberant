@@ -158,6 +158,29 @@ describe('the errand, start to finish', () => {
     assert.equal(going[0].assistant, 'cursor');
   });
 
+  test('opening the same app again is the same thing, not another one', async () => {
+    await post('/launch', { tool: 'cursor' });
+    await post('/launch', { tool: 'cursor' });
+
+    const p = await get('/project');
+    const going = p.home.ranks.flatMap((r) => r.efforts);
+    assert.equal(going.length, 1,
+      'three presses of the same button is one thing you are doing, not three');
+  });
+
+  test('and the list can be cleared without stopping anything', async () => {
+    const before = await get('/project');
+    assert.ok(before.home.ranks.flatMap((r) => r.efforts).length > 0);
+
+    const after = await post('/tidy', {});
+    assert.equal(after.ok, true);
+    assert.match(after.sentence, /Nothing that is running was stopped/);
+    assert.equal(after.home.ranks.flatMap((r) => r.efforts).length, 0);
+
+    // Put one back, so the tests that follow have something to look at.
+    await post('/launch', { tool: 'cursor' });
+  });
+
   test('an app that is not installed is declined plainly', async () => {
     const r = await post('/launch', { tool: 'windsurf' });
     assert.equal(r.ok, false);

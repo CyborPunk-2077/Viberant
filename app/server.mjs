@@ -1,10 +1,11 @@
 /**
  * The manager.
  *
- * A local server and a page. Nothing leaves this machine except through your
- * own GitHub account, no account exists here, and there is no service anywhere —
+ * A local server and a page. There is no account here and no service anywhere —
  * it is a process on your computer that opens folders, starts the apps you
- * already have, and keeps a note of what happened.
+ * already have, and keeps a note of what happened. The only two things that
+ * leave this machine do so through your own GitHub account and across your own
+ * network, and both are things you press.
  *
  * Run:  node app/server.mjs
  */
@@ -32,12 +33,15 @@ import * as github from './github.mjs';
 import * as deploy from './deploy.mjs';
 import * as jobs from './jobs.mjs';
 import * as workspace from './workspace.mjs';
+import * as settings from './settings.mjs';
+import * as lan from './lan.mjs';
+import * as parcel from './parcel.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const HOUSE = projects.HOUSE;
 
 // ---------------------------------------------------------------------------
-// One open project at a time, remembered between runs.
+// This computer
 // ---------------------------------------------------------------------------
 
 async function machineId() {
@@ -50,12 +54,7 @@ async function machineId() {
 }
 const machine = await machineId();
 
-async function machineName() {
-  const path = join(HOUSE, 'machine-name');
-  if (existsSync(path)) return (await readFile(path, 'utf8')).trim();
-  return hostname();
-}
-let myName = await machineName();
+const myName = async () => (await settings.get('machineName')) || hostname();
 
 /** Everything to do with one project, made once and kept. */
 const opened = new Map();
@@ -84,25 +83,19 @@ async function open(path) {
 let current = null;
 
 // ---------------------------------------------------------------------------
-// Noticing when the folder changes underneath us
-//
-// You asked for this: work in another app, come back here, and the picture is
-// already right rather than a refresh away. It is a number that goes up. The
-// page asks for it often and cheaply, and only looks properly when it moves.
+// Noticing when a folder changes underneath us
 // ---------------------------------------------------------------------------
 
 let pulse = 0;
 let watcher = null;
 
-function watchProject(dir) {
+async function watchProject(dir) {
   watcher?.close();
   watcher = null;
-  if (!dir) return;
+  if (!dir || !(await settings.get('watchFolder'))) return;
   try {
     watcher = watch(dir, { recursive: true }, (_kind, name) => {
       const path = String(name ?? '');
-      // Everything a running app does churns through these. What matters is
-      // that something moved, not what.
       if (path.includes('node_modules') || path.includes('.git\\objects') || path.includes('.git/objects')) return;
       pulse += 1;
     });
@@ -110,6 +103,29 @@ function watchProject(dir) {
   } catch {
     // Watching is a convenience. A computer that will not do it still works.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Being findable by your other computers
+// ---------------------------------------------------------------------------
+
+async function localSharing() {
+  if (!(await settings.get('localSharing'))) {
+    await lan.stop();
+    return { ok: false, off: true };
+  }
+  if (lan.isOn()) return { ok: true, already: true };
+
+  const state = await workspace.state();
+  if (!state.joined) {
+    return {
+      ok: false,
+      sentence: 'Your computers cannot find each other until this one has joined your shared workspace.',
+      action: 'Join it above — that is what gives them a way to recognise each other.',
+    };
+  }
+  const key = await workspace.secret();
+  return lan.start({ machine, name: await myName(), account: state.account, key });
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +137,14 @@ const json = (res, body, code = 200) => {
 
 const noProject = { ok: false, sentence: 'No project is open.', action: 'Pick one first.' };
 
-/** What this computer is offering the others, built from what you have marked. */
+/** Where an errand should happen: what was asked for, or the open project. */
+const whereabouts = (body) => {
+  const asked = body?.dir ? resolve(body.dir) : null;
+  if (asked && existsSync(asked)) return asked;
+  return current?.dir ?? null;
+};
+
+/** What this computer is offering its others through the shared workspace. */
 async function offering() {
   const list = await projects.remembered();
   const out = [];
@@ -135,7 +158,6 @@ async function offering() {
       lastSaved: s.last?.at ?? null,
       mark: p.mark ?? null,
       url: s.shared ? github.webAddress(s.shared) : null,
-      shared: s.shared ?? null,
     });
   }
   return out;
@@ -146,14 +168,21 @@ const routes = {
   // -- who and where ------------------------------------------------------
 
   async 'GET /me'() {
-    const [account, identity, ws] = await Promise.all([
-      github.who(), github.identity(), workspace.state(),
+    const [account, identity, ws, now] = await Promise.all([
+      github.who(), github.identity(), workspace.state(), settings.all(),
     ]);
     return {
-      machine, machineName: myName, host: hostname(),
-      github: account, identity, workspace: ws,
+      machine,
+      machineName: now.machineName,
+      host: hostname(),
+      github: account,
+      identity,
+      workspace: ws,
+      settings: now,
       haveGitHubTool: await github.haveGitHubTool(),
+      sharingHere: lan.isOn(),
       current: current?.dir ?? null,
+      currentName: current?.name ?? null,
     };
   },
 
@@ -161,13 +190,32 @@ const routes = {
     return { pulse };
   },
 
-  async 'POST /me/name'({ body }) {
-    const clean = String(body.name ?? '').trim().slice(0, 40);
-    if (!clean) return { ok: false, sentence: 'A computer needs a name.', action: 'Type one.' };
-    myName = clean;
-    await mkdir(HOUSE, { recursive: true });
-    await writeFile(join(HOUSE, 'machine-name'), clean, 'utf8');
-    return { ok: true, sentence: `This computer is called ${clean}.` };
+  // -- settings -----------------------------------------------------------
+
+  async 'GET /settings'() {
+    return { settings: await settings.described(), record: settings.recordFolder };
+  },
+
+  async 'POST /settings'({ body }) {
+    const r = await settings.set(body.id, body.value);
+    if (r.ok && body.id === 'watchFolder') await watchProject(current?.dir ?? null);
+    if (r.ok && body.id === 'localSharing') await localSharing();
+    if (r.ok && body.id === 'machineName' && lan.isOn()) {
+      // The others know this computer by its name, so a new one has to go out.
+      await lan.stop();
+      await localSharing();
+    }
+    return { ...r, ...(await routes['GET /settings']()) };
+  },
+
+  async 'POST /settings/reset'() {
+    return { ...(await settings.forgetAll()), ...(await routes['GET /settings']()) };
+  },
+
+  async 'POST /settings/openRecord'() {
+    const opener = process.platform === 'win32' ? ['explorer', [HOUSE]] : ['xdg-open', [HOUSE]];
+    try { spawn(opener[0], opener[1], { detached: true, stdio: 'ignore' }).unref(); } catch { /* nothing to say */ }
+    return { ok: true, sentence: 'The folder with everything in it is open.' };
   },
 
   // -- projects -----------------------------------------------------------
@@ -201,13 +249,13 @@ const routes = {
       return { ok: false, sentence: 'That folder is not there.', action: 'Pick another one.' };
     }
     current = await open(body.path);
-    watchProject(current.dir);
+    await watchProject(current.dir);
     return { ok: true, ...(await routes['GET /project']()) };
   },
 
   async 'POST /close'() {
     current = null;
-    watchProject(null);
+    await watchProject(null);
     return { ok: true };
   },
 
@@ -230,14 +278,14 @@ const routes = {
   async 'POST /projects/offer'({ body }) {
     const r = await projects.offer(body.path, body.offered);
     if (r.ok && (await workspace.state()).joined) {
-      await workspace.sync({ machine, name: myName, project: current?.name ?? null, sharing: await offering() });
+      await workspace.sync({ machine, name: await myName(), project: current?.name ?? null, sharing: await offering() });
     }
     return { ...r, ...(await routes['GET /projects']()) };
   },
 
   async 'POST /projects/forget'({ body }) {
     await projects.forget(body.path);
-    if (current?.dir === resolve(body.path)) { current = null; watchProject(null); }
+    if (current?.dir === resolve(body.path)) { current = null; await watchProject(null); }
     return { ok: true, sentence: 'That project is off the list. The folder is untouched.', ...(await routes['GET /projects']()) };
   },
 
@@ -248,7 +296,12 @@ const routes = {
   },
 
   async 'GET /browse/starts'() {
-    return { places: await browse.starts() };
+    const work = await settings.get('workFolder');
+    const places = await browse.starts();
+    if (work && existsSync(work) && !places.some((p) => p.path === work)) {
+      places.unshift({ name: 'Your projects', path: work });
+    }
+    return { places };
   },
 
   async 'POST /browse/choose'({ body }) {
@@ -259,17 +312,18 @@ const routes = {
 
   async 'GET /tools'() {
     const found = await tools.installed();
-    const withAccounts = [];
+    const out = [];
     for (const t of found) {
       const full = tools.find(t.id);
       const accounts = t.config ? await profiles.list(full) : { profiles: [], active: null, signedIn: false };
-      withAccounts.push({ ...t, ...accounts });
+      out.push({ ...t, ...accounts, howToInstall: tools.howToInstall(full) });
     }
-    return { tools: withAccounts };
+    return { tools: out, terminals: await terminals.installed(), preferred: await settings.get('terminal') };
   },
 
   async 'POST /launch'({ body }) {
-    if (!current) return noProject;
+    const dir = whereabouts(body);
+    if (!dir) return noProject;
     const tool = tools.find(body.tool);
 
     if (body.profile) {
@@ -278,18 +332,19 @@ const routes = {
     }
 
     const started = await tools.launch({
-      tool, dir: current.dir, how: body.how ?? null, terminal: body.terminal ?? null,
+      tool,
+      dir,
+      how: body.how ?? null,
+      terminal: body.terminal ?? (await settings.get('terminal')),
     });
 
     if (started.ok) {
+      await noteLaunch({ tool, dir, how: started.how, profile: body.profile ?? null });
       const where = started.how === 'terminal' ? 'a terminal' : 'its own window';
-      const { effort, event } = current.dev.begin({ intent: body.intent || `work in ${tool.name}` });
-      const delegated = current.author.delegated({ effort, assistant: tool.id, causedBy: event.id });
-      await current.store.append(event, delegated,
-        current.dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
       return {
         ...started,
-        sentence: `${tool.name} is opening in ${where}, already in ${current.name}.`,
+        sentence: `${tool.name} is opening in ${where}, already in ${basename(dir)}.`
+          + (body.profile ? ` Using the account you called “${body.profile}”.` : ''),
         ...(await routes['GET /project']()),
       };
     }
@@ -298,8 +353,42 @@ const routes = {
 
   async 'POST /signin/tool'({ body }) {
     const tool = tools.find(body.tool);
-    const r = await tools.signIn({ tool, dir: current?.dir ?? process.cwd(), terminal: body.terminal ?? null });
+    const r = await tools.signIn({
+      tool,
+      dir: whereabouts(body) ?? HOUSE,
+      terminal: await settings.get('terminal'),
+    });
     return { ...r, ...(await routes['GET /tools']()) };
+  },
+
+  async 'POST /install'({ body }) {
+    const tool = tools.find(body.tool);
+    const what = tools.installCommand(tool);
+    if (!what) {
+      return {
+        ok: false,
+        sentence: `${tool?.name ?? 'That app'} comes as its own installer rather than something this manager can fetch.`,
+        action: 'Open its download page and run it, then come back.',
+      };
+    }
+    const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE });
+    (async () => {
+      jobs.step(job, `Getting ${tool.name}. This takes a minute or two.`);
+      const out = await jobs.runInto(job, { ...what, cwd: HOUSE });
+      if (!out.ok) {
+        return jobs.end(job, {
+          ok: false,
+          sentence: `${tool.name} could not be installed.`,
+          action: 'The last lines below say why. Needing Node on this computer is the usual reason.',
+        });
+      }
+      return jobs.end(job, {
+        ok: true,
+        sentence: `${tool.name} is installed.`,
+        action: 'It will appear as available in a moment.',
+      });
+    })();
+    return { ok: true, job: job.id };
   },
 
   // -- accounts, per app --------------------------------------------------
@@ -317,15 +406,17 @@ const routes = {
   // -- terminals ----------------------------------------------------------
 
   async 'GET /terminals'() {
-    return { terminals: await terminals.installed() };
+    return { terminals: await terminals.installed(), preferred: await settings.get('terminal') };
   },
 
   async 'POST /terminal'({ body }) {
-    if (!current) return noProject;
-    const r = await terminals.openTerminal({ dir: current.dir, which: body.terminal ?? null });
+    const dir = whereabouts(body);
+    if (!dir) return noProject;
+    const which = body.terminal ?? (await settings.get('terminal'));
+    const r = await terminals.openTerminal({ dir, which });
     if (!r.ok) return r;
     const t = terminals.find(r.opened);
-    return { ...r, sentence: `${t?.name ?? 'A terminal'} is open in ${current.name}.` };
+    return { ...r, sentence: `${t?.name ?? 'A terminal'} is open in ${basename(dir)}.` };
   },
 
   // -- GitHub -------------------------------------------------------------
@@ -347,6 +438,7 @@ const routes = {
     const opened = await terminals.openTerminal({
       dir: current?.dir ?? HOUSE,
       command: 'gh auth login --web --git-protocol https',
+      which: await settings.get('terminal'),
     });
     if (!opened.ok) return opened;
     return {
@@ -364,6 +456,10 @@ const routes = {
   },
   async 'POST /github/identity'({ body }) {
     return { ...(await github.setIdentity(body)), ...(await routes['GET /github']()) };
+  },
+
+  async 'POST /github/allowSending'() {
+    return { ...(await github.fixSendingEverywhere()), ...(await routes['GET /github']()) };
   },
 
   async 'POST /publish'({ body }) {
@@ -404,8 +500,9 @@ const routes = {
     return github.myProjects();
   },
   async 'POST /github/bring'({ body }) {
-    const r = await github.bringDown({ url: body.url, into: body.into });
-    if (r.ok) { current = await open(r.path); watchProject(current.dir); }
+    const into = body.into ?? (await settings.get('workFolder'));
+    const r = await github.bringDown({ url: body.url, into });
+    if (r.ok) { current = await open(r.path); await watchProject(current.dir); }
     return { ...r, ...(await routes['GET /projects']()) };
   },
 
@@ -444,33 +541,94 @@ const routes = {
 
   async 'GET /workspace'() {
     const state = await workspace.state();
-    if (!state.joined) return { ...state, machines: [], projects: [], said: [] };
-    const r = await workspace.sync({ machine, name: myName, project: current?.name ?? null });
-    return { ...state, ...r };
+    if (!state.joined) {
+      return { ...state, machines: [], projects: [], said: [], around: [], offers: [], sharingHere: false };
+    }
+    const r = await workspace.sync({ machine, name: await myName(), project: current?.name ?? null });
+    return {
+      ...state,
+      ...r,
+      around: lan.around(),
+      offers: await lan.offers(),
+      sharingHere: lan.isOn(),
+      workFolder: await settings.get('workFolder'),
+    };
   },
 
   async 'POST /workspace/join'() {
-    const r = await workspace.join({ machine, name: myName });
-    if (r.ok) await workspace.sync({ machine, name: myName, project: current?.name ?? null, sharing: await offering() });
+    const name = await myName();
+    const r = await workspace.join({ machine, name });
+    if (r.ok) {
+      await workspace.sync({ machine, name, project: current?.name ?? null, sharing: await offering() });
+      await localSharing();
+    }
     return { ...r, ...(await workspace.state()) };
   },
 
   async 'POST /workspace/leave'() {
+    await lan.stop();
     return { ...(await workspace.leave({ machine })), ...(await workspace.state()) };
   },
 
   async 'POST /workspace/say'({ body }) {
-    return workspace.say({ machine, name: myName, text: body.text });
+    return workspace.say({ machine, name: await myName(), text: body.text });
   },
 
   async 'POST /workspace/refresh'() {
-    return workspace.sync({ machine, name: myName, project: current?.name ?? null, sharing: await offering(), force: true });
+    return workspace.sync({
+      machine, name: await myName(), project: current?.name ?? null, sharing: await offering(), force: true,
+    });
   },
 
   async 'POST /workspace/bring'({ body }) {
-    const r = await workspace.bring({ entry: body.entry, into: body.into });
-    if (r.ok) { current = await open(r.path); watchProject(current.dir); }
+    const into = body.into ?? (await settings.get('workFolder'));
+    const r = await workspace.bring({ entry: body.entry, into });
+    if (r.ok) { current = await open(r.path); await watchProject(current.dir); }
     return { ...r, ...(await routes['GET /projects']()) };
+  },
+
+  // -- across the network -------------------------------------------------
+
+  async 'POST /local/on'() {
+    return { ...(await localSharing()), sharingHere: lan.isOn() };
+  },
+
+  async 'POST /local/offer'({ body }) {
+    const started = await localSharing();
+    if (!started.ok && !started.already) return started;
+    const weighed = await parcel.weigh(body.path, { everything: !!body.everything });
+    if (weighed.files === 0) {
+      return { ok: false, sentence: 'There is nothing in that folder to send.', action: 'Choose another one.' };
+    }
+    return lan.offer({ path: body.path, everything: !!body.everything, about: body.about ?? '' });
+  },
+
+  async 'POST /local/weigh'({ body }) {
+    const weighed = await parcel.weigh(body.path, { everything: !!body.everything });
+    return { ok: true, ...weighed, says: `${weighed.files} files, ${parcel.inWords(weighed.bytes)}` };
+  },
+
+  async 'POST /local/withdraw'({ body }) {
+    return lan.withdraw(body.id);
+  },
+
+  async 'GET /local/offers'({ url }) {
+    return lan.offeredBy(url.searchParams.get('machine'));
+  },
+
+  async 'POST /local/take'({ body }) {
+    const into = body.into ?? (await settings.get('workFolder'));
+    const job = jobs.begin({ what: `Bringing ${body.name} to this computer`, where: into });
+    lan.take({ machine: body.machine, offerId: body.offer, into, name: body.name, job, jobs })
+      .then(async (done) => {
+        if (done?.ok && done.at) { current = await open(done.at); await watchProject(done.at); }
+      })
+      .catch(() => jobs.end(job, {
+        ok: false,
+        sentence: 'That folder did not make it across.',
+        action: 'Check both computers are on the same network, then try again.',
+      }));
+    return { ok: true, job: job.id };
   },
 
   // -- efforts ------------------------------------------------------------
@@ -485,13 +643,62 @@ const routes = {
 
   async 'POST /drop'({ body }) {
     if (!current) return { ok: false };
-    const verdict = current.dev.judge({ effort: body.effort, verdict: 'abandon' });
-    await current.store.append(verdict,
-      current.dev.transitioned({ effort: body.effort, to: 'dissolved', causedBy: verdict.id }),
-      current.dev.dissolved({ effort: body.effort, graceUntil: Date.now() + 86400_000, causedBy: verdict.id }));
+    await letGo(body.effort);
     return { ok: true, ...(await routes['GET /project']()) };
   },
+
+  async 'POST /tidy'() {
+    if (!current) return noProject;
+    const live = [...current.store.state().efforts.values()]
+      .filter((e) => e.state && e.state !== 'dissolved');
+    for (const e of live) await letGo(e.id);
+    return {
+      ok: true,
+      sentence: live.length
+        ? `Cleared ${live.length === 1 ? 'one' : live.length} from the list. Nothing that is running was stopped.`
+        : 'There was nothing on the list.',
+      ...(await routes['GET /project']()),
+    };
+  },
 };
+
+/**
+ * Remember that an app was opened here — once per app, not once per press.
+ *
+ * Opening the same assistant six times in an afternoon is one thing you are
+ * doing, not six. The first press begins something; every press after it is
+ * recorded against the same one, which is what `effort.account_captured` is for
+ * (D-15). Without this the list of what is going on becomes a list of times you
+ * clicked, which is noise wearing the clothes of information.
+ */
+async function noteLaunch({ tool, dir, how, profile }) {
+  if (!current || current.dir !== dir) return;
+
+  const already = [...current.store.state().efforts.values()]
+    .find((e) => e.assistant === tool.id && e.state === 'moving');
+
+  if (already) {
+    await current.store.append(current.author.accountCaptured({
+      effort: already.id,
+      assistant: tool.id,
+      kind: how === 'terminal' ? 'terminal' : 'window',
+      ref: profile ? `as ${profile}` : dir,
+    }));
+    return;
+  }
+
+  const { effort, event } = current.dev.begin({ intent: `work in ${tool.name}` });
+  const delegated = current.author.delegated({ effort, assistant: tool.id, causedBy: event.id });
+  await current.store.append(event, delegated,
+    current.dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
+}
+
+async function letGo(id) {
+  const verdict = current.dev.judge({ effort: id, verdict: 'abandon' });
+  await current.store.append(verdict,
+    current.dev.transitioned({ effort: id, to: 'dissolved', causedBy: verdict.id }),
+    current.dev.dissolved({ effort: id, graceUntil: Date.now() + 86400_000, causedBy: verdict.id }));
+}
 
 // ---------------------------------------------------------------------------
 // The page itself
@@ -565,4 +772,7 @@ server.listen(port, '127.0.0.1', () => {
   const address = `http://localhost:${port}`;
   console.log(`\n  open  ${address}\n`);
   if (process.env.VIBERANT_OPEN === '1') showInBrowser(address);
+  // If this computer has already joined, it starts being findable by the
+  // others without being asked again. Turning it off is one switch in Settings.
+  localSharing().catch(() => {});
 });
