@@ -3,14 +3,14 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 6 August 2026
-**Tests:** 226 passing on Windows — 107 in the core, 119 in the app
+**Tests:** 233 passing on Windows — 107 in the core, 126 in the app
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ---
 
 ## Run it
 
-**Installed.** Run the installer in `dist/`. It puts Viberant in your Start menu and on your desktop, and carries everything it needs — a computer with no Node still runs it. This is the one to put on your other devices.
+**Installed.** Run the installer in `dist/` — 87 MB to download, 302 MB installed, and it carries everything it needs, so a computer with no Node still runs it. This is the one to put on your other devices. The code is at github.com/rSlashGIT/Viberant (private).
 
 **Double-click.** `start.bat`. Starts the manager and opens your browser at it. Needs Node 22 or newer.
 
@@ -64,7 +64,7 @@ Three real faults, all of which would have hit you first:
 
 ## What is left
 
-**The other device.** Everything on this computer is verified — the workspace is joined, the key is in place, this machine is findable, offering and taking a folder are proved end to end against the real network code. What has not happened is a **second** computer. That is the next thing to do and it needs the installer, not more code.
+**The other device.** The code is now on GitHub and the installer is built. Everything on this computer is verified — the workspace is joined, the key is in place, this machine is findable, offering and taking a folder are proved end to end against the real network code. What has not happened is a **second** computer. That is the next thing to do and it needs the installer, not more code.
 
 **Signing in to an AI app has not been checked against a real provider.** The manager opens a terminal and runs that app's own sign-in. Whether the app then ends up signed in exactly as it would have otherwise is believed, not verified. Same family of unknown as account switching, which is still untried against real Claude Code or Codex — **try that with a throwaway account before you trust it.**
 

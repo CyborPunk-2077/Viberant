@@ -548,6 +548,58 @@ Carrying on is the apps' own trick — every one of them already remembers the c
 
 ---
 
+### D-49 `[DECIDED]` — Four marks, in the order work goes, and no such thing as unmarked
+
+**Decision.** A project is *yet to start*, *working on it*, *finished* or *published*. There is no null state and no "no mark" option.
+
+**Why.** "No mark" is not a fact about a project, it is a fact about the list. A project you added last week and have not opened has not been started — that is a real answer, and offering it as the resting state means the list is telling you something on the day you make it rather than after you have been round labelling things.
+
+The order matters as much as the set: it is the order work actually goes, so the marks read as a position rather than a category.
+
+---
+
+### D-50 `[DECIDED]` — A first time on GitHub asks one question
+
+**Decision.** Putting a project on GitHub for the first time asks what it should be called. The README is written from the project — what it is built with, how it is run, its own description borrowed from its own notes. The `.gitignore` is chosen for the kind of project, with secrets excluded in every case.
+
+**Two rules it will not break.** Nothing you wrote is ever overwritten — a file that exists is left exactly as it is, always, even where what is there is worse than what would have been written. And a licence is never chosen for you: what other people may legally do with your work has consequences outside this app, so it is offered with each option explained in terms of what it permits, defaulting to none.
+
+**Why.** The ordinary way asks a beginner for a dozen decisions they have no basis for making and then produces a page that says nothing about what they built. Every one of those decisions is either answerable from the project itself or not the app's to make.
+
+**Why borrowed rather than generated.** A description lifted from the project's own notes is better writing than any template produces, and — the part that matters — it is *true*. A generated "A Node project" is neither.
+
+---
+
+### D-51 `[DECIDED]` — Closing the window is not quitting, and the tray is presence
+
+**Decision.** Closing the window destroys it, freeing the browser engine — over two hundred of the three hundred megabytes this app uses — and leaves the small server running. A tray icon opens it again and holds the only Quit.
+
+**Why.** Asked for as "running in the background without consuming a process", which cannot be done: a thing that is running is a process. What can be done is to stop paying for the expensive half while nothing is on screen, and the expensive half is Chromium. The server that does the actual work is small, and it is what has to keep running for the quiet things — being findable by your other computers, noticing when a folder changes.
+
+**This is the first thing in the product to exercise D-3.** The tray icon renders one mark and no number, never badges, never animates, never changes to attract attention. You look at it; it never looks at you.
+
+---
+
+### D-52 `[DECIDED]` — Signing in is asked for first and never demanded
+
+**Decision.** A computer that has never signed in is met with a welcome that asks for GitHub. It also carries a plain way past it, and everything that happens on this computer alone works with no account at all.
+
+**Why.** Almost everything worth doing here goes through GitHub — where the second copy of your work lives, and how your other computers recognise each other — so asking first is honest about what the product is. Demanding it would not be: opening projects, starting apps and saving your work need no account, and gating them behind one would be the app taking hostages (MVP §9.5, the no-hostage rule).
+
+**Google is shown and declined, with the reason.** Nothing in this app needs a Google identity, and — the part worth writing down because it will be asked again — **no service exposes which GitHub account belongs to a Google one.** They are unrelated identity systems with no link to discover. Offering the button and quietly failing, or collecting an identity that does nothing, would both be worse than saying so on the screen.
+
+---
+
+### D-53 `[ASSUMED]` — Three hundred megabytes is the floor while this is an Electron app
+
+**Decision.** The build ships one language instead of fifty-odd, taking the installer from 95 MB to 87 MB and the installed size from 347 MB to 302 MB. Nothing further is attempted.
+
+**Why.** Of what remains, 215 MB is the Chromium binary itself and 20 MB is the licence text it is legally required to carry. There is no trimming left that is not either illegal or a different application. D-24 accepted this cost with the numbers stated; the numbers have not changed.
+
+**What would actually change it,** for whoever picks this up next: hosting the page in Edge's WebView2, which every Windows 11 machine already has, would put the whole app in the region of 5 MB. It costs a small native host program and a new class of per-machine assumption. Until then the honest alternative already exists and is one file: `start.bat` runs the same product with no Electron at all, for anyone who has Node.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
