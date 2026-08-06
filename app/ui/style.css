@@ -841,3 +841,95 @@ label.field { display: block; font-size: .82rem; color: var(--quiet); margin: 0 
 .switch.on { border-color: transparent; background: linear-gradient(120deg, var(--vibe-a), var(--vibe-b)); }
 .switch.on::after { transform: translateX(18px); background: #fff; }
 @media (prefers-reduced-motion: reduce) { .switch::after { transition: none; } }
+
+/* ---------------------------------------------------------- a stack of them */
+
+/*
+ * Projects are a stack, not a grid. Most recent on top, one per line, each with
+ * room for the four things worth knowing at a glance — what state it is in,
+ * when you last stopped, what you were doing, and where it is. A grid looked
+ * tidier and told you less.
+ */
+.stack { display: flex; flex-direction: column; gap: .5rem; }
+
+.slab {
+  display: flex;
+  gap: .9rem;
+  align-items: flex-start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: .9rem 1rem;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+.slab:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-lift);
+  transform: translateY(-1px);
+}
+.slab > .dot { margin-top: .45rem; }
+.slab .grow { flex: 1; min-width: 0; }
+
+.slab .line1 {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  flex-wrap: wrap;
+  margin-bottom: .15rem;
+}
+.slab .line1 b { font-weight: 600; letter-spacing: -.012em; font-size: 1.02rem; }
+
+.slab .fact { font-size: .88rem; color: var(--quiet); }
+.slab .fact em { font-style: normal; color: var(--ink); }
+.slab .did {
+  font-size: .85rem;
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: .1rem;
+}
+.slab .path {
+  font-size: .76rem;
+  color: var(--faint);
+  margin-top: .3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.slab .acts {
+  display: flex;
+  gap: .35rem;
+  align-items: center;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 20rem;
+}
+@media (max-width: 60rem) {
+  .slab { flex-wrap: wrap; }
+  .slab .acts { max-width: none; width: 100%; justify-content: flex-start; margin-top: .5rem; }
+}
+
+/* --------------------------------------------------- the workspace, tidied */
+
+.tally {
+  display: flex;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+  padding: .9rem 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  margin-bottom: 1.4rem;
+}
+.tally .one b { display: block; font-size: 1.5rem; font-weight: 600; letter-spacing: -.03em; line-height: 1.1; }
+.tally .one span { font-size: .8rem; color: var(--quiet); }
+.tally .one.warn b { color: var(--attention); }
+.tally .grow { flex: 1; }
+
+.lane { display: flex; flex-direction: column; gap: .5rem; }
+.lane .empty { padding: 1.1rem; }

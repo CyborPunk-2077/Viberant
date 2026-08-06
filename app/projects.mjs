@@ -81,21 +81,33 @@ export async function mark(path, value) {
   return { ok: true, sentence: value ? `${one.name} is marked ${named.name.toLowerCase()}.` : `${one.name} is no longer marked.` };
 }
 
-/** Offer a project to your other computers, or stop offering it. */
-export async function offer(path, yes) {
+/**
+ * Keep a project to this computer, or let your other computers see it again.
+ *
+ * The default is that your other computers see it. They are yours — signed in
+ * to the same account, sitting in the same house — so hiding your own work from
+ * yourself by default would be a strange starting point. Private is the
+ * exception you reach for, and it is one press.
+ *
+ * Private means not listed and not reachable: it is left out of what this
+ * computer tells the workspace, so there is nothing for another computer to ask
+ * about. It is an absence, not a permission that could be got around.
+ */
+export async function keepPrivate(path, yes) {
   const dir = resolve(path);
   const list = await remembered();
   const one = list.find((p) => p.path === dir);
   if (!one) {
     return { ok: false, sentence: 'That project is not one this manager is keeping.', action: 'Open it once first.' };
   }
-  one.offered = !!yes;
+  one.private = !!yes;
+  await mkdir(HOUSE, { recursive: true });
   await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
   return {
     ok: true,
     sentence: yes
-      ? `${one.name} is now offered to your other computers.`
-      : `${one.name} is kept to this computer.`,
+      ? `${one.name} is private to this computer now.`
+      : `${one.name} is visible to your other computers again.`,
   };
 }
 
@@ -172,6 +184,48 @@ export function lastSavedInWords(s) {
   if (!s.tracked) return 'Never saved.';
   if (!s.last) return 'Nothing saved here yet.';
   return `Saved ${s.last.when}.`;
+}
+
+/**
+ * What kind of thing this is, read off the files that are always there.
+ *
+ * Cheap on purpose — a handful of checks for a file existing, no reading and no
+ * walking the folder. It is the one fact that tells you which project you are
+ * looking at when three of them have similar names.
+ */
+const KINDS = [
+  ['package.json', 'Node'],
+  ['pyproject.toml', 'Python'],
+  ['requirements.txt', 'Python'],
+  ['Cargo.toml', 'Rust'],
+  ['go.mod', 'Go'],
+  ['pom.xml', 'Java'],
+  ['build.gradle', 'Java'],
+  ['Gemfile', 'Ruby'],
+  ['composer.json', 'PHP'],
+  ['pubspec.yaml', 'Flutter'],
+  ['index.html', 'a website'],
+];
+
+export function kindOf(dir) {
+  for (const [file, name] of KINDS) if (existsSync(join(dir, file))) return name;
+  return null;
+}
+
+/**
+ * Who can see this, said in one short phrase.
+ *
+ * Two different questions that people run together: whether it is on GitHub at
+ * all, and whether your other computers are offered it. Both matter and they
+ * are not the same, so both are said.
+ */
+export function reachInWords(s, { private: isPrivate = false } = {}) {
+  const bits = [];
+  if (!s.tracked) bits.push('no history yet');
+  else if (!s.shared) bits.push('only on this computer');
+  else bits.push('has a copy on GitHub');
+  bits.push(isPrivate ? 'private to this computer' : 'your other computers can see it');
+  return bits.join(' · ');
 }
 
 /** A one-line, jargon-free reading of that. */

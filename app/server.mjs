@@ -144,18 +144,25 @@ const whereabouts = (body) => {
   return current?.dir ?? null;
 };
 
-/** What this computer is offering its others through the shared workspace. */
+/**
+ * What this computer tells the others it has.
+ *
+ * Everything except what you have marked private — and private means left out
+ * of this list entirely, so there is nothing for another computer to ask about.
+ */
 async function offering() {
   const list = await projects.remembered();
   const out = [];
   for (const p of list) {
-    if (!p.offered || !existsSync(p.path)) continue;
+    if (p.private || !existsSync(p.path)) continue;
     const s = await projects.situation(p.path);
     out.push({
       id: p.path,
       name: p.name,
       says: projects.inWords(s),
+      kind: projects.kindOf(p.path),
       lastSaved: s.last?.at ?? null,
+      lastDid: s.last?.subject ?? null,
       mark: p.mark ?? null,
       url: s.shared ? github.webAddress(s.shared) : null,
     });
@@ -230,11 +237,14 @@ const routes = {
         ...p,
         says: projects.inWords(s),
         saved: projects.lastSavedInWords(s),
+        reach: projects.reachInWords(s, { private: !!p.private }),
+        kind: projects.kindOf(p.path),
+        lastDid: s.last?.subject ?? null,
         unsaved: s.unsaved,
         toSend: s.waitingToSend,
         shared: !!s.shared,
         mark: p.mark ?? null,
-        offered: !!p.offered,
+        private: !!p.private,
       });
     }
     return { projects: out, current: current?.dir ?? null, github: await github.who(), marks: projects.MARKS };
@@ -266,7 +276,9 @@ const routes = {
     return {
       open: true, name: current.name, dir: current.dir,
       says: projects.inWords(s), saved: projects.lastSavedInWords(s), situation: s,
-      mark: remembered.mark ?? null, offered: !!remembered.offered,
+      mark: remembered.mark ?? null, private: !!remembered.private,
+      kind: projects.kindOf(current.dir),
+      reach: projects.reachInWords(s, { private: !!remembered.private }),
       home: home(current.store.state()),
     };
   },
@@ -275,8 +287,8 @@ const routes = {
     return { ...(await projects.mark(body.path, body.mark ?? null)), ...(await routes['GET /projects']()) };
   },
 
-  async 'POST /projects/offer'({ body }) {
-    const r = await projects.offer(body.path, body.offered);
+  async 'POST /projects/private'({ body }) {
+    const r = await projects.keepPrivate(body.path, body.private);
     if (r.ok && (await workspace.state()).joined) {
       await workspace.sync({ machine, name: await myName(), project: current?.name ?? null, sharing: await offering() });
     }
@@ -316,7 +328,7 @@ const routes = {
     for (const t of found) {
       const full = tools.find(t.id);
       const accounts = t.config ? await profiles.list(full) : { profiles: [], active: null, signedIn: false };
-      out.push({ ...t, ...accounts, howToInstall: tools.howToInstall(full) });
+      out.push({ ...t, ...accounts });
     }
     return { tools: out, terminals: await terminals.installed(), preferred: await settings.get('terminal') };
   },
@@ -359,36 +371,6 @@ const routes = {
       terminal: await settings.get('terminal'),
     });
     return { ...r, ...(await routes['GET /tools']()) };
-  },
-
-  async 'POST /install'({ body }) {
-    const tool = tools.find(body.tool);
-    const what = tools.installCommand(tool);
-    if (!what) {
-      return {
-        ok: false,
-        sentence: `${tool?.name ?? 'That app'} comes as its own installer rather than something this manager can fetch.`,
-        action: 'Open its download page and run it, then come back.',
-      };
-    }
-    const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE });
-    (async () => {
-      jobs.step(job, `Getting ${tool.name}. This takes a minute or two.`);
-      const out = await jobs.runInto(job, { ...what, cwd: HOUSE });
-      if (!out.ok) {
-        return jobs.end(job, {
-          ok: false,
-          sentence: `${tool.name} could not be installed.`,
-          action: 'The last lines below say why. Needing Node on this computer is the usual reason.',
-        });
-      }
-      return jobs.end(job, {
-        ok: true,
-        sentence: `${tool.name} is installed.`,
-        action: 'It will appear as available in a moment.',
-      });
-    })();
-    return { ok: true, job: job.id };
   },
 
   // -- accounts, per app --------------------------------------------------

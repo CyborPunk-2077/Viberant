@@ -290,28 +290,39 @@ describe('where you have got to with a project', () => {
   });
 
   test('opening a project again does not lose what you decided about it', async () => {
-    const { remember, mark, offer, remembered } = await import('../projects.mjs');
+    const { remember, mark, keepPrivate, remembered } = await import('../projects.mjs');
     const dir = join(root, 'kept');
     await mkdir(dir, { recursive: true });
     await remember(dir);
     await mark(dir, 'waiting');
-    await offer(dir, true);
+    await keepPrivate(dir, true);
 
     await remember(dir);
     const p = (await remembered()).find((x) => x.path === dir);
     assert.equal(p.mark, 'waiting', 'the mark survived being opened again');
-    assert.equal(p.offered, true, 'and so did offering it to your other computers');
+    assert.equal(p.private, true, 'and so did keeping it private');
   });
 
-  test('offering a project, and taking the offer back, is said plainly both ways', async () => {
-    const { remember, offer } = await import('../projects.mjs');
-    const dir = join(root, 'offered');
+  test('a project is visible to your other computers unless you say otherwise', async () => {
+    const { remember, remembered } = await import('../projects.mjs');
+    const dir = join(root, 'ordinary');
     await mkdir(dir, { recursive: true });
     await remember(dir);
 
-    const on = await offer(dir, true);
-    assert.match(on.sentence, /other computers/);
-    const off = await offer(dir, false);
-    assert.match(off.sentence, /kept to this computer/);
+    const p = (await remembered()).find((x) => x.path === dir);
+    assert.ok(!p.private,
+      'they are your own computers — hiding your work from yourself is a strange place to start');
+  });
+
+  test('making one private, and letting it be seen again, is said plainly both ways', async () => {
+    const { remember, keepPrivate } = await import('../projects.mjs');
+    const dir = join(root, 'secret');
+    await mkdir(dir, { recursive: true });
+    await remember(dir);
+
+    const hidden = await keepPrivate(dir, true);
+    assert.match(hidden.sentence, /private to this computer/);
+    const shown = await keepPrivate(dir, false);
+    assert.match(shown.sentence, /visible to your other computers/);
   });
 });

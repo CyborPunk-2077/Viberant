@@ -85,11 +85,14 @@ export const KNOWN = [
           // finding it is how the card gets to say so rather than say nothing.
           [local, 'Claude-3p', 'claude-code', '*', 'claude.exe'],
         ],
+        // There is a window for this, it is just not something the command-line
+        // half can start. So the button exists and says where to get it.
+        elsewhere: 'https://claude.com/download',
       },
     },
     services: [SERVICE.anthropic, SERVICE.anthropicKey],
-    signIn: { way: 'terminal', command: 'claude', then: 'Type /login in the window that opens and follow the steps.' },
-    install: { how: 'npm', what: '@anthropic-ai/claude-code', at: 'https://claude.com/product/claude-code' },
+    signIn: { way: 'terminal', command: 'claude auth login', then: 'Follow the steps in the window that opens.' },
+    install: 'https://claude.com/product/claude-code',
   },
   {
     id: 'codex',
@@ -98,18 +101,14 @@ export const KNOWN = [
     config: '.codex',
     ways: {
       terminal: { bin: 'codex' },
-      desktop: {
-        at: [
-          [local, 'Programs', 'Codex', 'Codex.exe'],
-          [local, 'OpenAI', 'Codex', 'Codex.exe'],
-          [local, 'Programs', 'ChatGPT', 'ChatGPT.exe'],
-          [local, 'OpenAI', 'Codex', 'bin', '*', 'codex.exe'],
-        ],
-      },
+      // Codex opens its own window through its own command, and that command
+      // takes the folder. It even fetches the window if it is missing, which is
+      // why this is offered whenever Codex itself is here.
+      desktop: { command: { bin: 'codex', args: ['app'], takesPath: true } },
     },
     services: [SERVICE.openai, SERVICE.openaiKey],
     signIn: { way: 'terminal', command: 'codex login', then: 'Follow the steps in the window.' },
-    install: { how: 'npm', what: '@openai/codex', at: 'https://developers.openai.com/codex/cli' },
+    install: 'https://developers.openai.com/codex/cli',
   },
   {
     id: 'gemini',
@@ -119,7 +118,7 @@ export const KNOWN = [
     ways: { terminal: { bin: 'gemini' } },
     services: [SERVICE.google],
     signIn: { way: 'terminal', command: 'gemini', then: 'Choose how you want to sign in.' },
-    install: { how: 'npm', what: '@google/gemini-cli', at: 'https://github.com/google-gemini/gemini-cli' },
+    install: 'https://github.com/google-gemini/gemini-cli',
   },
   {
     id: 'copilot',
@@ -129,7 +128,7 @@ export const KNOWN = [
     ways: { terminal: { bin: 'copilot' } },
     services: [SERVICE.github],
     signIn: { way: 'terminal', command: 'copilot', then: 'Type /login in the window that opens.' },
-    install: { how: 'npm', what: '@github/copilot', at: 'https://github.com/features/copilot/cli' },
+    install: 'https://github.com/features/copilot/cli',
   },
   {
     id: 'opencode',
@@ -138,16 +137,12 @@ export const KNOWN = [
     config: '.opencode',
     ways: {
       terminal: { bin: 'opencode' },
-      desktop: {
-        at: [
-          [local, 'Programs', 'opencode', 'opencode.exe'],
-          [local, 'Programs', 'OpenCode', 'OpenCode.exe'],
-        ],
-      },
+      // OpenCode's window is a page it serves and opens for you.
+      desktop: { command: { bin: 'opencode', args: ['web'], takesPath: false }, inBrowser: true },
     },
     services: [SERVICE.anthropicKey, SERVICE.openaiKey, SERVICE.google, SERVICE.openrouter],
     signIn: { way: 'terminal', command: 'opencode auth login', then: 'Pick a provider and paste its key.' },
-    install: { how: 'npm', what: 'opencode-ai', at: 'https://opencode.ai' },
+    install: 'https://opencode.ai',
   },
   {
     id: 'aider',
@@ -157,7 +152,7 @@ export const KNOWN = [
     ways: { terminal: { bin: 'aider' } },
     services: [SERVICE.anthropicKey, SERVICE.openaiKey],
     signIn: { way: 'terminal', command: 'aider', then: 'Aider uses a key rather than a sign-in. Paste yours when it asks.' },
-    install: { how: 'link', at: 'https://aider.chat/docs/install.html' },
+    install: 'https://aider.chat/docs/install.html',
   },
   {
     id: 'cursor',
@@ -176,7 +171,7 @@ export const KNOWN = [
     },
     services: [],
     signIn: { way: 'inside', then: 'Cursor signs you in inside its own window.' },
-    install: { how: 'link', at: 'https://cursor.com/downloads' },
+    install: 'https://cursor.com/downloads',
   },
   {
     id: 'windsurf',
@@ -188,7 +183,7 @@ export const KNOWN = [
     },
     services: [],
     signIn: { way: 'inside', then: 'Windsurf signs you in inside its own window.' },
-    install: { how: 'link', at: 'https://windsurf.com/download' },
+    install: 'https://windsurf.com/download',
   },
   {
     id: 'antigravity',
@@ -200,7 +195,7 @@ export const KNOWN = [
     },
     services: [],
     signIn: { way: 'inside', then: 'Antigravity signs you in inside its own window.' },
-    install: { how: 'link', at: 'https://antigravity.google/download' },
+    install: 'https://antigravity.google/download',
   },
   {
     id: 'code',
@@ -219,7 +214,7 @@ export const KNOWN = [
     },
     services: [],
     signIn: { way: 'inside', then: 'VS Code signs you in inside its own window.' },
-    install: { how: 'link', at: 'https://code.visualstudio.com/download' },
+    install: 'https://code.visualstudio.com/download',
   },
   {
     id: 'zed',
@@ -231,7 +226,7 @@ export const KNOWN = [
     },
     services: [],
     signIn: { way: 'inside', then: 'Zed signs you in inside its own window.' },
-    install: { how: 'link', at: 'https://zed.dev/download' },
+    install: 'https://zed.dev/download',
   },
 ];
 
@@ -288,6 +283,14 @@ async function settle(parts) {
 async function locate(way, { mustBeWindowed = false } = {}) {
   if (!way) return null;
 
+  // Some apps open their own window through their own command rather than
+  // through a file we can point at — `codex app`, `opencode web`. There is
+  // nothing to read a header out of; if the command is here, the window is.
+  if (way.command) {
+    const found = await onPath(way.command.bin);
+    return found ? { bin: found, run: way.command, inBrowser: !!way.inBrowser } : null;
+  }
+
   const tries = [];
   const fromPath = await onPath(way.bin);
   if (fromPath) tries.push(fromPath);
@@ -319,9 +322,15 @@ export async function waysIn(tool) {
 
   for (const [how, way] of Object.entries(tool.ways ?? {})) {
     const where = await locate(way, { mustBeWindowed: how === 'desktop' });
-    if (!where) continue;
+    if (!where) {
+      // A window this app has but this computer does not. The button still
+      // exists, and pressing it says where to get it rather than nothing.
+      if (how === 'desktop' && way.elsewhere) found.windowElsewhere = way.elsewhere;
+      continue;
+    }
     if (how === 'desktop' && where.butItIsATerminalProgram) {
       found.onlyATerminalProgram = where.bin;
+      if (way.elsewhere) found.windowElsewhere = way.elsewhere;
       continue;
     }
     found[how] = where;
@@ -361,11 +370,16 @@ export async function installed(extra = []) {
       config: t.config ?? null,
       ways: how,
       here: how.length > 0,
-      // Said out loud on the card, so "why is there no Open button" has an
-      // answer rather than being a mystery.
+      // A window this app has, that this computer does not. The card shows Open
+      // anyway and pressing it says where to get it — a button that explains is
+      // more use than a button that is not there.
+      windowElsewhere: ways.windowElsewhere ?? null,
+      // Said out loud, so "why is there no Open button" has an answer rather
+      // than being a mystery.
       terminalOnlyBecause: ways.onlyATerminalProgram
-        ? `What is installed here is ${t.name} for the terminal, not a window.`
+        ? `What is installed here is ${t.name} for the terminal, not its window.`
         : null,
+      opensInBrowser: !!ways.desktop?.inBrowser,
       services: t.services ?? [],
       signIn: t.signIn ?? null,
       install: t.install ?? null,
@@ -413,12 +427,20 @@ export async function launch({ tool, dir, how = null, terminal = null, env = {} 
       : (available.includes('desktop') ? 'desktop' : available[0]);
 
   if (!chosen) {
+    if (how === 'desktop' && ways.windowElsewhere) {
+      return {
+        ok: false,
+        getItAt: ways.windowElsewhere,
+        sentence: ways.onlyATerminalProgram
+          ? `What is installed here is ${tool.name} for the terminal, not its window.`
+          : `${tool.name}'s own window is not on this computer yet.`,
+        action: `Get it from ${tool.name}'s download page, or open it in a terminal instead.`,
+      };
+    }
     return {
       ok: false,
       sentence: how === 'desktop'
-        ? (ways.onlyATerminalProgram
-          ? `What is installed here is ${tool.name} for the terminal, not a window.`
-          : `${tool.name} has no window of its own on this computer.`)
+        ? `${tool.name} has no window of its own on this computer.`
         : `${tool.name} cannot be started in a terminal on this computer.`,
       action: `Open ${tool.name} the other way instead.`,
     };
@@ -436,7 +458,12 @@ export async function launch({ tool, dir, how = null, terminal = null, env = {} 
     // On Windows we start through a shell, so anything with a space in it — and
     // most people have a space in a folder name somewhere — has to carry its
     // own quotes or the app is handed half a path.
-    const child = spawn(quote(where.bin), [WINDOWS ? `"${dir}"` : dir], {
+    const folder = WINDOWS ? `"${dir}"` : dir;
+    const args = where.run
+      ? [...where.run.args, ...(where.run.takesPath ? [folder] : [])]
+      : [folder];
+
+    const child = spawn(quote(where.bin), args, {
       cwd: dir,
       detached: true,
       stdio: 'ignore',
@@ -444,7 +471,7 @@ export async function launch({ tool, dir, how = null, terminal = null, env = {} 
       env: { ...process.env, ...env },
     });
     child.unref();
-    return { ok: true, started: tool.id, how: chosen, at: dir };
+    return { ok: true, started: tool.id, how: chosen, at: dir, inBrowser: !!where.inBrowser };
   } catch {
     return {
       ok: false,
@@ -493,38 +520,6 @@ export async function signIn({ tool, dir, terminal = null }) {
     sentence: `Signing in to ${tool.name} in the window that just opened.`,
     action: tool.signIn.then,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Getting one you do not have
-// ---------------------------------------------------------------------------
-
-/**
- * What installing an app would involve, before you agree to it.
- *
- * Nothing is installed without being asked, and what would run is shown first.
- */
-export function howToInstall(tool) {
-  if (!tool?.install) return null;
-  if (tool.install.how === 'npm') {
-    return {
-      can: true,
-      what: `npm install -g ${tool.install.what}`,
-      why: `${tool.name} is installed the same way as any other command-line program. This needs Node on the computer.`,
-      at: tool.install.at,
-    };
-  }
-  return {
-    can: false,
-    why: `${tool.name} comes as its own installer, which has to be downloaded and run.`,
-    at: tool.install.at,
-  };
-}
-
-/** The pieces of an install, for an errand to run. */
-export function installCommand(tool) {
-  if (tool?.install?.how !== 'npm') return null;
-  return { file: 'npm', args: ['install', '-g', tool.install.what] };
 }
 
 /** A path with a space in it is one thing, not two. */
