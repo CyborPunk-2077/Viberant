@@ -739,6 +739,45 @@ Cancelling likewise returns you to the welcome with the button usable again, rat
 
 ---
 
+### D-68 `[DECIDED]` — A timed redraw only lands if something changed
+
+**Decision.** Anything that redraws on a timer builds the page and compares it to what is already there, swapping it in only if it differs. Anything you pressed redraws immediately, always.
+
+**Why.** The flicker. Three timers — the folder watcher, the workspace poll, the other-computers poll — each replaced the whole page every few seconds whether or not there was news. Scroll position jumped, hover states dropped, and an open menu closed itself mid-reach. Measured after: **zero view replacements in eleven idle seconds**, against three timers all running.
+
+A poll also now refuses to redraw while a menu is open, because a redraw underneath one closes it in your hand.
+
+---
+
+### D-69 `[DECIDED]` — Places live in a rail, not a bar
+
+**Decision.** Navigation is a narrow column down the left. Settings is a place in it like any other rather than an icon in a corner, and the account sits at its foot.
+
+**Why.** A bar across the top spends vertical room — the scarcest thing on a laptop — on six words. A rail spends horizontal room, of which there is plenty, and gives every page the full height. Settings became a tab because an icon in a corner is where you put something people are not meant to find, and this is a tool whose settings people will want.
+
+---
+
+### D-70 `[DECIDED]` — Grains, and the one rule they obey
+
+**Decision.** Fine sand falls from the pointer as it moves. One canvas, capped at 260 grains, and the loop stops entirely when the last one lands, so a still pointer costs nothing. Off under reduced motion, and there is a switch in Settings.
+
+**Why.** Asked for. It is the second thing in the product allowed to move without being pressed, and like the first — the light that follows the pointer — it carries no meaning. **It never marks anything, never points at anything and never indicates state.** That is the rule that keeps it decoration rather than a notification, which is what D-3 actually forbids.
+
+---
+
+### D-71 `[ASSUMED]` — Claude Code and Codex do not sign in with Google
+
+**Recorded because it has been asked for four times.** Read out of the tools themselves rather than assumed:
+
+- `claude auth login` offers `--claudeai` (Claude subscription), `--console` (Anthropic Console), `--sso` (a company account). No Google.
+- `codex login` offers OpenAI, or `--with-api-key`. No Google.
+
+A Google button on those cards would run `claude auth login` and open Anthropic's page, which is worse than not having one. What was done instead: Claude Code's three real ways in are now three separate entries rather than one, which is a genuine gap that had been sitting there the whole time.
+
+Google appears on Gemini, Antigravity and OpenCode, which do use it. If Anthropic or OpenAI add it, the fix is one line each.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

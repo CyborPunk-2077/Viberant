@@ -99,12 +99,12 @@ const TABS = [
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
   { id: 'workspace', name: 'Workspace', glyph: '⌸' },
   { id: 'ship', name: 'Deploy', glyph: '↗' },
+  { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
 
 /** The two behind the icons at the far end, out of the way of the daily five. */
 const ASIDE = [
   { id: 'feedback', name: 'Tell us what is wrong', glyph: '✎' },
-  { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
 
 /** The mark. Drawn, not fetched — this app never reaches the network to draw itself. */
@@ -174,28 +174,126 @@ async function refreshMe() {
 }
 
 function drawNav() {
+  const here = [...TABS, ...ASIDE].find((t) => t.id === at.tab);
+
   $('#nav').innerHTML = `
-    <div class="logo">${LOGO}<span class="word">VIBERANT</span></div>
-    ${TABS.map((t) => `
-      <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}">${esc(t.name)}</button>`).join('')}
-    <div class="spacer"></div>
-    ${ASIDE.map((t) => `
-      <button class="icon ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}"
-        title="${esc(t.name)}" aria-label="${esc(t.name)}">${t.glyph}</button>`).join('')}
-    <div class="drop">
-      <button class="who" id="who">
-        <span class="dot ${me.github ? 'live' : 'off'}"></span>
-        <span class="grow">
-          <span class="name">${esc(me.github ?? 'Not signed in')}</span>
-          <span class="what">${esc(me.machineName || 'this computer')}</span>
-        </span>
-        <span style="color:var(--faint)">▾</span>
-      </button>
-      <div class="panel" hidden id="who-panel"></div>
+    <div class="rail">
+      <div class="logo">${LOGO}</div>
+      <div class="places">
+        ${TABS.map((t) => `
+          <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}" title="${esc(t.name)}">
+            <span class="glyph" aria-hidden="true">${t.glyph}</span>
+            <span class="label">${esc(t.name)}</span>
+          </button>`).join('')}
+      </div>
+      <div class="rest"></div>
+      ${ASIDE.map((t) => `
+        <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}" title="${esc(t.name)}">
+          <span class="glyph" aria-hidden="true">${t.glyph}</span>
+          <span class="label">Feedback</span>
+        </button>`).join('')}
+      <div class="drop">
+        <button class="who" id="who" title="${esc(me.github ?? 'Not signed in')}">
+          <span class="face">${me.github ? esc(me.github.slice(0, 1).toUpperCase()) : '?'}</span>
+          <span class="grow">
+            <span class="name">${esc(me.github ?? 'Not signed in')}</span>
+            <span class="what">${esc(me.machineName || 'this computer')}</span>
+          </span>
+        </button>
+        <div class="panel" hidden id="who-panel"></div>
+      </div>
     </div>`;
 
   for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
   $('#who').onclick = (e) => { e.stopPropagation(); openWhoPanel(); };
+}
+
+/**
+ * Sand falling from the pointer.
+ *
+ * Grains are shed only while the pointer is moving, fall under a little
+ * gravity, drift, and fade out. One canvas rather than a hundred elements, a
+ * hard cap on how many exist, and the loop stops entirely when the last one
+ * lands — so a still pointer costs nothing at all.
+ *
+ * It is the second thing in the product allowed to move without being pressed,
+ * and like the first it carries no meaning: it never marks anything, never
+ * points at anything, and can be turned off in Settings.
+ */
+function shedGrains() {
+  const canvas = $('#grains');
+  if (!canvas || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+  const ink = canvas.getContext('2d', { alpha: true });
+  const grains = [];
+  const MOST = 260;
+  let running = false;
+  let lastX = null;
+  let lastY = null;
+
+  const fit = () => {
+    const scale = Math.min(devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(innerWidth * scale);
+    canvas.height = Math.floor(innerHeight * scale);
+    canvas.style.width = `${innerWidth}px`;
+    canvas.style.height = `${innerHeight}px`;
+    ink.setTransform(scale, 0, 0, scale, 0, 0);
+  };
+  fit();
+  addEventListener('resize', fit, { passive: true });
+
+  const tint = () => getComputedStyle(document.documentElement)
+    .getPropertyValue('--vibe-b').trim() || '#22d3ee';
+
+  addEventListener('pointermove', (e) => {
+    if (!me.settings || me.settings.grains === false) return;
+
+    // How fast you moved decides how much comes off, so a slow drag sheds a
+    // trickle and a flick sheds a handful.
+    const moved = lastX === null ? 0 : Math.hypot(e.clientX - lastX, e.clientY - lastY);
+    lastX = e.clientX;
+    lastY = e.clientY;
+
+    const many = Math.min(4, Math.round(moved / 9));
+    for (let i = 0; i < many && grains.length < MOST; i++) {
+      grains.push({
+        x: e.clientX + (Math.random() - 0.5) * 9,
+        y: e.clientY + (Math.random() - 0.5) * 9,
+        vx: (Math.random() - 0.5) * 0.22,
+        vy: Math.random() * 0.28,
+        r: 0.45 + Math.random() * 0.85,
+        life: 1,
+        fade: 0.006 + Math.random() * 0.011,
+      });
+    }
+    if (!running) { running = true; requestAnimationFrame(fall); }
+  }, { passive: true });
+
+  function fall() {
+    ink.clearRect(0, 0, innerWidth, innerHeight);
+    const colour = tint();
+
+    for (let i = grains.length - 1; i >= 0; i--) {
+      const g = grains[i];
+      g.vy += 0.028;
+      g.vx *= 0.99;
+      g.x += g.vx;
+      g.y += g.vy;
+      g.life -= g.fade;
+
+      if (g.life <= 0 || g.y > innerHeight + 8) { grains.splice(i, 1); continue; }
+
+      ink.globalAlpha = Math.max(0, g.life) * 0.5;
+      ink.fillStyle = colour;
+      ink.beginPath();
+      ink.arc(g.x, g.y, g.r, 0, Math.PI * 2);
+      ink.fill();
+    }
+    ink.globalAlpha = 1;
+
+    if (grains.length) requestAnimationFrame(fall);
+    else { running = false; ink.clearRect(0, 0, innerWidth, innerHeight); }
+  }
 }
 
 /**
@@ -327,10 +425,36 @@ async function go(tab, { keepSaid = false } = {}) {
   await draw();
 }
 
-async function draw() {
+/**
+ * Draw the screen you are on.
+ *
+ * `quietly` is for the things that happen on a timer rather than because you
+ * pressed something — a folder changing, another computer moving. Those used to
+ * replace the whole page every few seconds, which is what the flicker was:
+ * scroll position jumping, hover states dropping, the account menu closing
+ * itself mid-reach.
+ *
+ * A timed redraw now builds the page off-screen first and only swaps it in if
+ * what it says has actually changed. Nothing you pressed is ever deferred.
+ */
+let lastDrawn = '';
+
+async function draw({ quietly = false } = {}) {
+  if (!quietly) {
+    await SCREENS[at.tab]?.();
+    lastDrawn = view.innerHTML;
+    paintNews();
+    return;
+  }
+
+  const before = view.innerHTML;
   await SCREENS[at.tab]?.();
-  // Every screen replaces the view, so the strip is hung again afterwards. It
-  // belongs to the app rather than to any one page.
+  const after = view.innerHTML;
+
+  // Nothing moved. Put the page back exactly as it was, so a scroll position
+  // and a half-open menu survive a poll that had nothing to report.
+  if (after === before) return;
+  lastDrawn = after;
   paintNews();
 }
 
@@ -1668,6 +1792,14 @@ SCREENS.ship = async () => {
           People visit an address and see the newest version. Putting up a new one
           replaces the old one everywhere, at once.</p>
         ${site.buildStep ? '<p class="chip cool">this project builds itself first</p>' : ''}
+        ${d.project?.shared ? '' : `
+          <div class="row" style="margin-bottom:.6rem">
+            <span class="dot attention"></span>
+            <div class="grow"><div class="name">This project is not on GitHub yet</div>
+              <div class="note">Everything below needs it there first. One question and it is.</div></div>
+            <button class="go small" id="dep-publish">Put it on GitHub…</button>
+          </div>`}
+
         <div style="margin-top:.8rem">
           ${site.places.map((pl) => `
             <div class="row" style="margin-bottom:.4rem">
@@ -1702,15 +1834,21 @@ SCREENS.ship = async () => {
         </div>
         ${app.canRelease ? '' : `
           <p class="note" style="color:var(--quiet);font-size:.85rem;margin-top:.6rem">
-            Giving it out needs a copy of this project on GitHub, and you signed in to it.</p>`}
+            Giving it out needs a copy of this project on GitHub, and you signed in to it.
+            ${d.project?.shared ? '' : '<button class="quiet small" id="dep-publish2">Put it on GitHub…</button>'}</p>`}
       </div>
     </div>
 
     <div id="job"></div>`;
   said = null;
 
+  for (const id of ['#dep-publish', '#dep-publish2']) {
+    $(id)?.addEventListener('click', () => firstTimeSheet());
+  }
+
   for (const b of document.querySelectorAll('[data-site]')) {
     b.onclick = async () => {
+      b.classList.add('working');
       const r = await post('/ship/site', { place: b.dataset.site });
       if (r.ok) watchJob(r.job); else { say(r); draw(); }
     };
@@ -2000,7 +2138,7 @@ SCREENS.workspace = async () => {
 
   if (watching) paintJob();
   workspaceTimer = setTimeout(() => {
-    if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw();
+    if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw({ quietly: true });
   }, 20000);
 };
 
@@ -2347,8 +2485,10 @@ function paintNews() {
   const there = $('#news');
   if (!liveNews.length) { there?.remove(); return; }
 
-  if (there) there.outerHTML = newsHtml();
-  else hold.insertAdjacentHTML('afterbegin', newsHtml());
+  const wanted = newsHtml();
+  if (there && there.outerHTML === wanted) return;
+  if (there) there.outerHTML = wanted;
+  else hold.insertAdjacentHTML('afterbegin', wanted);
   wireNews();
 }
 
@@ -2413,9 +2553,11 @@ let lastPulse = null;
 
 async function checkPulse() {
   if (document.hidden || layer.innerHTML || watching) return;
+  // A redraw underneath an open menu closes it in your hand.
+  if (document.querySelector('.panel:not([hidden])')) return;
   try {
     const { pulse } = await get('/pulse');
-    if (lastPulse !== null && pulse !== lastPulse && at.tab === 'projects') await draw();
+    if (lastPulse !== null && pulse !== lastPulse && at.tab === 'projects') await draw({ quietly: true });
     lastPulse = pulse;
   } catch { /* the server is starting or stopping; nothing to say about it */ }
 }
@@ -2653,6 +2795,7 @@ async function withGoogle({ inGate = false } = {}) {
 
 const start = async () => {
   followThePointer();
+  shedGrains();
   await refreshMe();
   const p = await get('/project');
   at.inside = !!p.open;

@@ -65,7 +65,9 @@ const programsX86 = process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)
  * up as one.
  */
 const WAY = {
-  anthropic: { id: 'anthropic', kind: 'account', name: 'Anthropic', mark: 'anthropic', tint: '#d97757', initial: 'A' },
+  anthropic: { id: 'anthropic', kind: 'account', name: 'Claude account', mark: 'anthropic', tint: '#d97757', initial: 'A' },
+  anthropicConsole: { id: 'anthropicConsole', kind: 'account', name: 'Anthropic Console', mark: 'anthropic', tint: '#d97757', initial: 'A' },
+  anthropicSso: { id: 'anthropicSso', kind: 'account', name: 'Your company (SSO)', mark: 'anthropic', tint: '#d97757', initial: 'A' },
   openai: { id: 'openai', kind: 'account', name: 'OpenAI', mark: 'openai', tint: '#10a37f', initial: 'O' },
   google: { id: 'google', kind: 'account', name: 'Google', mark: 'google', tint: '#4285f4', initial: 'G' },
   github: { id: 'github', kind: 'account', name: 'GitHub', mark: 'github', tint: '#6e7681', initial: 'G' },
@@ -111,10 +113,14 @@ export const KNOWN = [
       },
     },
     signIns: [
-      signInWith(WAY.anthropic, 'claude auth login',
-        'Your browser opens on Anthropic’s sign-in. Finish there and Claude Code is signed in.'),
-      signInWith(WAY.anthropicKey, 'claude auth login',
-        'Choose the key option in the window, then paste your key.'),
+      signInWith(WAY.anthropic, 'claude auth login --claudeai',
+        'Your browser opens on Anthropic’s sign-in. This is the one that uses your Claude subscription.'),
+      signInWith(WAY.anthropicConsole, 'claude auth login --console',
+        'Signs in against Anthropic Console, where usage is billed to an account rather than a subscription.'),
+      signInWith(WAY.anthropicSso, 'claude auth login --sso',
+        'For an Anthropic account your company signs you in to.'),
+      signInWith(WAY.anthropicKey, 'claude auth login --console',
+        'Console accounts issue keys. Paste yours in the window.'),
     ],
     signIn: { way: 'terminal', command: 'claude auth login', then: 'Follow the steps in the window that opens.' },
     carryOn: ['--continue'],
@@ -135,8 +141,8 @@ export const KNOWN = [
     signIns: [
       signInWith(WAY.openai, 'codex login',
         'Your browser opens on OpenAI’s sign-in. Finish there and Codex is signed in.'),
-      signInWith(WAY.openaiKey, 'codex login --api-key',
-        'Paste your key in the window that opens.'),
+      signInWith(WAY.openaiKey, 'codex login --with-api-key',
+        'Paste your key into the window when it asks.'),
     ],
     signIn: { way: 'terminal', command: 'codex login', then: 'Follow the steps in the window.' },
     carryOn: ['resume', '--last'],

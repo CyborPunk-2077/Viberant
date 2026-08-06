@@ -1430,3 +1430,130 @@ button.go:hover:not(:disabled) { box-shadow: 0 0 18px -8px var(--glow); }
 }
 .sheet { width: 100%; max-width: 46rem; }
 .sheet.narrow { max-width: 31rem; }
+
+/* =========================================================================
+ * A rail down the side
+ *
+ * The bar across the top is gone. Places live in a narrow column on the left
+ * where they cost no vertical room, the content gets the full height, and the
+ * account sits at the bottom of the rail rather than floating in a corner.
+ * ========================================================================= */
+
+#frame {
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-columns: 216px minmax(0, 1fr);
+}
+
+nav {
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--line);
+  background: color-mix(in srgb, var(--deep) 88%, var(--vibe-a) 3%);
+  position: relative;
+  z-index: 30;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: .9rem .6rem .7rem;
+  gap: .1rem;
+}
+
+.rail .logo {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  padding: .2rem .5rem 1.1rem;
+  flex: none;
+}
+
+.rail .places {
+  display: flex;
+  flex-direction: column;
+  gap: .12rem;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  margin: 0 -.2rem;
+  padding: 0 .2rem;
+}
+.rail .rest { flex: 1 1 auto; min-height: .6rem; }
+
+.rail .tab {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--quiet);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: .48rem .55rem;
+  cursor: pointer;
+  position: relative;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rail .tab .glyph { width: 1.15rem; text-align: center; flex: none; opacity: .9; }
+.rail .tab .label { overflow: hidden; text-overflow: ellipsis; }
+.rail .tab:hover { background: var(--hover); color: var(--ink); }
+.rail .tab.on {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--vibe-a) 13%, var(--card));
+  border-color: color-mix(in srgb, var(--vibe-a) 30%, transparent);
+}
+.rail .tab.on .glyph { color: var(--vibe-b); opacity: 1; }
+
+.rail .drop { flex: none; margin-top: .35rem; padding-top: .55rem; border-top: 1px solid var(--line); }
+.rail .who { width: 100%; max-width: none; gap: .55rem; padding: .45rem .5rem; }
+.rail .who .face {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: .78rem;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--vibe-a), var(--vibe-b));
+}
+.rail .panel { left: 0; right: auto; bottom: calc(100% + 6px); top: auto; width: max(17rem, 100%); }
+
+main { padding: 2.1rem 2.2rem 5rem; }
+.hold { max-width: 66rem; }
+
+@media (max-width: 62rem) {
+  #frame { grid-template-columns: 60px minmax(0, 1fr); }
+  .rail .tab .label, .rail .who .grow { display: none; }
+  .rail .tab { justify-content: center; padding: .5rem 0; }
+  .rail .who { justify-content: center; padding: .45rem 0; }
+  .rail .logo { justify-content: center; padding-left: 0; padding-right: 0; }
+  main { padding: 1.5rem 1.1rem 4rem; }
+}
+
+/* =========================================================================
+ * Grains
+ *
+ * Fine sand falling from the pointer as it moves. Drawn on a canvas so it
+ * costs one layer rather than a hundred elements, capped hard, and it stops
+ * entirely the moment the pointer does. Off under reduced motion, and there is
+ * a switch for it in Settings.
+ * ========================================================================= */
+
+#grains {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) { #grains { display: none; } }

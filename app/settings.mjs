@@ -74,6 +74,13 @@ export const KNOWN = [
     fallback: () => true,
   },
   {
+    id: 'grains',
+    name: 'Sand from the pointer',
+    why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
+    kind: 'yesNo',
+    fallback: () => true,
+  },
+  {
     id: 'watchFolder',
     name: 'Notice when a folder changes',
     why: 'Work in another app and come back, and the picture is already right. Turn it off on a very large project if it feels slow.',
