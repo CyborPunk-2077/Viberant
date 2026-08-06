@@ -74,6 +74,15 @@ export const KNOWN = [
     fallback: () => true,
   },
   {
+    // Not shown on the settings page: it is a fact about what has happened
+    // rather than a choice, and a settings list is for choices.
+    id: 'welcomed',
+    name: 'Has been welcomed',
+    why: 'Whether the way in has already been offered on this computer.',
+    kind: 'hidden',
+    fallback: () => false,
+  },
+  {
     id: 'grains',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
@@ -136,7 +145,7 @@ export async function get(id) {
 /** The list the settings page draws itself from. */
 export async function described() {
   const now = await all();
-  return KNOWN.map((s) => ({
+  return KNOWN.filter((s) => s.kind !== 'hidden').map((s) => ({
     id: s.id, name: s.name, why: s.why, kind: s.kind,
     choices: s.choices ?? null,
     value: now[s.id],
@@ -152,7 +161,7 @@ export async function set(id, value) {
   }
 
   let clean = value;
-  if (known.kind === 'yesNo') clean = !!value;
+  if (known.kind === 'yesNo' || known.kind === 'hidden') clean = !!value;
   if (known.kind === 'text') clean = String(value ?? '').trim().slice(0, 60);
   if (known.kind === 'choice' && !known.choices.some((c) => c.id === value)) {
     return { ok: false, sentence: 'That is not one of the choices.', action: 'Pick one from the list.' };

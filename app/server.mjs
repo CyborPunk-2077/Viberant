@@ -42,6 +42,12 @@ import * as signin from './signin.mjs';
 import * as feedback from './feedback.mjs';
 import * as fingerprint from './fingerprint.mjs';
 import * as live from './live.mjs';
+import { widenPath } from './findtools.mjs';
+
+// Before anything asks whether a command exists. A window started from the
+// Start menu does not inherit the PATH a terminal has, which is how `gh` came
+// to be "not installed" on a computer that plainly has it.
+const foundOnPath = widenPath();
 
 const here = dirname(fileURLToPath(import.meta.url));
 const VERSION = '0.1.0';
@@ -227,6 +233,7 @@ const routes = {
       workspace: ws,
       settings: now,
       haveGitHubTool: await github.haveGitHubTool(),
+      lookedIn: foundOnPath,
       sharingHere: lan.isOn(),
       current: current?.dir ?? null,
       currentName: current?.name ?? null,
@@ -430,6 +437,40 @@ const routes = {
       method: body.method ?? null,
     });
     return { ...r, ...(await routes['GET /tools']()) };
+  },
+
+  async 'POST /install'({ body }) {
+    const tool = tools.find(body.tool);
+    const what = tools.installCommand(tool);
+    if (!what) {
+      return {
+        ok: false,
+        sentence: `${tool?.name ?? 'That app'} comes as its own installer rather than a command.`,
+        action: 'Open its download page and run it, then come back.',
+      };
+    }
+
+    const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE });
+    (async () => {
+      jobs.step(job, `Running ${what.what}. This takes a minute or two.`);
+      const out = await jobs.runInto(job, { file: what.file, args: what.args, cwd: HOUSE });
+      if (!out.ok) {
+        return jobs.end(job, {
+          ok: false,
+          sentence: `${tool.name} could not be installed.`,
+          action: what.file === 'npm'
+            ? 'This needs Node on the computer. The lines below say what it did not like.'
+            : 'This needs Python on the computer. The lines below say what it did not like.',
+        });
+      }
+      return jobs.end(job, {
+        ok: true,
+        sentence: `${tool.name} is installed.`,
+        action: 'It appears as available on this page in a moment.',
+      });
+    })();
+
+    return { ok: true, job: job.id };
   },
 
   // -- accounts, per app --------------------------------------------------

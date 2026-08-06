@@ -447,6 +447,7 @@ export async function installed(extra = []) {
       keys: (t.signIns ?? []).filter((w) => w.kind === 'key'),
       signIn: t.signIn ?? null,
       install: t.install ?? null,
+      installs: installCommand(t)?.what ?? null,
     });
   }
   return out;
@@ -628,6 +629,27 @@ export async function signIn({ tool, dir, terminal = null, method = null }) {
       : `Signing in to ${tool.name}.`,
     action: chosen?.then ?? tool.signIn?.then ?? 'Follow the steps in the window that opened.',
   };
+}
+
+/**
+ * The one command that installs an app, where there is one.
+ *
+ * Only for the ones that install as a command — the editors come as their own
+ * installer and that stays a download page, because silently running somebody
+ * else's installer is not a thing this should do.
+ */
+const INSTALLS = {
+  gemini: ['npm', 'install', '-g', '@google/gemini-cli'],
+  copilot: ['npm', 'install', '-g', '@github/copilot'],
+  claude: ['npm', 'install', '-g', '@anthropic-ai/claude-code'],
+  codex: ['npm', 'install', '-g', '@openai/codex'],
+  opencode: ['npm', 'install', '-g', 'opencode-ai'],
+  aider: ['python', '-m', 'pip', 'install', '--upgrade', 'aider-install'],
+};
+
+export function installCommand(tool) {
+  const one = INSTALLS[tool?.id];
+  return one ? { file: one[0], args: one.slice(1), what: one.join(' ') } : null;
 }
 
 /** A path with a space in it is one thing, not two. */

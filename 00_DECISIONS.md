@@ -778,6 +778,44 @@ Google appears on Gemini, Antigravity and OpenCode, which do use it. If Anthropi
 
 ---
 
+### D-72 `[DECIDED]` — The manager widens its own PATH before asking whether anything exists
+
+**Decision.** At startup, the places these tools actually install into are added to this process's PATH — GitHub CLI, Git, Node, the per-user npm folder, the editors' shims.
+
+**Why.** This is almost certainly why signing in "did nothing" in the installed app and worked when run from a terminal. **A program started from the Start menu does not inherit the PATH your terminal has.** It gets the one Windows built at sign-in, which misses anything installed since and misses the per-user npm folder more often than not.
+
+The failure that produces is the worst kind: `gh` is plainly installed, works everywhere else, and this app alone cannot see it — so every explanation the app offers is wrong. Measured here: eight places were missing from a bare desktop PATH, including GitHub CLI and the npm folder that holds `claude`, `codex` and `opencode`.
+
+It changes nothing outside this process and nothing on the computer.
+
+---
+
+### D-73 `[DECIDED]` — Closing the way in means closed
+
+**Decision.** Skipping the welcome, or signing in, is written down. It is not offered again on that computer.
+
+**Why.** It came back every launch. An app that re-asks a question you have already answered is overruling you, and doing it at the moment you are least interested in the question.
+
+---
+
+### D-74 `[DECIDED]` — One press installs the ones that install as a command
+
+**Decision.** Apps that install with a single command — Gemini, Copilot, Claude Code, Codex, OpenCode, Aider — install from their own card, in the open, with the exact command shown before you press. The editors, which come as their own installers, keep a download page.
+
+**Why.** Reversed from the earlier decision to make everything a link. That was right about staleness and wrong about the cost: a person who wants Gemini now has to leave, read a page, find a terminal and come back. Verified by running it — Gemini installed and appeared on the page as available, with Google sign-in, in about twenty seconds.
+
+**Never silently.** The command is printed on the card, the install runs as a watched errand, and every line it prints is kept.
+
+---
+
+### D-75 `[DECIDED]` — Grains, and nothing else around the pointer
+
+**Decision.** The light that followed the pointer is gone. Sand remains: drawn at the screen's real pixel density, capped at 900, and living long enough to fall the whole height of the window from wherever it was shed.
+
+**Why.** Two moving things around one pointer is one too many, and the light was the one carrying no detail. The grains are drawn at `devicePixelRatio` so a grain is a grain rather than a soft blob, and fade slowly enough to reach the bottom rather than dissolving mid-air.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

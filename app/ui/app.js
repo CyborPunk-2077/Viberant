@@ -173,6 +173,112 @@ async function refreshMe() {
   drawNav();
 }
 
+/**
+ * The account menu, at the foot of the rail.
+ *
+ * Everything to do with who you are, in one place: which accounts are on this
+ * computer, switching between them, adding another, signing one out, and the
+ * name your saved work is signed with. It says something useful whether or not
+ * you are signed in — a menu that is empty when signed out is a menu that looks
+ * broken.
+ */
+async function openWhoPanel() {
+  const panel = $('#who-panel');
+  const wasOpen = !panel.hidden;
+  closePanels();
+  if (wasOpen) return;
+
+  panel.innerHTML = '<div class="head">GitHub</div><div class="pick"><span class="spin"></span> looking…</div>';
+  panel.hidden = true;
+  openPanel(panel);
+
+  const g = await get('/github');
+  const signedIn = (g.accounts ?? []).length > 0;
+
+  panel.innerHTML = `
+    <div class="head">${signedIn ? 'Accounts on this computer' : 'Not signed in'}</div>
+    ${signedIn ? g.accounts.map((a) => `
+      <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
+        <span class="dot ${a.active ? 'live' : 'off'}"></span>
+        <span class="grow"><b>${esc(a.name)}</b><br>
+          <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
+      </button>`).join('')
+    : `<div class="pick"><span class="sub">Your work stays on this computer until you are.
+         Everything here still works without it.</span></div>`}
+
+    <hr>
+    <button class="pick" id="gh-add">
+      <span style="display:grid;place-items:center;width:1.1rem">${GITHUB_MARK}</span>
+      <span class="grow">${signedIn ? 'Sign in to another account' : 'Sign in with GitHub'}
+        <span class="sub">Opens your browser with a code.</span></span></button>
+
+    <button class="pick" id="gh-google">
+      <span style="display:grid;place-items:center;width:1.1rem">${GOOGLE_MARK}</span>
+      <span class="grow">Sign in with Google
+        <span class="sub">For Gemini, Antigravity and OpenCode.</span></span></button>
+
+    <button class="pick" id="gh-name"><span>✎</span>
+      <span class="grow">Your name on saved work</span></button>
+
+    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span>
+      <span class="grow">Sign ${esc(g.active)} out
+        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}`;
+
+  for (const b of panel.querySelectorAll('[data-gh-use]')) {
+    b.onclick = async () => {
+      closePanels();
+      say(await post('/github/switch', { name: b.dataset.ghUse }));
+      await refreshMe();
+      draw();
+    };
+  }
+
+  $('#gh-add').onclick = () => { closePanels(); signInToGitHub(); };
+  $('#gh-google').onclick = () => { closePanels(); withGoogle(); };
+  $('#gh-name').onclick = () => { closePanels(); identitySheet(g); };
+
+  $('#gh-out')?.addEventListener('click', async () => {
+    closePanels();
+    const sure = await confirmThat({
+      title: 'Sign out',
+      what: `${g.active} will be signed out on this computer.`,
+      why: 'Nothing on GitHub itself changes, and you can sign back in from this same menu.',
+      confirm: 'Sign out',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await post('/github/signout', { name: g.active }));
+    await refreshMe();
+    draw();
+  });
+}
+
+/** The name every save is signed with. Asked for once, in two boxes. */
+function identitySheet(g) {
+  sheet({
+    title: 'Your name on saved work',
+    narrow: true,
+    body: `
+      <p class="sub">Everything you save is signed with this. It is not shown to anyone
+        except people who look at the project itself.</p>
+      <label class="field">Name</label>
+      <input id="id-name" style="width:100%;margin-bottom:.8rem"
+        value="${esc(g.identity?.name ?? '')}" placeholder="Your name">
+      <label class="field">Email</label>
+      <input id="id-mail" style="width:100%"
+        value="${esc(g.identity?.email ?? '')}" placeholder="you@example.com">`,
+    foot: '<button class="quiet" id="id-no">Never mind</button><button class="go" id="id-yes">Save</button>',
+    onOpen: () => {
+      $('#id-no').onclick = closeLayer;
+      $('#id-yes').onclick = async () => {
+        closeLayer();
+        say(await post('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
+        draw();
+      };
+    },
+  });
+}
+
 function drawNav() {
   const here = [...TABS, ...ASIDE].find((t) => t.id === at.tab);
 
@@ -211,14 +317,17 @@ function drawNav() {
 /**
  * Sand falling from the pointer.
  *
- * Grains are shed only while the pointer is moving, fall under a little
- * gravity, drift, and fade out. One canvas rather than a hundred elements, a
- * hard cap on how many exist, and the loop stops entirely when the last one
- * lands — so a still pointer costs nothing at all.
+ * Grains are shed while the pointer moves, then fall the whole height of the
+ * window under gravity, drifting a little on the way. Drawn on one canvas at
+ * the screen's real pixel density, so on a sharp display they are sharp rather
+ * than four soft blobs.
  *
- * It is the second thing in the product allowed to move without being pressed,
- * and like the first it carries no meaning: it never marks anything, never
- * points at anything, and can be turned off in Settings.
+ * The loop runs only while grains exist, so a still pointer costs nothing at
+ * all. Off under reduced motion, and there is a switch in Settings.
+ *
+ * It carries no meaning. It never marks anything, never points at anything and
+ * never indicates state — which is what keeps it decoration rather than a
+ * notification, and is the only rule it has to obey.
  */
 function shedGrains() {
   const canvas = $('#grains');
@@ -226,15 +335,17 @@ function shedGrains() {
 
   const ink = canvas.getContext('2d', { alpha: true });
   const grains = [];
-  const MOST = 260;
+  const MOST = 900;
   let running = false;
   let lastX = null;
   let lastY = null;
+  let scale = 1;
 
   const fit = () => {
-    const scale = Math.min(devicePixelRatio || 1, 2);
-    canvas.width = Math.floor(innerWidth * scale);
-    canvas.height = Math.floor(innerHeight * scale);
+    // The real density of the screen, so a grain is a grain and not a smudge.
+    scale = Math.min(devicePixelRatio || 1, 3);
+    canvas.width = Math.round(innerWidth * scale);
+    canvas.height = Math.round(innerHeight * scale);
     canvas.style.width = `${innerWidth}px`;
     canvas.style.height = `${innerHeight}px`;
     ink.setTransform(scale, 0, 0, scale, 0, 0);
@@ -242,49 +353,66 @@ function shedGrains() {
   fit();
   addEventListener('resize', fit, { passive: true });
 
-  const tint = () => getComputedStyle(document.documentElement)
-    .getPropertyValue('--vibe-b').trim() || '#22d3ee';
+  const tint = () => {
+    const style = getComputedStyle(document.documentElement);
+    return [
+      style.getPropertyValue('--vibe-b').trim() || '#22d3ee',
+      style.getPropertyValue('--vibe-a').trim() || '#8b5cf6',
+    ];
+  };
 
   addEventListener('pointermove', (e) => {
-    if (!me.settings || me.settings.grains === false) return;
+    if (me.settings && me.settings.grains === false) return;
 
-    // How fast you moved decides how much comes off, so a slow drag sheds a
-    // trickle and a flick sheds a handful.
     const moved = lastX === null ? 0 : Math.hypot(e.clientX - lastX, e.clientY - lastY);
     lastX = e.clientX;
     lastY = e.clientY;
 
-    const many = Math.min(4, Math.round(moved / 9));
+    // A slow drag sheds a trickle, a flick sheds a handful.
+    const many = Math.min(9, 1 + Math.round(moved / 4));
+    const colours = tint();
+
     for (let i = 0; i < many && grains.length < MOST; i++) {
       grains.push({
-        x: e.clientX + (Math.random() - 0.5) * 9,
-        y: e.clientY + (Math.random() - 0.5) * 9,
-        vx: (Math.random() - 0.5) * 0.22,
-        vy: Math.random() * 0.28,
-        r: 0.45 + Math.random() * 0.85,
+        x: e.clientX + (Math.random() - 0.5) * 10,
+        y: e.clientY + (Math.random() - 0.5) * 10,
+        vx: (Math.random() - 0.5) * 0.3,
+        vy: Math.random() * 0.35,
+        // Sub-pixel sizes are what make it read as sand rather than as dots.
+        r: 0.35 + Math.random() * 0.75,
+        spin: (Math.random() - 0.5) * 0.05,
+        drift: 0.3 + Math.random() * 0.7,
         life: 1,
-        fade: 0.006 + Math.random() * 0.011,
+        // Long enough to reach the bottom of the window from anywhere in it.
+        fade: 0.0016 + Math.random() * 0.0022,
+        colour: colours[Math.random() < 0.72 ? 0 : 1],
       });
     }
     if (!running) { running = true; requestAnimationFrame(fall); }
   }, { passive: true });
 
+  let drifted = 0;
+
   function fall() {
     ink.clearRect(0, 0, innerWidth, innerHeight);
-    const colour = tint();
+    drifted += 0.012;
 
     for (let i = grains.length - 1; i >= 0; i--) {
       const g = grains[i];
-      g.vy += 0.028;
-      g.vx *= 0.99;
+
+      g.vy += 0.033;
+      g.vx += Math.sin(drifted + g.y * 0.012) * 0.006 * g.drift;
+      g.vx *= 0.995;
       g.x += g.vx;
       g.y += g.vy;
       g.life -= g.fade;
 
-      if (g.life <= 0 || g.y > innerHeight + 8) { grains.splice(i, 1); continue; }
+      // Gone when it leaves the window or finally fades, whichever is first —
+      // so a grain shed at the top is still visible at the bottom.
+      if (g.life <= 0 || g.y > innerHeight + 4) { grains.splice(i, 1); continue; }
 
-      ink.globalAlpha = Math.max(0, g.life) * 0.5;
-      ink.fillStyle = colour;
+      ink.globalAlpha = Math.min(1, g.life) * 0.75;
+      ink.fillStyle = g.colour;
       ink.beginPath();
       ink.arc(g.x, g.y, g.r, 0, Math.PI * 2);
       ink.fill();
@@ -294,125 +422,6 @@ function shedGrains() {
     if (grains.length) requestAnimationFrame(fall);
     else { running = false; ink.clearRect(0, 0, innerWidth, innerHeight); }
   }
-}
-
-/**
- * The light that follows the pointer.
- *
- * Two per-frame writes of a CSS variable and nothing else — no canvas, no
- * animation loop, nothing that costs anything when the pointer is still. It
- * trails deliberately, because something that keeps up exactly reads as a
- * cursor and something that lags reads as depth.
- */
-function followThePointer() {
-  const sheen = $('#sheen');
-  if (!sheen || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  let wantX = innerWidth / 2;
-  let wantY = innerHeight * 0.4;
-  let atX = wantX;
-  let atY = wantY;
-  let due = false;
-
-  addEventListener('pointermove', (e) => {
-    wantX = e.clientX;
-    wantY = e.clientY;
-    if (due) return;
-    due = true;
-    requestAnimationFrame(drift);
-  }, { passive: true });
-
-  function drift() {
-    atX += (wantX - atX) * 0.06;
-    atY += (wantY - atY) * 0.06;
-    sheen.style.setProperty('--px', `${atX}px`);
-    sheen.style.setProperty('--py', `${atY}px`);
-    if (Math.abs(wantX - atX) > 0.5 || Math.abs(wantY - atY) > 0.5) requestAnimationFrame(drift);
-    else due = false;
-  }
-}
-
-async function openWhoPanel() {
-  const panel = $('#who-panel');
-  const wasOpen = !panel.hidden;
-  closePanels();
-  if (wasOpen) return;
-  panel.innerHTML = '<div class="head">GitHub</div><div class="pick"><span class="spin"></span> looking…</div>';
-  panel.hidden = true;
-  openPanel(panel);
-
-  const g = await get('/github');
-  const signedIn = g.accounts.length > 0;
-
-  panel.innerHTML = `
-    <div class="head">${signedIn ? 'Accounts on this computer' : 'GitHub'}</div>
-    ${signedIn ? g.accounts.map((a) => `
-      <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
-        <span class="dot ${a.active ? 'live' : 'off'}"></span>
-        <span class="grow"><b>${esc(a.name)}</b><br>
-          <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
-      </button>`).join('')
-    : `<div class="pick"><span class="sub">Not signed in. Your work stays on this computer
-         until you are — everything here still works without it.</span></div>`}
-    <hr>
-    <button class="pick" id="gh-add"><span>＋</span>
-      <span class="grow">${signedIn ? 'Sign in to another account' : 'Sign in to GitHub'}
-        <span class="sub">Opens your browser with a code.</span></span></button>
-    <button class="pick" id="gh-name"><span>✎</span>
-      <span class="grow">Your name on saved work</span></button>
-    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span>
-      <span class="grow">Sign ${esc(g.active)} out
-        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}`;
-
-  for (const b of panel.querySelectorAll('[data-gh-use]')) {
-    b.onclick = async () => {
-      closePanels();
-      say(await post('/github/switch', { name: b.dataset.ghUse }));
-      await refreshMe();
-      draw();
-    };
-  }
-  // Starting a sign-in and then showing nothing is why this looked broken:
-  // the flow began, the code appeared nowhere, and the menu simply closed.
-  $('#gh-add').onclick = async () => { closePanels(); signInToGitHub(); };
-  $('#gh-name').onclick = async () => { closePanels(); identitySheet(g); };
-  $('#gh-out')?.addEventListener('click', async () => {
-    closePanels();
-    const sure = await confirmThat({
-      title: 'Sign out',
-      what: `${g.active} will be signed out on this computer.`,
-      why: 'Nothing on GitHub itself changes. You can sign back in whenever you like.',
-      confirm: 'Sign out',
-      danger: true,
-    });
-    if (!sure) return;
-    say(await post('/github/signout', { name: g.active }));
-    await refreshMe();
-    draw();
-  });
-}
-
-function identitySheet(g) {
-  sheet({
-    title: 'Your name on saved work',
-    narrow: true,
-    body: `
-      <p class="sub">Everything you save is signed with this. It is not shown to anyone
-        except people who look at the project itself.</p>
-      <label class="field">Name</label>
-      <input id="id-name" style="width:100%;margin-bottom:.7rem" value="${esc(g.identity.name ?? '')}" placeholder="Your name">
-      <label class="field">Email</label>
-      <input id="id-mail" style="width:100%" value="${esc(g.identity.email ?? '')}" placeholder="you@example.com">`,
-    foot: '<button class="quiet" id="id-no">Never mind</button><button class="go" id="id-yes">Save</button>',
-    onOpen: () => {
-      $('#id-no').onclick = closeLayer;
-      $('#id-yes').onclick = async () => {
-        closeLayer();
-        say(await post('/github/identity', { name: $('#id-name').value, email: $('#id-mail').value }));
-        draw();
-      };
-    },
-  });
 }
 
 const SCREENS = {};
@@ -1457,8 +1466,12 @@ function appTile(x, p, t) {
           ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}</div>
         <div class="note">Not on this computer. Its own page has the installer and the steps.</div>
         <div class="doing">
-          <button class="small" data-getpage="${esc(x.install ?? '')}">How to install ${esc(x.name)} ↗</button>
+          ${x.installs
+    ? `<button class="go small" data-install="${esc(x.id)}">Install ${esc(x.name)}</button>` : ''}
+          <button class="${x.installs ? 'quiet ' : ''}small" data-getpage="${esc(x.install ?? '')}">
+            ${x.installs ? 'Its page ↗' : `How to install ${esc(x.name)} ↗`}</button>
         </div>
+        ${x.installs ? `<div class="note" style="color:var(--faint);font-size:.76rem">Runs ${esc(x.installs)}</div>` : ''}
       </div>`;
   }
 
@@ -1655,6 +1668,14 @@ function wireAppCards(t, p) {
       closePanels();
       say(await post('/signin/tool', { tool: b.dataset.signin, dir: whereFor(b.dataset.signin, p) }));
       draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-install]')) {
+    b.onclick = async () => {
+      b.classList.add('working');
+      const r = await post('/install', { tool: b.dataset.install });
+      if (r.ok) watchJob(r.job); else { say(r); draw(); }
     };
   }
 
@@ -2635,7 +2656,14 @@ function showGate({ trouble = null } = {}) {
 
   $('#in-github').onclick = () => signInToGitHub({ inGate: true });
   $('#in-google').onclick = () => withGoogle({ inGate: true });
-  $('#in-later').onclick = () => { hideGate(); draw(); };
+  $('#in-later').onclick = async () => {
+    // Closing it must mean closed. It used to come back every launch, which is
+    // the app overruling a decision you had already made.
+    hideGate();
+    await post('/settings', { id: 'welcomed', value: true });
+    await refreshMe();
+    draw();
+  };
 }
 
 /** Put the way in away, and let go of what it was holding. */
@@ -2723,6 +2751,7 @@ async function signInToGitHub({ inGate = false } = {}) {
 
     if (finished || changed) {
       await stop();
+      await post('/settings', { id: 'welcomed', value: true });
       await refreshMe();
       say({
         ok: true,
@@ -2794,7 +2823,6 @@ async function withGoogle({ inGate = false } = {}) {
 }
 
 const start = async () => {
-  followThePointer();
   shedGrains();
   await refreshMe();
   const p = await get('/project');
@@ -2809,8 +2837,7 @@ const start = async () => {
     setTimeout(() => $('#opening')?.remove(), 500);
     // Asked once, on a computer that has never signed in. After that the corner
     // is where you go, and nothing stands in front of the app again.
-    if (!me.github && !me.askedToSignIn) showGate();
-    $('#sheen')?.classList.add('up');
+    if (!me.github && !me.settings?.welcomed) showGate();
     watchTheOthers();
   }, skip ? 120 : 1600);
 };

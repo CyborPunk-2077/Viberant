@@ -114,6 +114,11 @@ describe('the page defines everything its way in depends on', () => {
     'function sheet(',
     'function confirmThat(',
     'function pickFolder(',
+    'function identitySheet(',
+    'function shedGrains(',
+    'function drawNav(',
+    'function keysSheet(',
+    'async function firstTimeSheet(',
   ];
 
   test('every one of them is there', async () => {
