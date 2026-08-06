@@ -275,10 +275,20 @@ describe('where you have got to with a project', () => {
 
     await mark(dir, 'finished');
     assert.equal((await remembered()).find((p) => p.path === dir).mark, 'finished');
-
-    await mark(dir, null);
-    assert.equal((await remembered()).find((p) => p.path === dir).mark, null);
     assert.ok(MARKS.every((m) => m.name && m.blurb));
+  });
+
+  test('the four marks run in the order work actually goes, and there is no such thing as unmarked', async () => {
+    const { MARKS, FIRST_MARK, mark, remember } = await import('../projects.mjs');
+    assert.deepEqual(MARKS.map((m) => m.id), ['notStarted', 'working', 'finished', 'published']);
+    assert.equal(FIRST_MARK, 'notStarted');
+
+    const dir = join(root, 'marked');
+    await remember(dir);
+    const nothing = await mark(dir, null);
+    assert.equal(nothing.ok, false,
+      'a project you have just added has not been started, which is an answer rather than an absence');
+    assert.ok(nothing.action);
   });
 
   test('a mark that is not one of the marks is declined', async () => {
@@ -294,12 +304,12 @@ describe('where you have got to with a project', () => {
     const dir = join(root, 'kept');
     await mkdir(dir, { recursive: true });
     await remember(dir);
-    await mark(dir, 'waiting');
+    await mark(dir, 'published');
     await keepPrivate(dir, true);
 
     await remember(dir);
     const p = (await remembered()).find((x) => x.path === dir);
-    assert.equal(p.mark, 'waiting', 'the mark survived being opened again');
+    assert.equal(p.mark, 'published', 'the mark survived being opened again');
     assert.equal(p.private, true, 'and so did keeping it private');
   });
 

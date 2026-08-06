@@ -54,16 +54,26 @@ export async function forget(path) {
  * this is the one thing here that is yours to set rather than ours to work out.
  */
 export const MARKS = [
+  { id: 'notStarted', name: 'Yet to start', blurb: 'Here, and waiting for you to begin.' },
   { id: 'working', name: 'Working on it', blurb: 'This is what you are in the middle of.' },
-  { id: 'waiting', name: 'Waiting', blurb: 'Parked for now, and you mean to come back.' },
   { id: 'finished', name: 'Finished', blurb: 'Done. Nothing owed.' },
+  { id: 'published', name: 'Published', blurb: 'Out in the world, where people can use it.' },
 ];
 
-/** Set, or clear, how a project stands with you. */
+/** What a project is before anybody has said otherwise. */
+export const FIRST_MARK = 'notStarted';
+
+/**
+ * Set how a project stands with you.
+ *
+ * There is no such thing as unmarked. A project you have just added has not been
+ * started, which is a real answer rather than an absence, and the four run in
+ * the order work actually goes: yet to start, working on it, finished,
+ * published.
+ */
 export async function mark(path, value) {
   const dir = resolve(path);
-  const known = value === null || MARKS.some((m) => m.id === value);
-  if (!known) {
+  if (!MARKS.some((m) => m.id === value)) {
     return { ok: false, sentence: 'That is not one of the ways a project can be marked.', action: 'Pick one from the list.' };
   }
 
@@ -73,12 +83,12 @@ export async function mark(path, value) {
     return { ok: false, sentence: 'That project is not one this manager is keeping.', action: 'Open it once first.' };
   }
   one.mark = value;
-  one.markedAt = value ? Date.now() : null;
+  one.markedAt = Date.now();
   await mkdir(HOUSE, { recursive: true });
   await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
 
   const named = MARKS.find((m) => m.id === value);
-  return { ok: true, sentence: value ? `${one.name} is marked ${named.name.toLowerCase()}.` : `${one.name} is no longer marked.` };
+  return { ok: true, sentence: `${one.name}: ${named.name.toLowerCase()}.` };
 }
 
 /**

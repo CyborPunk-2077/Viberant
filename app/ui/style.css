@@ -1103,3 +1103,196 @@ button.go:active:not(:disabled) { box-shadow: none; }
   .who { justify-content: center; }
   .corner .panel { width: 17rem; }
 }
+
+/* =========================================================================
+ * The way in
+ * ========================================================================= */
+
+/*
+ * The opening, second pass. Less light, more intent: the glow settles rather
+ * than blooms, the letters arrive on one gentle curve instead of eight, and the
+ * whole thing is over in a second and a half. A launch animation is a handshake,
+ * not a performance — the test is whether you would still like it on the
+ * fortieth morning.
+ */
+#opening .glow {
+  width: 720px;
+  height: 720px;
+  filter: blur(110px);
+  animation: settle 1900ms cubic-bezier(.16, 1, .3, 1) forwards;
+}
+@keyframes settle {
+  0% { opacity: 0; transform: scale(.82); }
+  45% { opacity: .38; transform: scale(1.02); }
+  100% { opacity: .16; transform: scale(1); }
+}
+
+#opening .word span { animation-duration: 760ms; }
+
+#gate {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: grid;
+  place-items: center;
+  background: var(--page);
+  padding: 2rem;
+  overflow-y: auto;
+}
+#gate[hidden] { display: none; }
+
+.welcome {
+  width: min(30rem, 100%);
+  text-align: center;
+  animation: welcomeIn 420ms cubic-bezier(.22, 1, .36, 1);
+}
+@keyframes welcomeIn { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .welcome { animation: none; } }
+
+.welcome .bead {
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  margin: 0 auto 1.4rem;
+  background: linear-gradient(135deg, var(--vibe-a), var(--vibe-b));
+  box-shadow: 0 0 0 8px color-mix(in srgb, var(--vibe-a) 8%, transparent);
+}
+.welcome h1 { font-size: 1.7rem; margin-bottom: .5rem; }
+.welcome p { color: var(--quiet); line-height: 1.6; margin: 0 0 1.6rem; }
+.welcome .ways { display: flex; flex-direction: column; gap: .55rem; text-align: left; }
+.welcome .later { margin-top: 1.5rem; }
+.welcome .later button { color: var(--quiet); }
+
+.wayin {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  width: 100%;
+  padding: .85rem 1rem;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  text-align: left;
+}
+.wayin:hover:not(:disabled) { border-color: var(--line-strong); background: var(--hover); }
+.wayin .badge {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: .85rem;
+  flex: none;
+}
+.wayin b { font-weight: 550; display: block; }
+.wayin span { font-size: .84rem; color: var(--quiet); line-height: 1.45; }
+.wayin.off { opacity: .6; cursor: default; }
+
+/* =========================================================================
+ * Status, done properly
+ *
+ * The coloured dot was doing four jobs at once and explaining none of them.
+ * A state now reads as a word with a mark beside it, in a shape that says
+ * "this is a state" rather than "this is a decoration".
+ * ========================================================================= */
+
+.state {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .76rem;
+  font-weight: 550;
+  letter-spacing: -.005em;
+  padding: .2rem .55rem .2rem .45rem;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--page);
+  color: var(--quiet);
+  white-space: nowrap;
+}
+.state .pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  background: currentColor;
+  flex: none;
+}
+.state.notStarted { color: var(--faint); }
+.state.working {
+  color: var(--cool);
+  border-color: color-mix(in srgb, var(--cool) 30%, var(--line));
+  background: color-mix(in srgb, var(--cool) 8%, var(--page));
+}
+.state.finished {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 30%, var(--line));
+  background: color-mix(in srgb, var(--live) 8%, var(--page));
+}
+.state.published {
+  color: #fff;
+  border-color: transparent;
+  background: linear-gradient(120deg, var(--vibe-a), color-mix(in srgb, var(--vibe-b) 65%, var(--vibe-a)));
+}
+.state.published .pip { background: rgba(255, 255, 255, .9); }
+
+/* The one on the left of a slab: a bar, not a dot. It reads as a spine. */
+.spine {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 3px;
+  background: var(--line-strong);
+  flex: none;
+}
+.spine.unsaved { background: var(--attention); }
+.spine.clean { background: color-mix(in srgb, var(--live) 55%, var(--line-strong)); }
+.spine.published { background: linear-gradient(var(--vibe-a), var(--vibe-b)); }
+
+/* =========================================================================
+ * Contents
+ * ========================================================================= */
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: .1rem;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--line);
+  margin-bottom: 1.2rem;
+}
+.facts .one { background: var(--card); padding: .75rem .85rem; }
+.facts .one b {
+  display: block;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.25;
+}
+.facts .one span { font-size: .74rem; color: var(--faint); }
+
+.bars { display: flex; flex-direction: column; gap: .4rem; }
+.bars .bar1 { display: flex; align-items: center; gap: .6rem; font-size: .86rem; }
+.bars .bar1 .track {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--hover);
+  overflow: hidden;
+}
+.bars .bar1 .fill { height: 100%; border-radius: 3px; background: var(--quiet); }
+.bars .bar1 .n { color: var(--faint); font-size: .78rem; min-width: 2.5rem; text-align: right; }
+
+.needs { display: flex; flex-direction: column; gap: .35rem; }
+.needs .need {
+  display: flex;
+  gap: .6rem;
+  align-items: baseline;
+  font-size: .87rem;
+  padding: .4rem .1rem;
+}
+.needs .need .tick { color: var(--live); }
+.needs .need .cross { color: var(--faint); }
+.needs .need span { color: var(--quiet); }

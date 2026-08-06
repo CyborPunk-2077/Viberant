@@ -11,7 +11,8 @@ import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -211,5 +212,80 @@ describe('a long errand, watched while it runs', () => {
     const out = await jobs.runInto(job, { file: 'definitely-not-a-command-xyz', args: [], cwd: root });
     assert.equal(out.ok, false);
     jobs.end(job, { ok: false, sentence: 'That did not work.', action: 'Try something else.' });
+  });
+});
+
+describe('putting a project on GitHub for the first time', () => {
+  test('what it writes is read out of the project, not invented', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('newbie');
+    await writeFile(join(dir, 'package.json'), JSON.stringify({
+      name: 'thing', description: 'Turns one thing into another thing.',
+      scripts: { dev: 'vite', build: 'vite build', test: 'node --test' },
+    }));
+
+    const readme = await first.readmeFor(dir, { name: 'thing' });
+    assert.match(readme, /^# thing/);
+    assert.match(readme, /Turns one thing into another thing\./);
+    assert.match(readme, /npm install/);
+    assert.match(readme, /npm run dev/, 'how to actually run it');
+    assert.match(readme, /npm run build/);
+    assert.ok(!/TODO|lorem|placeholder/i.test(readme), 'and nothing left for somebody to fill in');
+  });
+
+  test('it borrows a description from the project rather than making one up', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('has-notes');
+    await writeFile(join(dir, 'NOTES.md'),
+      '# Notes\n\nA small manager that opens one project across several editors without fuss.\n');
+
+    const readme = await first.readmeFor(dir, { name: 'has-notes' });
+    assert.match(readme, /small manager that opens one project/);
+    assert.match(readme, /NOTES\.md/, 'and says where it got it');
+  });
+
+  test('nothing you already wrote is ever overwritten', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('has-readme');
+    await writeFile(join(dir, 'README.md'), '# Mine\n\nI wrote this myself.\n');
+
+    const out = await first.prepare(dir, { name: 'has-readme' });
+    assert.ok(out.leftAlone.includes('README.md'));
+    assert.ok(!out.made.includes('README.md'));
+    assert.equal(await readFile(join(dir, 'README.md'), 'utf8'), '# Mine\n\nI wrote this myself.\n');
+  });
+
+  test('what stays on your computer is chosen for the kind of project it is', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('ignoring');
+    await writeFile(join(dir, 'Cargo.toml'), '[package]\nname = "x"\n');
+
+    await first.prepare(dir, { name: 'ignoring' });
+    const ignored = await readFile(join(dir, '.gitignore'), 'utf8');
+    assert.match(ignored, /^target\/$/m, 'the folder this kind of project builds into');
+    assert.match(ignored, /^\.env$/m, 'and anything holding a secret, always');
+  });
+
+  test('a licence is never chosen for you', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('unlicensed');
+
+    const out = await first.prepare(dir, { name: 'unlicensed' });
+    assert.ok(!out.made.includes('LICENSE'),
+      'what other people may do with your work is not a default');
+
+    const withOne = await first.prepare(await project('licensed'), { name: 'licensed', licence: 'mit', who: 'A Person' });
+    assert.ok(withOne.made.includes('LICENSE'));
+    assert.equal(first.LICENCES[0].id, 'none', 'and the first thing offered is to add none');
+  });
+
+  test('asking what is missing writes nothing at all', async () => {
+    const first = await import('../firstpublish.mjs');
+    const dir = await project('asking');
+
+    const missing = first.whatIsMissing(dir);
+    assert.deepEqual(missing.sort(), ['.gitignore', 'README.md']);
+    assert.ok(!existsSync(join(dir, 'README.md')), 'asking is not doing');
+    assert.ok(!existsSync(join(dir, '.gitignore')));
   });
 });

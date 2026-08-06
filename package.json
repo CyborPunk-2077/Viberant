@@ -26,6 +26,9 @@
     "directories": {
       "output": "dist"
     },
+    "electronLanguages": [
+      "en-US"
+    ],
     "win": {
       "target": [
         "nsis"

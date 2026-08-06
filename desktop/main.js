@@ -11,7 +11,7 @@
  * running this does not need Node installed.
  */
 
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, Tray, Menu, nativeImage } = require('electron');
 const { spawn } = require('node:child_process');
 const { join } = require('node:path');
 const http = require('node:http');
@@ -73,6 +73,13 @@ async function startServer() {
 }
 
 async function open() {
+  if (win && !win.isDestroyed()) {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return;
+  }
+
   win = new BrowserWindow({
     width: 1180,
     height: 820,
@@ -104,16 +111,77 @@ async function open() {
   win.show();
 }
 
-app.whenReady().then(open);
+/**
+ * Staying about, cheaply.
+ *
+ * "Running in the background without taking a process" cannot be done — a thing
+ * that is running is a process. What can be done is to stop the expensive part:
+ * closing the window destroys the browser engine, which is over two hundred
+ * megabytes of the memory this app uses, and leaves only the small server that
+ * does the actual work. Opening it again builds a new window in about a second.
+ *
+ * The tray icon is presence, not notification. It never badges, never counts,
+ * never changes to catch your eye. You look at it; it never looks at you.
+ * (Decision D-3, which this is the first thing in the product to exercise.)
+ */
+let tray = null;
+
+function sitInTheTray() {
+  if (tray) return;
+
+  // Drawn here rather than shipped as a file: one bead, the same one the app
+  // wears in its own corner.
+  const dot = nativeImage.createFromDataURL(
+    'data:image/svg+xml;base64,' + Buffer.from(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+         <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+           <stop offset="0" stop-color="#7b5cff"/><stop offset="1" stop-color="#17b8c9"/>
+         </linearGradient></defs>
+         <rect x="6" y="6" width="20" height="20" rx="7" fill="url(#g)"/>
+       </svg>`,
+    ).toString('base64'),
+  );
+
+  tray = new Tray(dot);
+  tray.setToolTip('Viberant');
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Open Viberant', click: () => open() },
+    { type: 'separator' },
+    { label: 'Quit', click: () => { leaving = true; app.quit(); } },
+  ]));
+  tray.on('click', () => open());
+}
+
+let leaving = false;
+
+app.whenReady().then(async () => {
+  sitInTheTray();
+  await open();
+});
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) open();
 });
 
-app.on('window-all-closed', () => app.quit());
+/**
+ * Closing the window is not quitting.
+ *
+ * The window goes, its memory goes with it, and the manager keeps doing the
+ * quiet things it does — being findable by your other computers, noticing when
+ * a folder changes. Quitting is in the tray menu, where somebody who means it
+ * will look.
+ */
+app.on('window-all-closed', () => {
+  win = null;
+  if (leaving || !tray) app.quit();
+});
 
-// Closing the window stops the server too. Leaving one running invisibly, with
-// no window to close, would be a thing that comes at you.
-app.on('before-quit', () => {
+app.on('before-quit', () => { leaving = true; });
+
+// Only when actually leaving does the server stop. A server left running with
+// no way to reach it would be a thing that comes at you.
+app.on('will-quit', () => {
   if (server) { server.kill(); server = null; }
+  tray?.destroy();
+  tray = null;
 });

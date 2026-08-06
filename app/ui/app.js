@@ -378,10 +378,22 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
 // Projects
 // ---------------------------------------------------------------------------
 
+/**
+ * Where a project stands with you, in the order work actually goes.
+ *
+ * A project you have just added has not been started, which is a real answer
+ * rather than the absence of one — so there is no such thing as unmarked.
+ */
 const MARK_LOOK = {
-  working: { chip: 'live', name: 'Working on it' },
-  waiting: { chip: 'attention', name: 'Waiting' },
-  finished: { chip: '', name: 'Finished' },
+  notStarted: { name: 'Yet to start' },
+  working: { name: 'Working on it' },
+  finished: { name: 'Finished' },
+  published: { name: 'Published' },
+};
+
+const stateChip = (mark) => {
+  const which = MARK_LOOK[mark] ? mark : 'notStarted';
+  return `<span class="state ${which}"><span class="pip"></span>${esc(MARK_LOOK[which].name)}</span>`;
 };
 
 SCREENS.projects = async () => {
@@ -434,27 +446,28 @@ SCREENS.projects = async () => {
  * in, when you last stopped, what you were doing when you did, and where it is.
  */
 function projectSlab(p) {
-  const look = MARK_LOOK[p.mark];
+  const mark = MARK_LOOK[p.mark] ? p.mark : 'notStarted';
+  const spine = mark === 'published' ? 'published' : p.unsaved ? 'unsaved' : 'clean';
   return `
     <div class="slab" data-open="${esc(p.path)}">
-      <span class="dot ${p.unsaved ? 'attention' : 'live'}"></span>
+      <span class="spine ${spine}"></span>
       <div class="grow">
         <div class="line1">
           <b>${esc(p.name)}</b>
+          ${stateChip(mark)}
           ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
-          ${look ? `<span class="chip ${look.chip}">${esc(look.name)}</span>` : ''}
           ${p.private ? '<span class="chip">private to this computer</span>' : ''}
-          ${p.shared ? '' : '<span class="chip">not on GitHub</span>'}
-          ${p.toSend ? `<span class="chip attention">${p.toSend} saved change${p.toSend === 1 ? '' : 's'} to send</span>` : ''}
+          ${p.toSend ? `<span class="chip attention">${p.toSend} to send</span>` : ''}
         </div>
-        <div class="fact"><em>${esc(p.says)}</em> · ${esc(p.saved)}</div>
+        <div class="fact"><em>${esc(p.says)}</em> · ${esc(p.saved)}
+          · ${p.shared ? 'on GitHub' : 'only on this computer'}</div>
         ${p.lastDid ? `<div class="did">Last time: ${esc(p.lastDid)}</div>` : ''}
         <div class="path">${esc(p.path)}</div>
       </div>
       <div class="acts">
         <button class="go small" data-open-now="${esc(p.path)}">Open</button>
-        <button class="small" data-look="${esc(p.path)}">What is in it</button>
-        <button class="small" data-mark="${esc(p.path)}">${look ? 'Change mark' : 'Mark it'}</button>
+        <button class="small" data-look="${esc(p.path)}">Contents</button>
+        <button class="small" data-mark="${esc(p.path)}">Status</button>
         <button class="quiet small" data-private="${esc(p.path)}" data-now="${p.private ? '1' : '0'}">
           ${p.private ? 'let my computers see it' : 'keep it private'}</button>
       </div>
@@ -470,6 +483,8 @@ async function openProject(path) {
   await draw();
 }
 
+const MARK_GLYPH = { notStarted: '○', working: '◐', finished: '●', published: '◆' };
+
 function markSheet(path, marks) {
   sheet({
     title: 'Where have you got to?',
@@ -477,17 +492,15 @@ function markSheet(path, marks) {
     body: `<div class="menu">
       ${marks.map((m) => `
         <button class="opt" data-set="${esc(m.id)}">
-          <span class="glyph">${m.id === 'working' ? '◈' : m.id === 'waiting' ? '◔' : '✓'}</span>
+          <span class="glyph">${MARK_GLYPH[m.id] ?? '·'}</span>
           <span><span class="what">${esc(m.name)}</span><br><span class="why">${esc(m.blurb)}</span></span>
         </button>`).join('')}
-      <button class="opt" data-set=""><span class="glyph">·</span>
-        <span><span class="what">No mark</span><br><span class="why">Take the label off again.</span></span></button>
     </div>`,
     onOpen: () => {
       for (const b of document.querySelectorAll('[data-set]')) {
         b.onclick = async () => {
           closeLayer();
-          say(await post('/projects/mark', { path, mark: b.dataset.set || null }));
+          say(await post('/projects/mark', { path, mark: b.dataset.set }));
           draw();
         };
       }
@@ -495,52 +508,119 @@ function markSheet(path, marks) {
   });
 }
 
+/**
+ * What is actually in a project.
+ *
+ * Ordered by the questions somebody brings to a folder they have not opened in
+ * three weeks: what is this, how big is it, what was I doing, what is
+ * unfinished, where does it live.
+ */
 async function statusSheet(path) {
-  const opened = await post('/open', { path });
-  if (opened.ok === false) { say(opened); return draw(); }
-  const [changes, history] = await Promise.all([get('/github/changes'), get('/github/history')]);
-
   sheet({
-    title: opened.name,
-    body: `
-      <p style="margin:0 0 1rem"><b>${esc(opened.says)}</b><br>
-      <span style="color:var(--quiet)">${esc(opened.saved)}</span></p>
+    title: tail(path),
+    body: '<div class="row"><span class="spin"></span><div class="grow">Looking through it…</div></div>',
+    onOpen: async (body) => {
+      const c = await get(`/contents?at=${encodeURIComponent(path)}`);
+      if (c.ok === false) {
+        body.innerHTML = `<p><b>${esc(c.sentence)}</b><br><span style="color:var(--quiet)">${esc(c.action ?? '')}</span></p>`;
+        return;
+      }
 
-      <h2 style="margin-top:0">Changed since you last saved</h2>
-      ${changes.changes.length
-        ? `<div class="log">${changes.changes.map((c) => `${esc(c.name)} — ${esc(c.says)}`).join('\n')}</div>`
-        : '<p style="color:var(--quiet);margin:0">Nothing. Everything here is saved.</p>'}
+      const most = Math.max(1, ...c.size.madeOf.map((m) => m.count));
+      const began = c.began ? new Date(c.began) : null;
+      const days = began ? Math.max(1, Math.round((Date.now() - began.getTime()) / 86400000)) : null;
 
-      <h2>Recently saved</h2>
-      ${history.saves.length
-        ? history.saves.slice(0, 8).map((s) => `
-            <div class="row" style="margin-bottom:.35rem">
-              <span class="dot off"></span>
-              <div class="grow"><div class="name" style="font-weight:450">${esc(s.what)}</div>
-              <div class="note">${esc(s.when)} · ${esc(s.by)}</div></div>
-            </div>`).join('')
-        : '<p style="color:var(--quiet);margin:0">Nothing saved here yet.</p>'}`,
+      body.innerHTML = `
+        ${c.about ? `<p style="margin:0 0 1.2rem;line-height:1.6">${esc(c.about.says)}
+          <br><span style="color:var(--faint);font-size:.8rem">from ${esc(c.about.from)}</span></p>` : ''}
+
+        <div class="facts">
+          <div class="one"><b>${c.size.files}${c.size.capped ? '+' : ''}</b><span>files</span></div>
+          <div class="one"><b>${esc(size(c.size.bytes))}</b><span>of work</span></div>
+          <div class="one"><b>${c.where.saves ?? 0}</b><span>saves</span></div>
+          <div class="one"><b>${days ? (days > 90 ? `${Math.round(days / 30)}mo` : `${days}d`) : '—'}</b><span>going</span></div>
+        </div>
+
+        ${c.size.madeOf.length ? `
+          <h2 style="margin-top:0">What it is made of</h2>
+          <div class="bars">
+            ${c.size.madeOf.map((m) => `
+              <div class="bar1">
+                <span style="min-width:6rem">${esc(m.name)}</span>
+                <span class="track"><span class="fill" style="width:${Math.round((m.count / most) * 100)}%"></span></span>
+                <span class="n">${m.count}</span>
+              </div>`).join('')}
+          </div>` : ''}
+
+        ${c.size.folders.length ? `
+          <h2>Inside it</h2>
+          <div style="display:flex;gap:.35rem;flex-wrap:wrap">
+            ${c.size.folders.map((f) => `<span class="chip">${esc(f)}</span>`).join('')}
+          </div>` : ''}
+
+        <h2>What you were doing</h2>
+        ${c.saves.length ? `<div class="lane">${c.saves.map((s) => `
+          <div class="slab" style="cursor:default;padding:.6rem .8rem">
+            <span class="spine clean"></span>
+            <div class="grow">
+              <div style="font-weight:500">${esc(s.what)}</div>
+              <div class="did">${esc(s.when)} · ${esc(s.by)}</div>
+            </div>
+          </div>`).join('')}</div>`
+    : '<p style="color:var(--quiet);margin:0">Nothing saved here yet.</p>'}
+
+        <h2>Not saved yet</h2>
+        ${c.changed.total ? `
+          <div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem">
+            ${c.changed.kinds.map((k) => `<span class="chip attention">${k.count} ${esc(k.says)}</span>`).join('')}
+          </div>
+          <details>
+            <summary style="cursor:pointer;color:var(--quiet);font-size:.85rem">Which files</summary>
+            <div class="log" style="margin-top:.5rem">${esc(c.changed.files.map((f) => f.name).join('\n'))}${
+  c.changed.more ? esc(`\n… and ${c.changed.more} more`) : ''}</div>
+          </details>`
+    : '<p style="color:var(--quiet);margin:0">Nothing. Everything here is saved.</p>'}
+
+        <h2>Where it lives</h2>
+        <p style="margin:0 0 .8rem;color:var(--quiet)">
+          ${c.where.shared
+    ? `On GitHub${c.where.visibility ? `, ${c.where.visibility === 'public' ? 'where anyone can see it' : 'where only you can see it'}` : ''}.
+             ${c.where.toSend ? `${c.where.toSend} saved change${c.where.toSend === 1 ? '' : 's'} not sent yet.` : 'Everything sent.'}`
+    : 'Only on this computer. If it is lost, it is lost.'}
+        </p>
+
+        ${c.missing.some((m) => !m.there) ? `
+          <div class="needs">
+            ${c.missing.map((m) => `
+              <div class="need">
+                <span class="${m.there ? 'tick' : 'cross'}">${m.there ? '✓' : '○'}</span>
+                <div><b style="font-weight:500">${esc(m.file)}</b><br><span>${esc(m.why)}</span></div>
+              </div>`).join('')}
+          </div>` : ''}`;
+    },
     foot: `<button class="quiet" id="s-forget">Take it off the list</button>
            <button class="go" id="s-open">Open this project</button>`,
-    onOpen: () => {
-      $('#s-open').onclick = async () => { closeLayer(); at.inside = true; await refreshMe(); draw(); };
-      $('#s-forget').onclick = async () => {
-        closeLayer();
-        const sure = await confirmThat({
-          title: 'Take it off the list?',
-          what: `${opened.name} would stop being listed here.`,
-          why: 'The folder itself is not touched. Nothing in it is deleted.',
-          confirm: 'Take it off',
-          danger: true,
-        });
-        if (!sure) return;
-        say(await post('/projects/forget', { path }));
-        at.inside = false;
-        await refreshMe();
-        draw();
-      };
-    },
   });
+
+  $('#s-open').onclick = async () => {
+    closeLayer();
+    await openProject(path);
+  };
+  $('#s-forget').onclick = async () => {
+    closeLayer();
+    const sure = await confirmThat({
+      title: 'Take it off the list?',
+      what: `${tail(path)} would stop being listed here.`,
+      why: 'The folder itself is not touched. Nothing in it is deleted.',
+      confirm: 'Take it off',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await post('/projects/forget', { path }));
+    at.inside = false;
+    await refreshMe();
+    draw();
+  };
 }
 
 async function fromGitHub() {
@@ -587,14 +667,15 @@ async function drawOpenProject() {
   if (!p.open) { at.inside = false; return draw(); }
 
   const open = whatIsOpen(p, t.tools);
-  const look = MARK_LOOK[p.mark];
 
   view.innerHTML = `
     <button class="quiet" id="back" style="margin:0 0 1rem;padding-left:0">← all projects</button>
     <h1>${esc(p.name)}
-      ${look ? `<span class="chip ${look.chip}" style="vertical-align:middle;margin-left:.5rem">${esc(look.name)}</span>` : ''}
+      <span style="vertical-align:middle;margin-left:.5rem">${stateChip(p.mark)}</span>
     </h1>
-    <p class="sub">${esc(p.says)} · ${esc(p.saved)}<br><span style="color:var(--faint)">${esc(p.dir)}</span></p>
+    <p class="sub">${esc(p.says)} · ${esc(p.saved)}
+      · ${p.situation?.shared ? 'on GitHub' : 'only on this computer'}
+      <br><span style="color:var(--faint)">${esc(p.dir)}</span></p>
 
     <div class="card" style="margin-bottom:1.4rem">
       <label class="field">What did you do?</label>
@@ -829,17 +910,7 @@ async function doGitHub(what, p) {
     return draw();
   }
 
-  if (what === 'copy') {
-    closeLayer();
-    const keepPrivate = await confirmThat({
-      title: 'Make a copy on GitHub',
-      what: `${p.name} will get a copy on your GitHub account.`,
-      why: 'Choose whether anyone can see it. You can change this later either way.',
-      confirm: 'Only I can see it',
-    });
-    say(await post('/github/copy', { visibility: keepPrivate ? 'private' : 'public' }));
-    return draw();
-  }
+  if (what === 'copy') { closeLayer(); return firstTimeSheet(); }
 
   if (what === 'visibility') {
     closeLayer();
@@ -877,6 +948,100 @@ async function doGitHub(what, p) {
     say(await post('/github/latest'));
     return draw();
   }
+}
+
+/**
+ * Putting a project on GitHub for the first time.
+ *
+ * One question — what it should be called. Everything else is worked out from
+ * the project: what it is built with, how it is run, what should stay on your
+ * computer. Nothing you wrote is ever overwritten, and the one thing that is
+ * genuinely your decision, what other people may do with your work, is offered
+ * and explained rather than assumed.
+ */
+async function firstTimeSheet() {
+  const d = await get('/publish/first');
+  if (d.ok === false) { say(d); return draw(); }
+
+  sheet({
+    title: `Put ${d.name} on GitHub`,
+    body: `
+      <p class="sub">You will be asked one thing. Everything a project on GitHub
+        usually has, this works out from the project itself.</p>
+
+      <label class="field">What should it be called on GitHub?</label>
+      <input id="fp-name" style="width:100%;margin-bottom:1rem" value="${esc(d.suggested)}">
+
+      <label class="field">One line about what it is. Leave it blank and one is written from your own notes.</label>
+      <input id="fp-about" style="width:100%;margin-bottom:1.2rem" placeholder="A manager for opening one project across your AI apps">
+
+      <h2 style="margin-top:0">Who can see it</h2>
+      <div class="menu" style="margin-bottom:1.2rem">
+        <button class="opt on" data-vis="private">
+          <span class="glyph">◎</span>
+          <span><span class="what">Only me</span><br>
+            <span class="why">Nobody else can find or read it. You can change this whenever.</span></span>
+        </button>
+        <button class="opt" data-vis="public">
+          <span class="glyph">◉</span>
+          <span><span class="what">Anyone</span><br>
+            <span class="why">Readable by anybody who finds it. Check there are no keys or passwords in the files first.</span></span>
+        </button>
+      </div>
+
+      <h2>What other people may do with it</h2>
+      <div class="menu">
+        ${d.licences.map((l, i) => `
+          <button class="opt ${i === 0 ? 'on' : ''}" data-lic="${esc(l.id)}">
+            <span class="glyph">§</span>
+            <span><span class="what">${esc(l.name)}</span><br><span class="why">${esc(l.blurb)}</span></span>
+          </button>`).join('')}
+      </div>
+
+      ${d.willMake.length ? `
+        <h2>What will be written for you</h2>
+        <div class="needs">
+          ${d.willMake.map((f) => `
+            <div class="need"><span class="tick">＋</span>
+              <div><b style="font-weight:500">${esc(f)}</b><br>
+                <span>${f === 'README.md'
+    ? 'The page people land on, written from what this project is and how it runs.'
+    : 'So build output, dependencies and anything holding a key stay on your computer.'}</span></div>
+            </div>`).join('')}
+        </div>
+        <p class="note" style="color:var(--faint);font-size:.82rem;margin-top:.6rem">
+          Anything you already wrote is left exactly as it is.</p>` : `
+        <p class="note" style="color:var(--quiet);margin-top:1rem">
+          This project already has everything it needs. Nothing will be written.</p>`}`,
+    foot: `<span class="left">Afterwards, Save and send is the only button you need.</span>
+           <button class="quiet" id="fp-no">Never mind</button>
+           <button class="go" id="fp-yes">Put it on GitHub</button>`,
+    onOpen: (body) => {
+      let visibility = 'private';
+      let licence = 'none';
+
+      const choose = (group, value) => {
+        for (const b of body.querySelectorAll(`[data-${group}]`)) b.classList.remove('on');
+        body.querySelector(`[data-${group}="${value}"]`)?.classList.add('on');
+      };
+      for (const b of body.querySelectorAll('[data-vis]')) {
+        b.onclick = () => { visibility = b.dataset.vis; choose('vis', visibility); };
+      }
+      for (const b of body.querySelectorAll('[data-lic]')) {
+        b.onclick = () => { licence = b.dataset.lic; choose('lic', licence); };
+      }
+
+      $('#fp-no').onclick = closeLayer;
+      $('#fp-yes').onclick = async () => {
+        const name = $('#fp-name').value.trim();
+        if (!name) return;
+        const description = $('#fp-about').value.trim() || null;
+        closeLayer();
+        const r = await post('/publish/first', { name, description, licence, visibility });
+        if (r.ok) watchJob(r.job); else { say(r); draw(); }
+      };
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -983,13 +1148,12 @@ function appTile(x, p, t) {
         ${canWindow
     ? `<button class="go small" data-launch="${esc(x.id)}" data-how="desktop">Open</button>`
     : windowElsewhere
-      ? `<button class="small" data-getwindow="${esc(x.windowElsewhere)}" data-name="${esc(x.name)}">Open ↗</button>`
+      ? `<button class="go small" data-getwindow="${esc(x.windowElsewhere)}" data-name="${esc(x.name)}">Open ↗</button>`
       : ''}
         ${ways.includes('terminal') ? `
           <span class="pair">
-            <button class="${canWindow ? '' : 'go '}small"
-              data-launch="${esc(x.id)}" data-how="terminal">Terminal</button>
-            <button class="${canWindow ? '' : 'go '}small" data-which="${esc(x.id)}">▾</button>
+            <button class="small" data-launch="${esc(x.id)}" data-how="terminal">Terminal</button>
+            <button class="small" data-which="${esc(x.id)}">▾</button>
           </span>` : ''}
         <span class="drop">
           <button class="small" data-account="${esc(x.id)}">Account ▾</button>
@@ -1822,6 +1986,94 @@ addEventListener('keydown', (e) => {
 // Start
 // ---------------------------------------------------------------------------
 
+/**
+ * The way in.
+ *
+ * Signing in is asked for first, because almost everything worth doing here goes
+ * through your GitHub account — where a second copy of your work lives, and how
+ * your other computers recognise each other.
+ *
+ * It is asked for, not demanded. Everything that happens on this computer alone
+ * — opening projects, starting apps, saving your work — works without any
+ * account at all, and a product that held those hostage to a sign-in would be
+ * lying about what it needs.
+ */
+function showGate() {
+  const gate = $('#gate');
+  gate.hidden = false;
+  gate.innerHTML = `
+    <div class="welcome">
+      <div class="bead"></div>
+      <h1>Welcome to Viberant</h1>
+      <p>One place to open your project in any AI app, save it, put it out into the
+        world, and pick it up on your other computer.</p>
+
+      <div class="ways">
+        <button class="wayin" id="in-github">
+          <span class="badge" style="background:#24292f">GH</span>
+          <span><b>Continue with GitHub</b>
+            <span>Signs this computer in, so your work has a second copy and your
+              other computers can find each other.</span></span>
+        </button>
+
+        <button class="wayin off" id="in-google" disabled>
+          <span class="badge" style="background:#4285f4">G</span>
+          <span><b>Continue with Google</b>
+            <span>Not offered, and here is the honest reason: nothing in this app
+              needs a Google account, and no service anywhere can tell which GitHub
+              account belongs to a Google one. Sign in to Gemini or Antigravity
+              inside those apps, where it means something.</span></span>
+        </button>
+      </div>
+
+      <div class="later">
+        <button class="quiet" id="in-later">Use it without signing in</button>
+      </div>
+    </div>`;
+
+  $('#in-github').onclick = async () => {
+    const b = $('#in-github');
+    b.disabled = true;
+    b.querySelector('b').textContent = 'Signing in…';
+    const r = await post('/github/signin');
+    say(r);
+    if (!r.ok) { hideGate(); draw(); return; }
+    waitForSignIn();
+  };
+  $('#in-later').onclick = () => { hideGate(); draw(); };
+}
+
+/** Watch for the sign-in that is happening in the window we just opened. */
+function waitForSignIn() {
+  const welcome = $('#gate .welcome');
+  if (!welcome) return;
+  welcome.innerHTML = `
+    <div class="bead"></div>
+    <h1>Finish in the window that opened</h1>
+    <p>Follow the steps there. This page will notice by itself the moment you are
+      signed in.</p>
+    <div class="ways">
+      <div class="wayin off"><span class="spin"></span>
+        <span><b>Waiting for GitHub</b><span>You can carry on here whenever you like.</span></span></div>
+    </div>
+    <div class="later"><button class="quiet" id="in-later">Carry on without it</button></div>`;
+  $('#in-later').onclick = () => { hideGate(); draw(); };
+
+  const look = setInterval(async () => {
+    await refreshMe();
+    if (!me.github) return;
+    clearInterval(look);
+    hideGate();
+    say({ ok: true, sentence: `Signed in as ${me.github}.`, action: 'Everything on this computer now has a home to go to.' });
+    draw();
+  }, 2500);
+}
+
+function hideGate() {
+  $('#gate').hidden = true;
+  $('#gate').innerHTML = '';
+}
+
 const start = async () => {
   await refreshMe();
   const p = await get('/project');
@@ -1834,7 +2086,10 @@ const start = async () => {
     $('#opening')?.classList.add('going');
     $('#frame').classList.add('up');
     setTimeout(() => $('#opening')?.remove(), 500);
-  }, skip ? 120 : 1750);
+    // Asked once, on a computer that has never signed in. After that the corner
+    // is where you go, and nothing stands in front of the app again.
+    if (!me.github && !me.askedToSignIn) showGate();
+  }, skip ? 120 : 1600);
 };
 
 start();

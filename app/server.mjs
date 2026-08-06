@@ -36,6 +36,8 @@ import * as workspace from './workspace.mjs';
 import * as settings from './settings.mjs';
 import * as lan from './lan.mjs';
 import * as parcel from './parcel.mjs';
+import * as contents from './contents.mjs';
+import * as firstpublish from './firstpublish.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const HOUSE = projects.HOUSE;
@@ -289,9 +291,11 @@ const routes = {
 
   async 'POST /projects/private'({ body }) {
     const r = await projects.keepPrivate(body.path, body.private);
-    if (r.ok && (await workspace.state()).joined) {
-      await workspace.sync({ machine, name: await myName(), project: current?.name ?? null, sharing: await offering() });
-    }
+    // Telling the other computers involves reaching GitHub, which takes seconds.
+    // The answer to "is this private now" does not depend on that having
+    // finished, so it is not waited for — a button that takes four seconds to
+    // do something instant reads as broken.
+    if (r.ok) tellTheOthers();
     return { ...r, ...(await routes['GET /projects']()) };
   },
 
@@ -484,6 +488,42 @@ const routes = {
   async 'GET /github/changes'() {
     if (!current) return { ok: true, changes: [] };
     return github.whatChanged(current.dir);
+  },
+
+  async 'GET /contents'({ url }) {
+    const dir = url.searchParams.get('at') ?? current?.dir;
+    if (!dir || !existsSync(dir)) return noProject;
+    return { ok: true, ...(await contents.of(resolve(dir))) };
+  },
+
+  // -- putting a project on GitHub for the first time ----------------------
+
+  async 'GET /publish/first'() {
+    if (!current) return noProject;
+    const picture = await github.picture(current.dir);
+    return {
+      ok: true,
+      name: current.name,
+      suggested: current.name.replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 90),
+      already: !!picture.shared,
+      url: picture.url,
+      who: await github.who(),
+      licences: firstpublish.LICENCES,
+      willMake: firstpublish.whatIsMissing(current.dir),
+    };
+  },
+
+  async 'POST /publish/first'({ body }) {
+    if (!current) return noProject;
+    const job = jobs.begin({ what: `Putting ${current.name} on GitHub`, where: current.dir });
+    firstTimeOnGitHub(job, {
+      dir: current.dir,
+      name: body.name,
+      description: body.description ?? null,
+      licence: body.licence ?? 'none',
+      visibility: body.visibility === 'public' ? 'public' : 'private',
+    });
+    return { ok: true, job: job.id };
   },
   async 'GET /github/mine'() {
     return github.myProjects();
@@ -684,6 +724,85 @@ async function noteLaunch({ tool, dir, how, profile }) {
   const delegated = current.author.delegated({ effort, assistant: tool.id, causedBy: event.id });
   await current.store.append(event, delegated,
     current.dev.transitioned({ effort, to: 'moving', causedBy: delegated.id }));
+}
+
+/**
+ * The whole of a first time on GitHub, from a folder to a page people can read.
+ *
+ * Everything is named as it happens, because this is the step somebody has been
+ * putting off, and watching it go is most of what makes it stop being scary.
+ */
+async function firstTimeOnGitHub(job, { dir, name, description, licence, visibility }) {
+  try {
+    jobs.step(job, 'Looking at what the project already has.');
+    const put = await firstpublish.prepare(dir, {
+      name, description, licence, who: (await github.identity()).name,
+    });
+    if (put.made.length) jobs.step(job, `Wrote ${put.made.join(', ')} — the pieces a project usually has.`);
+    if (put.leftAlone.length) jobs.step(job, `Left your own ${put.leftAlone.join(', ')} exactly as it was.`);
+
+    jobs.step(job, 'Saving everything here first.');
+    const saved = await github.saveOnly(dir, put.made.length
+      ? `Add ${put.made.join(', ')} and everything so far`
+      : 'Everything so far');
+    if (!saved.ok) return jobs.end(job, saved);
+
+    jobs.step(job, `Making ${name} on GitHub, visible to ${visibility === 'public' ? 'anybody' : 'only you'}.`);
+    const out = await jobs.runInto(job, {
+      file: 'gh',
+      args: ['repo', 'create', name, visibility === 'public' ? '--public' : '--private',
+        '--source', '.', '--remote', 'origin', '--push'],
+      cwd: dir,
+    });
+    if (!out.ok) {
+      return jobs.end(job, {
+        ok: false,
+        sentence: `${name} could not be made on GitHub.`,
+        action: 'A project of that name may already be on your account. Try another name.',
+      });
+    }
+
+    await github.useOwnCredentials(dir);
+    const where = await quietly(() => github.picture(dir));
+
+    return jobs.end(job, {
+      ok: true,
+      at: where?.url ?? null,
+      sentence: where?.url ? `${name} is on GitHub, at ${where.url}` : `${name} is on GitHub.`,
+      action: 'From now on, Save and send is the only button you need — it sends what changed and nothing else.',
+    });
+  } catch (e) {
+    jobs.write(job, String(e));
+    return jobs.end(job, {
+      ok: false,
+      sentence: 'Putting it on GitHub stopped part way through.',
+      action: 'Your work is safe on this computer. The lines below say where it stopped.',
+    });
+  }
+}
+
+const quietly = async (fn) => { try { return await fn(); } catch { return null; } };
+
+/**
+ * Let the other computers know what changed here, without keeping anybody
+ * waiting for it.
+ *
+ * Sending takes seconds because it reaches GitHub. Nothing on screen depends on
+ * it having landed, so it happens behind the answer. If it fails, the next
+ * heartbeat carries it — which is the whole point of the workspace being a list
+ * of files rather than a conversation.
+ */
+let telling = null;
+function tellTheOthers() {
+  if (telling) return;
+  telling = (async () => {
+    const state = await workspace.state();
+    if (state.joined) {
+      await workspace.sync({
+        machine, name: await myName(), project: current?.name ?? null, sharing: await offering(),
+      });
+    }
+  })().catch(() => {}).finally(() => { telling = null; });
 }
 
 /** Which entries a press was about: a whole card's worth, or just one. */
