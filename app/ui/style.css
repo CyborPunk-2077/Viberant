@@ -1376,3 +1376,57 @@ button.go { box-shadow: none; }
 button.go:hover:not(:disabled) { box-shadow: 0 0 18px -8px var(--glow); }
 .welcome .bead { box-shadow: 0 0 0 7px color-mix(in srgb, var(--vibe-a) 7%, transparent); }
 .welcome .code { box-shadow: none; }
+
+/* ========================================================================= */
+/* The way in, second pass                                                   */
+/*                                                                           */
+/* Fewer words, and every one of them inside its container at any width.     */
+/* ========================================================================= */
+
+.welcome { width: min(30rem, 100%); }
+.welcome h1 { font-size: 1.6rem; margin-bottom: .45rem; }
+.welcome > p { font-size: .92rem; margin-bottom: 1.7rem; max-width: 26rem; margin-left: auto; margin-right: auto; }
+.welcome .said { margin-bottom: 1.2rem; }
+
+.wayin { gap: .85rem; padding: .9rem 1rem; align-items: center; }
+.wayin .grow { flex: 1 1 auto; min-width: 0; }
+.wayin b { font-size: .95rem; margin-bottom: .12rem; line-height: 1.35; }
+.wayin .grow > span {
+  font-size: .83rem;
+  line-height: 1.45;
+  color: var(--quiet);
+  display: block;
+  overflow-wrap: anywhere;
+}
+.wayin:disabled { opacity: .5; }
+
+.welcome .later { margin-top: 1.3rem; }
+
+@media (max-width: 34rem) {
+  #gate { padding: 1.2rem; align-items: start; }
+  .welcome h1 { font-size: 1.35rem; }
+  .welcome .code { font-size: 1.4rem; letter-spacing: .16em; }
+}
+
+/*
+ * A percentage width inside a centred grid item has nothing firm to resolve
+ * against — the item is sized to its content, so `min(30rem, 100%)` came out
+ * wider than the window on a narrow one. A flex column gives the child a real
+ * containing block, and a max-width does the capping.
+ */
+#gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.welcome { width: 100%; max-width: 30rem; }
+
+.veil {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.sheet { width: 100%; max-width: 46rem; }
+.sheet.narrow { max-width: 31rem; }

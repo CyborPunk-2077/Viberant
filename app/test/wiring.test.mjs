@@ -91,3 +91,43 @@ describe('the page and the server agree with each other', () => {
     assert.ok(answered.has('POST /tidy'));
   });
 });
+
+describe('the page defines everything its way in depends on', () => {
+  /**
+   * This exists because `hideGate` was deleted by an edit that replaced the
+   * block around it, and nothing noticed. The Skip button threw a
+   * ReferenceError inside its onclick handler from then on — which surfaces
+   * nowhere a person would look, and reads as a button that does nothing.
+   *
+   * A handler that throws is invisible. A missing definition is not, if
+   * somebody looks. This looks.
+   */
+  const NEEDED = [
+    'function showGate(',
+    'function hideGate(',
+    'async function signInToGitHub(',
+    'async function withGoogle(',
+    'function openPanel(',
+    'async function openWhoPanel(',
+    'function paintNews(',
+    'async function openProject(',
+    'function sheet(',
+    'function confirmThat(',
+    'function pickFolder(',
+  ];
+
+  test('every one of them is there', async () => {
+    const text = await readFile(join(app, 'ui', 'app.js'), 'utf8');
+    const missing = NEEDED.filter((one) => !text.includes(one));
+    assert.deepEqual(missing, [], 'a function the page calls has gone');
+  });
+
+  test('and the buttons on the way in are wired to them', async () => {
+    const text = await readFile(join(app, 'ui', 'app.js'), 'utf8');
+    for (const wire of ["$('#in-github').onclick", "$('#in-google').onclick", "$('#in-later').onclick"]) {
+      assert.ok(text.includes(wire), `${wire} is not attached`);
+    }
+    // A failure must put the reason on the way in rather than close it.
+    assert.ok(text.includes('showGate({ trouble:'), 'a failed sign-in does not say so on the welcome');
+  });
+});

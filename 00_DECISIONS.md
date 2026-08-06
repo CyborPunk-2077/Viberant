@@ -709,6 +709,36 @@ Both are the same mistake: **reading a state that belongs to a previous run and 
 
 ---
 
+### D-65 `[LOCKED]` — A handler that throws is invisible, so the page is read for what it calls
+
+**Decision.** A test reads the page and checks that every function its way in depends on is defined, and that the buttons on the welcome are wired to them.
+
+**Why.** `hideGate` was deleted by an edit that replaced the block around it. From then on the Skip button threw a `ReferenceError` inside its `onclick` — and an exception inside a DOM handler surfaces **nowhere a person would look**. No red text, no failed request, no broken layout. From the outside it is a button that does nothing, which is exactly what was reported.
+
+This is the third fault in this product with that shape: something fails silently and the symptom is "it does nothing". The other two were a promise nobody awaited and a 404 parsed as JSON. **Silence is the failure mode this codebase produces**, so it gets a test rather than more care.
+
+**Also recorded, because it caused this.** Replacing a range of a file by matching its start and end markers deletes whatever sits between them. It has now eaten an adjacent function three times — `lastSavedInWords`, `kindOf`, `reachInWords`, and then `hideGate` and `signInToGitHub`. Check what was in the range before replacing it.
+
+---
+
+### D-66 `[DECIDED]` — A failure never closes the way in
+
+**Decision.** When signing in fails or is cancelled, the welcome screen stays up and says why. It is never closed with the reason left behind it.
+
+**Why.** Closing the welcome and putting the explanation on the page underneath is, from where somebody is sitting, indistinguishable from the button having done nothing and the app having moved on by itself. The one moment a person most needs to know what happened is the moment they are least able to go looking for it.
+
+Cancelling likewise returns you to the welcome with the button usable again, rather than dropping you into the app you had not yet chosen to enter.
+
+---
+
+### D-67 `[DECIDED]` — Percentages need something firm to resolve against
+
+**Decision.** The welcome and every sheet size with `width: 100%` plus a `max-width`, inside a flex column. Not `width: min(30rem, 100%)` inside a centred grid item.
+
+**Why.** A centred grid item is sized to its content, so a percentage width has nothing definite to resolve against — the welcome card came out 475px wide inside a 420px window. Measured at five widths down to 360px; nothing leaves the window and no page scrolls sideways.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

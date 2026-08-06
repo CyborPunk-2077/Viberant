@@ -2453,78 +2453,92 @@ addEventListener('keydown', (e) => {
  * account at all, and a product that held those hostage to a sign-in would be
  * lying about what it needs.
  */
-function showGate() {
+function showGate({ trouble = null } = {}) {
   const gate = $('#gate');
   gate.hidden = false;
   gate.innerHTML = `
     <div class="welcome">
       <div class="bead"></div>
       <h1>Welcome to Viberant</h1>
-      <p>One place to open your project in any AI app, save it, put it out into the
-        world, and pick it up on your other computer.</p>
+      <p>Open your project in any AI app, save it, and pick it up on your other
+        computer.</p>
+
+      ${trouble ? `<div class="said bad" style="text-align:left">
+        <b>${esc(trouble.sentence)}</b>
+        ${trouble.action ? `<span>${esc(trouble.action)}</span>` : ''}
+      </div>` : ''}
 
       <div class="ways">
         <button class="wayin" id="in-github">
           <span class="mark">${GITHUB_MARK}</span>
-          <span><b>Continue with GitHub</b>
-            <span>Signs this computer in, so your work has a second copy and your
-              other computers can find each other.</span></span>
+          <span class="grow">
+            <b>Continue with GitHub</b>
+            <span>Keeps a second copy of your work, and lets your computers find each other.</span>
+          </span>
         </button>
 
         <button class="wayin" id="in-google">
           <span class="mark">${GOOGLE_MARK}</span>
-          <span><b>Continue with Google</b>
-            <span>Signs you in to the AI apps that use it — Gemini, Antigravity and
-              OpenCode. It cannot sign you in to Viberant itself: nothing here needs a
-              Google account, and no service can say which GitHub account belongs to
-              one.</span></span>
+          <span class="grow">
+            <b>Continue with Google</b>
+            <span>Signs you in to Gemini, Antigravity and OpenCode.</span>
+          </span>
         </button>
       </div>
 
       <div class="later">
-        <button class="quiet" id="in-later">Use it without signing in</button>
+        <button class="quiet" id="in-later">Skip for now</button>
       </div>
     </div>`;
 
-  $('#in-github').onclick = async () => {
-    $('#in-github').disabled = true;
-    signInToGitHub({ inGate: true });
-  };
-  $('#in-google').onclick = () => withGoogle();
+  $('#in-github').onclick = () => signInToGitHub({ inGate: true });
+  $('#in-google').onclick = () => withGoogle({ inGate: true });
   $('#in-later').onclick = () => { hideGate(); draw(); };
+}
+
+/** Put the way in away, and let go of what it was holding. */
+function hideGate() {
+  const gate = $('#gate');
+  gate.hidden = true;
+  gate.innerHTML = '';
 }
 
 /**
  * Signing in to GitHub, from wherever you pressed it.
  *
- * One path, used by the welcome and by the account menu. Before, the menu
- * started the flow and then closed, showing nothing — the sign-in was running
- * and the code it needed was nowhere on screen, which looks exactly like a
- * button that does not work.
+ * One path, used by the welcome and by the account menu. The code is the whole
+ * of it, shown large: the one thing being asked of anybody at this moment is to
+ * carry eight characters from here to there, and everything else on screen is in
+ * the way of that.
  *
- * The code is the whole of it. It is shown large, because the one thing being
- * asked of anybody at this moment is to carry eight characters from here to
- * there, and everything else on screen is in the way of that.
+ * Two rules learned by watching somebody use it:
+ *
+ *   A failure never closes the way in. Closing the welcome and putting the
+ *   reason behind it is indistinguishable, from where you are sitting, from the
+ *   button doing nothing at all.
+ *
+ *   Changing your mind puts you back where you were, not into the app.
  */
 async function signInToGitHub({ inGate = false } = {}) {
-  // Who was signed in before this started. Without it, "sign in to another
-  // account" looked at the account you already had, decided it had succeeded,
-  // and closed itself half a second after opening.
+  // Who was signed in before. Without it, "sign in to another account" looks at
+  // the account you already had, decides it succeeded, and closes itself.
   const before = me.github ?? null;
+
   const started = await post('/github/signin');
   if (!started.ok) {
+    if (inGate) return showGate({ trouble: started });
     say(started);
-    if (inGate) hideGate();
     return draw();
   }
 
   let watching = null;
 
-  const stop = async ({ giveUp = false } = {}) => {
+  const stop = async ({ giveUp = false, backToWelcome = false } = {}) => {
     clearInterval(watching);
     if (giveUp) await post('/github/signin/stop');
     closeLayer();
-    if (inGate) hideGate();
+    if (inGate && backToWelcome) showGate();
+    else if (inGate) hideGate();
   };
 
   const paint = (code) => {
@@ -2532,8 +2546,8 @@ async function signInToGitHub({ inGate = false } = {}) {
       title: 'Signing in to GitHub',
       narrow: true,
       body: `
-        <p class="sub">Your browser is opening at github.com/login/device. Put this
-          code in, and this page will notice by itself.</p>
+        <p class="sub">Your browser is opening at github.com/login/device.
+          Put this code in and this page will notice by itself.</p>
         <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
         <div class="menu">
           <button class="opt" id="in-again">
@@ -2542,10 +2556,13 @@ async function signInToGitHub({ inGate = false } = {}) {
               <span class="why">github.com/login/device</span></span>
           </button>
         </div>`,
-      foot: '<button class="quiet" id="in-later">Never mind</button>',
+      foot: '<button class="quiet" id="in-cancel">Never mind</button>',
       onOpen: () => {
         $('#in-again').onclick = () => post('/open/page', { at: 'https://github.com/login/device' });
-        $('#in-later').onclick = async () => { await stop({ giveUp: true }); draw(); };
+        $('#in-cancel').onclick = async () => {
+          await stop({ giveUp: true, backToWelcome: true });
+          if (!inGate) draw();
+        };
       },
     });
   };
@@ -2576,17 +2593,14 @@ async function signInToGitHub({ inGate = false } = {}) {
     }
 
     if (r.signin && !r.signin.running && r.signin.ok === false) {
-      await stop();
-      say(r.signin);
+      clearInterval(watching);
+      closeLayer();
       await refreshMe();
+      if (inGate) return showGate({ trouble: r.signin });
+      say(r.signin);
       draw();
     }
   }, 1200);
-}
-
-function hideGate() {
-  $('#gate').hidden = true;
-  $('#gate').innerHTML = '';
 }
 
 /**
@@ -2597,7 +2611,7 @@ function hideGate() {
  * that sign in with Google, each with a button that runs its own flow and puts
  * Google's account picker in front of you.
  */
-async function withGoogle() {
+async function withGoogle({ inGate = false } = {}) {
   const { tools } = await get('/tools');
   const canGoogle = tools.filter((x) => x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
   const couldGoogle = tools.filter((x) => !x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
@@ -2624,7 +2638,7 @@ async function withGoogle() {
           ${couldGoogle.length ? `Install ${esc(couldGoogle.map((x) => x.name).join(' or '))} and this fills in.` : ''}</div>`}`,
     foot: '<button class="quiet" id="g-no">Never mind</button>',
     onOpen: (body) => {
-      $('#g-no').onclick = () => { closeLayer(); hideGate(); draw(); };
+      $('#g-no').onclick = () => { closeLayer(); if (inGate) showGate(); else draw(); };
       for (const b of body.querySelectorAll('[data-google]')) {
         b.onclick = async () => {
           closeLayer();
