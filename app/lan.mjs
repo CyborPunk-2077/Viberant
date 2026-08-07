@@ -128,7 +128,33 @@ export async function withdraw(id) {
 // Being here
 // ---------------------------------------------------------------------------
 
-/** Every address this computer can be reached on. */
+/**
+ * Every address this computer can actually be reached on, best first.
+ *
+ * Two kinds of address are here that no other computer can ever reach, and both
+ * were being handed out as though they were real:
+ *
+ *   The switches a virtual machine talks through. Windows makes one per feature
+ *   — 172.27.240.1, 172.28.176.1 — and they are addresses of this computer, on
+ *   networks that exist only inside it. Measured here: the other computer
+ *   advertised two of them and its real address in the middle.
+ *
+ *   The address an adapter gives itself when nothing answered. Anything in
+ *   169.254 means "this cable is not plugged in", said politely.
+ *
+ * Ordinary private networks come first because that is what one person's two
+ * computers are on. Nothing is thrown away outright — an unusual setup still
+ * gets its address offered, just last.
+ */
+function rankOf(address) {
+  if (address.startsWith('169.254.')) return 3;
+  if (/^(?:192\.168\.|10\.)/.test(address)) return 0;
+  // 172.16–172.31 is one private range, and Windows puts its virtual switches
+  // in the top half of it. Real networks there are rare; virtual ones are not.
+  if (/^172\.(?:1[6-9]|2[0-9]|3[01])\./.test(address)) return 2;
+  return 1;
+}
+
 function myAddresses() {
   const out = [];
   for (const list of Object.values(networkInterfaces())) {
@@ -136,7 +162,7 @@ function myAddresses() {
       if (one.family === 'IPv4' && !one.internal) out.push(one.address);
     }
   }
-  return out;
+  return out.sort((a, b) => rankOf(a) - rankOf(b));
 }
 
 /** Where to shout so everything on this network hears it. */
@@ -240,12 +266,20 @@ function heard(raw) {
   const before = sign(me.key, `${said.account}|${said.machine}|${minute(-1)}`);
   if (said.proof !== want && said.proof !== before) return;
 
+  // A shout arrives every few seconds. Whichever address was found to actually
+  // answer stays at the front of the new list, so learning it once is not undone
+  // five seconds later by the next shout.
+  const known = seen.get(said.machine);
+  const offered = said.addresses ?? [];
+  const answers = offered.includes(known?.answers) ? known.answers : null;
+
   seen.set(said.machine, {
     machine: said.machine,
     name: said.name,
     account: said.account,
     port: said.port,
-    addresses: said.addresses ?? [],
+    addresses: answers ? [answers, ...offered.filter((a) => a !== answers)] : offered,
+    answers,
     lastHeard: Date.now(),
   });
 }
@@ -431,20 +465,64 @@ async function handle(req, res) {
 // Asking one of them for something
 // ---------------------------------------------------------------------------
 
-function ask(peer, path) {
+/** How long one address gets to start answering before the next one is tried. */
+const ANSWER_WITHIN = 6000;
+/** How long something already arriving may go quiet before it is given up on. */
+const SILENCE_FOR = 15000;
+
+function tryOne(peer, address, path) {
   return new Promise((done) => {
-    const address = peer.addresses?.[0];
-    if (!address || !me) return done(null);
+    let settled = false;
+    const finish = (value) => { if (!settled) { settled = true; done(value); } };
+
     const req = httpGet({
       host: address,
       port: peer.port ?? CARRY_PORT,
       path,
       headers: { 'x-viberant-pass': pass(me.key, me.account) },
-      timeout: 15000,
-    }, (res) => done(res.statusCode === 200 ? res : (res.resume(), null)));
-    req.on('error', () => done(null));
-    req.on('timeout', () => { req.destroy(); done(null); });
+      timeout: SILENCE_FOR,
+    }, (res) => {
+      clearTimeout(waiting);
+      if (res.statusCode !== 200) { res.resume(); return finish(null); }
+      finish(res);
+    });
+
+    // An address on a network that does not exist does not refuse — it says
+    // nothing at all, and this computer waits out its own connect timeout,
+    // which on Windows is about twenty seconds. Giving each one a short turn is
+    // the difference between trying three addresses and appearing to hang.
+    const waiting = setTimeout(() => { req.destroy(); finish(null); }, ANSWER_WITHIN);
+
+    req.on('error', () => { clearTimeout(waiting); finish(null); });
+    req.on('timeout', () => { req.destroy(); clearTimeout(waiting); finish(null); });
   });
+}
+
+/**
+ * Ask one of your computers something, at whichever of its addresses answers.
+ *
+ * It used to ask at the first address it had been given and stop there. The
+ * other computer here advertised its virtual switch first and the address it is
+ * really on second, so every question went to a network that exists only inside
+ * that machine — and came back as "could not be reached, even though it says it
+ * is here", which is a sentence that tells you nothing you can act on.
+ *
+ * Ordering them helps and is still only a guess. Trying them all is the fix.
+ */
+async function ask(peer, path) {
+  if (!me) return null;
+  for (const address of peer.addresses ?? []) {
+    const res = await tryOne(peer, address, path);
+    if (!res) continue;
+    // Whichever one answered goes first from now on, so the next question does
+    // not pay for the same dead addresses again. Written down by name rather
+    // than by position, because a shout arrives every few seconds and rebuilds
+    // the list — and a fact kept as "the first one" would be overwritten by it.
+    peer.answers = address;
+    peer.addresses = [address, ...peer.addresses.filter((a) => a !== address)];
+    return res;
+  }
+  return null;
 }
 
 /** What one of your computers is offering right now. */

@@ -904,6 +904,103 @@ The one hard fact, stated plainly because it is the reason this took so long: **
 
 ---
 
+### D-83 `[LOCKED]` — A folder is watched by the name the computer itself uses for it
+
+**Decision.** Before anything is watched, the folder's real name is asked of the computer. Only that name is handed to the watcher. Everywhere else the folder keeps the name the person chose it by, because that name is how a project is recognised again next time.
+
+**Why.** This one ends the manager outright, and **no `try` anywhere can stop it.**
+
+Windows keeps a second, shortened name for any folder whose name is longer than eight characters — `C:\Users\Administrator` is also `C:\Users\ADMINI~1` — and plenty of ordinary things hand out the short one. The watcher underneath Node takes whichever name it is given and then compares it against the name Windows reports changes under, which is always the long one. They do not match, and it stops the process where it stands:
+
+```
+Assertion failed: !_wcsnicmp(filename, dir, dirlen), file src\win\fs-event.c, line 72
+```
+
+That is not an error. It is not thrown, it never reaches `uncaughtException`, and **the last line of defence D-77 installed cannot see it** — the process is simply gone. From the outside it is not one broken button; it is the whole app dying the first time a file changes in your project, which is the exact symptom D-77 was written about and a completely different cause.
+
+Reproduced here in about a second: a folder under the system's own temporary directory, which on this computer is a short path, killed the server on the first press of Open. It took fourteen tests down with it and they had been read as fourteen separate faults.
+
+**The general form, and the reason this is locked.** D-77 said nothing at all is allowed to end this process, and made that true for every failure that travels through JavaScript. This is the first one that does not. A guard written in one language cannot catch a decision made in another, so the only defence is never to hand the lower thing a value it cannot live with. The same applies to a folder reached through a linked or substituted drive.
+
+**Where it was already true and nobody noticed.** The same watcher exists in `core/reference/src/gateway.mjs`, where its `catch` carries a comment explaining that some filesystems refuse recursive watching. That comment was correct and the `catch` was useless for this, for the same reason.
+
+---
+
+### D-84 `[LOCKED]` — A computer that cannot write says so, standing, on the page
+
+**Decision.** Putting this computer's three files into the shared workspace returns the product's one failure shape rather than a bare yes-or-no. The reason is kept, and the Workspace page shows it as a standing sentence for as long as it is true — not only during the two seconds an errand happens to be running.
+
+**Why.** Found on a real second computer, and it had been failing every couple of minutes for hours in complete silence.
+
+Saved work has to be signed with a name. That computer had none set — no name, no email, no settings file at all — so **every single write failed.** The failure was swallowed by a helper whose whole purpose is to swallow failures, and the answer that came back said nothing was wrong. What that produces is not one broken feature:
+
+- the other computer showed *"Only this computer so far"*, because nothing this one wrote ever left;
+- this computer was never reachable on the network, because that was hung on the same answer (D-85);
+- **"Check again now" appeared to do nothing**, because the reply was thrown away unread;
+- and joining said *"press Join again in a moment"* — advice that would never once have worked, offered indefinitely.
+
+Four symptoms, four places to look, one cause, and nothing anywhere said the word "name".
+
+**The two failures need opposite things and must not share a sentence.** Being offline fixes itself and "try again in a moment" is right. Having no name set never fixes itself, and telling somebody to wait for it is a loop with no way out — the same fault as D-80, in a different room. So the question is asked *before* writing rather than after it fails, which is what makes the sentence about a name rather than a shrug.
+
+**What was already there and unused.** Saving a project has guarded this since it was written, with a sentence for it. The workspace, doing the same thing to a different folder, did not. A rule enforced in one of the two places it applies is a rule that will be discovered by the person it fails.
+
+---
+
+### D-85 `[DECIDED]` — Being findable does not wait on having been heard
+
+**Decision.** After joining, this computer starts being findable on the network whenever the workspace is actually here — not only when joining reported success. It is tried again on the ordinary beat, rather than once at startup.
+
+**Why.** Joining can succeed at the part that matters and still answer `ok: false`. The workspace is cloned, the key is readable, everything the network half needs is in place — and the answer is a refusal because what this computer *wrote* has not gone out yet. Hanging findability on that answer left this computer permanently invisible to the other one, with a button on screen saying it was not reachable and nothing saying why.
+
+The startup attempt has the opposite problem: it runs before anybody has joined anything, so on a computer's first day it is the one attempt guaranteed to be too early. Between them, a computer that joined on Tuesday was never findable again until it was told to be, by hand.
+
+**These are two different questions.** *Can the others recognise this computer* and *has this computer managed to write anything down* have different answers, and only the first one decides whether to open the door.
+
+---
+
+### D-86 `[DECIDED]` — A computer is asked at every address it offers, not the first one
+
+**Decision.** Addresses are ranked before they are advertised — ordinary private networks first, the ones Windows invents for virtual machines and the ones an adapter gives itself when nothing answered last. Then every address is tried in turn, and whichever one answers is remembered by name.
+
+**Why.** Measured against the real second computer, which advertised this:
+
+```
+["172.27.240.1", "192.168.0.3", "172.28.176.1"]
+```
+
+The middle one is the only address on the network. The other two are switches Windows makes for its own virtual machines — real addresses of that computer, on networks that exist only inside it. Asking went to the first one and stopped there, so every question went somewhere unreachable and came back as *"could not be reached, even though it says it is here"* — which is a sentence that tells you nothing you can act on, and was in fact describing a computer sitting three feet away with its door open.
+
+**Ranking is a guess; trying them all is the fix.** Both are here, and the order they are in matters: the ranking makes the common case cost one attempt, and the falling-through makes an unusual setup work at all rather than merely work slowly.
+
+**Two details that are load-bearing.** An address on a network that does not exist does not refuse — it says nothing, and this computer waits out its own connect timeout, about twenty seconds. So each address gets a short turn rather than the full wait, which is the difference between trying three and appearing to hang. And the one that answered is written down *by name* rather than by position, because a shout arrives every few seconds and rebuilds the list — a fact kept as "the first one" would be overwritten five seconds later.
+
+---
+
+### D-87 `[DECIDED]` — The Workspace page draws what it knows and reaches out behind it
+
+**Decision.** Opening the Workspace page reads what is already on this computer and answers. Reaching GitHub happens behind the answer, and what it brings back arrives on the next quiet redraw.
+
+**Why.** Measured, three times: **1,500 to 2,200 ms**, on every single press of that tab and again every twenty seconds, because the page reached GitHub before it drew anything. Reading what is here is **2 ms**; the whole route is now about 210 ms, and what remains is asking who you are.
+
+**Why this is allowed and D-63 is not violated.** D-63 forbids buying speed with being wrong about somebody's *work*, and that stands. Nothing on this page is about your work — it is who else is about, what they have, and what was said. Being a few seconds behind another computer is the same trade D-78 already accepted for what is installed here, and it is invalidated by the same thing: anything you press reaches out at once.
+
+**One detail that would have quietly made things worse.** The obvious way to do the reaching-out is to reuse the errand that tells the others what changed here. That one is *due* every time it runs, so putting it on a page that polls every twenty seconds would write a save into the shared workspace three times a minute — making O-9 considerably worse to make a page faster. It fetches every time and writes on the ordinary two-minute beat instead, which is exactly what it cost before.
+
+---
+
+### D-88 `[DECIDED]` — The last step of a folder arriving waits out Windows
+
+**Decision.** Moving a finished folder into place is retried for about a second and a half, on the refusals that pass. Refusals that will not pass are not retried.
+
+**Why.** Found by running the tests six times instead of once. Twice out of six, a folder that had arrived **completely** was reported as not having arrived, because the final rename came back `EPERM`.
+
+Nothing about that refusal concerns this program. A virus scanner reads a file the moment it is written, the search indexer opens the folder, and a folder that was just deleted keeps its name reserved for a moment afterwards. Everything either side of that line already waits — both deletions there ask for five attempts a tenth of a second apart, for exactly this reason. **The one step between them did not, and it is the step where giving up costs the whole transfer.**
+
+**Why this matters more than a flaky test.** Every byte had arrived and the person was told the folder did not come. That is the failure this product is least allowed to have: not a thing going wrong, but the app being wrong about whether it went wrong. It would have happened to somebody moving a real folder at roughly the rate it happened here.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

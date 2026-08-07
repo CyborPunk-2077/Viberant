@@ -60,7 +60,7 @@ const notSetUp = {
 const notSignedIn = {
   ok: false,
   sentence: 'You are not signed in to GitHub on this computer.',
-  action: 'Sign in from the Accounts tab, then try again.',
+  action: 'Sign in with the account button at the bottom left, then try again.',
 };
 
 // ---------------------------------------------------------------------------
@@ -356,7 +356,7 @@ export async function saveOnly(dir, message) {
     return {
       ok: false,
       sentence: 'Saved work has to be signed with a name, and none is set on this computer.',
-      action: 'Put your name and email in the Accounts tab, then save.',
+      action: 'Put your name and email behind the account button at the bottom left, then save.',
     };
   }
 

@@ -68,7 +68,7 @@ export async function look(dir) {
     blurb: 'Free, and it uses the copy of this project you already have on GitHub.',
     here: await github.haveGitHubTool(),
     signedIn: !!(await github.who()),
-    signIn: 'Sign in to GitHub from the Accounts tab.',
+    signIn: 'Sign in to GitHub with the account button at the bottom left.',
     ready: !!picture.shared,
     missing: picture.shared ? null : 'This project needs a copy on GitHub first.',
   });

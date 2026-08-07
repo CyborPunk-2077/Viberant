@@ -17,7 +17,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { watch } from 'node:fs';
+import { watch, realpathSync } from 'node:fs';
 import { stat, readdir } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { existsSync } from 'node:fs';
@@ -119,6 +119,9 @@ export function observedOnly(name, argv) {
  * Recursive watching is one handle per tree on the platform we are building for
  * first, which is the reason this stays cheap when several efforts run at once.
  */
+/** A folder by the name the computer itself uses for it, or the name we were given. */
+const realOf = (where) => { try { return realpathSync.native(where); } catch { return where; } };
+
 export class GroundWatch {
   #where; #onFact; #timer = null; #watcher = null;
   #lastActivity = 0; #touched = new Map(); #silence;
@@ -133,7 +136,13 @@ export class GroundWatch {
   start() {
     this.#lastActivity = Date.now();
     try {
-      this.#watcher = watch(this.#where, { recursive: true }, (_event, name) => {
+      // Watched by the name the computer itself would use for this folder.
+      // Windows keeps a shortened second name for anything longer than eight
+      // characters, and handing that one over ends the whole process from
+      // inside the watcher — not as an error anybody can catch, but as an
+      // assertion that stops it where it stands. The `catch` below cannot help,
+      // because the process is gone before there is anything to catch.
+      this.#watcher = watch(realOf(this.#where), { recursive: true }, (_event, name) => {
         if (!name) return;
         this.#lastActivity = Date.now();
         const rel = String(name);

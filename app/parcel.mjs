@@ -215,10 +215,41 @@ export async function unwrap(stream, into, { onProgress } = {}) {
   }
 
   await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  const { rename } = await import('node:fs/promises');
-  await rename(half, target);
+  await moveIntoPlace(half, target);
 
   return { ok: true, files, bytes, at: target, expected: expecting };
+}
+
+/**
+ * Put the finished folder where it is meant to go, waiting out Windows.
+ *
+ * The last step of a folder arriving is a rename, and on Windows it is the step
+ * most likely to be refused for a reason that has nothing to do with this
+ * program. A virus scanner reads a file the moment it is written; the search
+ * indexer opens the folder; and a folder that was just deleted keeps its name
+ * reserved for a moment afterwards. Any of those comes back as a flat refusal.
+ *
+ * Everything either side of this line already waits — both `rm` calls here ask
+ * for five attempts a tenth of a second apart, for exactly this reason. The
+ * rename between them did not, and it is the one step where giving up costs the
+ * whole transfer: every byte has arrived, and the person is told the folder did
+ * not come. Caught once in three full runs of the tests, which is roughly how
+ * often it would happen to somebody moving a real folder.
+ */
+async function moveIntoPlace(from, to) {
+  const { rename } = await import('node:fs/promises');
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (e) {
+      // Only the ones that pass. A folder that is not there, or a name that
+      // cannot exist, will not become possible by asking again.
+      const passing = e?.code === 'EPERM' || e?.code === 'EACCES' || e?.code === 'EBUSY';
+      if (!passing || attempt >= 20) throw e;
+      await new Promise((r) => setTimeout(r, 50 + attempt * 25));
+    }
+  }
 }
 
 /**

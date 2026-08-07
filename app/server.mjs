@@ -12,7 +12,7 @@
 
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { existsSync, watch } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, basename, extname, normalize } from 'node:path';
@@ -136,12 +136,38 @@ let current = null;
 let pulse = 0;
 let watcher = null;
 
+/**
+ * Watching a folder by the name Windows itself would use for it.
+ *
+ * This one ends the whole manager, and no `try` anywhere can stop it.
+ *
+ * Windows keeps a second, shortened name for any folder whose name is longer
+ * than eight characters — `C:\Users\Administrator` is also `C:\Users\ADMINI~1`,
+ * and plenty of ordinary things hand out the short one. The watcher underneath
+ * Node takes whichever name it is given, then compares it against the name
+ * Windows reports changes under, which is always the long one. They do not
+ * match, and it stops the process where it stands:
+ *
+ *   Assertion failed: !_wcsnicmp(filename, dir, dirlen), file src\win\fs-event.c
+ *
+ * That is not an error anybody can catch. It is not thrown, it does not reach
+ * `uncaughtException`, and the last line of defence D-77 put in cannot see it —
+ * the process is simply gone, and from the outside every button in the app
+ * stops working at once. The same happens to a folder reached through a linked
+ * or substituted drive.
+ *
+ * So the fix is to never hand it a name it cannot live with. Asked of the
+ * computer rather than worked out here, and only for watching — the folder
+ * keeps the name the person chose it by everywhere else, because that name is
+ * how a project is recognised again next time.
+ */
 async function watchProject(dir) {
   watcher?.close();
   watcher = null;
   if (!dir || !(await settings.get('watchFolder'))) return;
   try {
-    watcher = watch(dir, { recursive: true }, (_kind, name) => {
+    const real = await realpath.native(dir).catch(() => dir);
+    watcher = watch(real, { recursive: true }, (_kind, name) => {
       const path = String(name ?? '');
       if (path.includes('node_modules') || path.includes('.git\\objects') || path.includes('.git/objects')) return;
       pulse += 1;
@@ -766,7 +792,11 @@ const routes = {
     if (!state.joined) {
       return { ...state, machines: [], projects: [], said: [], around: [], offers: [], sharingHere: false };
     }
-    const r = await workspace.sync({ machine, name: await myName(), project: current?.name ?? null });
+    // Drawn from what is already here, and the reaching-out happens behind the
+    // answer. This route measured at 1.5-2.2 seconds because it went to GitHub
+    // first, and it is the route every press of the Workspace tab waits on.
+    const r = await workspace.known(machine);
+    listenForTheOthers();
     return {
       ...state,
       ...r,
@@ -780,11 +810,18 @@ const routes = {
   async 'POST /workspace/join'() {
     const name = await myName();
     const r = await workspace.join({ machine, name });
-    if (r.ok) {
+
+    // Both of these are tried whenever the workspace is actually here, rather
+    // than only when joining reported success. Joining can succeed at the part
+    // that matters — the workspace is cloned, the key is readable — and still
+    // answer `ok: false` because what this computer wrote has not gone out yet.
+    // Hanging being findable on that answer left this computer permanently
+    // invisible to the other one, and nothing on any screen said why.
+    if ((await workspace.state()).joined) {
       await workspace.sync({ machine, name, project: current?.name ?? null, sharing: await offering() });
       await localSharing();
     }
-    return { ...r, ...(await workspace.state()) };
+    return { ...r, ...(await workspace.state()), sharingHere: lan.isOn() };
   },
 
   async 'POST /workspace/leave'() {
@@ -1042,8 +1079,33 @@ function tellTheOthers() {
       await workspace.sync({
         machine, name: await myName(), project: current?.name ?? null, sharing: await offering(),
       });
+      // Being findable is tried again here rather than only at startup. The
+      // one at startup runs before anybody has joined anything on a computer's
+      // first day, so it is the one attempt guaranteed to be too early.
+      if (!lan.isOn()) await localSharing();
     }
   })().catch(() => {}).finally(() => { telling = null; });
+}
+
+/**
+ * Hear what the others have said, behind whatever is on screen.
+ *
+ * Deliberately not `tellTheOthers`. Passing what this computer is offering
+ * makes a write due every time, and this runs on every poll of the Workspace
+ * page — which would put a save in that workspace every twenty seconds and make
+ * O-9 considerably worse. Left alone, it fetches every time and writes on the
+ * ordinary two-minute beat, which is what it cost before the page stopped
+ * waiting for it.
+ */
+let listening = null;
+function listenForTheOthers() {
+  if (listening) return;
+  listening = (async () => {
+    if ((await workspace.state()).joined) {
+      await workspace.sync({ machine, name: await myName(), project: current?.name ?? null });
+      if (!lan.isOn()) await localSharing();
+    }
+  })().catch(() => {}).finally(() => { listening = null; });
 }
 
 /** Which entries a press was about: a whole card's worth, or just one. */

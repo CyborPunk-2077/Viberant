@@ -2,8 +2,10 @@
 
 *What is done and what is left, in plain language. Updated every session.*
 
-**Last updated:** 7 August 2026
-**Tests:** 249 passing on Windows — 107 in the core, 142 in the app
+**Last updated:** 8 August 2026
+**Tests:** 252 passing on Windows, six runs in a row. Three of those are the ones
+that never ran at all: the file holding them was killing the process before it
+could report anything (D-83).
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 > **Read this first if you are running the installed copy.** Everything below was
@@ -61,6 +63,50 @@ A bar across the top with the mark on it, five places on it, and your GitHub acc
 **Pick up where you left off.** What you have open in a project is one card per app, however many times you opened it. Press one and that app opens again *carrying on the conversation you were having* — Claude Code, Codex and OpenCode each have their own word for it and the manager knows which. Apps with no such word open fresh and say so.
 
 **It notices when a folder changes underneath it.**
+
+---
+
+## The second computer, at last — and what it found
+
+**The thing that had never been tried has now been tried, and it did not work.**
+A second computer joined, and everything about the shared workspace was broken
+from that moment. Six faults, and the first one caused four of them.
+
+**That computer had no name set for signing work, so nothing it wrote ever left
+it.** Not once, in hours of trying, every couple of minutes. The failure was
+swallowed by the one helper whose entire job is swallowing failures, and every
+answer said nothing was wrong. What it produced was not one broken feature: the
+other computer showed *"Only this computer so far"*; this one was never
+reachable on the network; **"Check again now" appeared to do nothing**, because
+the reply was thrown away unread; and joining kept saying *press Join again in a
+moment* — advice that could never once have worked. Four symptoms, one cause,
+and nothing anywhere said the word "name". D-84, and D-85 for the network half.
+
+**Asking the other computer anything went to a network that exists only inside
+it.** It advertised three addresses and the real one was in the middle; we asked
+the first and stopped. That is why the folder it was offering never appeared
+here. Addresses are now ranked and then all tried, with the one that answers
+remembered. D-86.
+
+**The whole manager was being killed by watching a folder.** Not an error — an
+assertion inside the watcher, in another language, which ends the process where
+it stands. It happens when the folder's name is handed over in the shortened
+form Windows keeps for anything longer than eight characters. **The last line of
+defence D-77 put in cannot see this one**, and it took fourteen tests down with
+it, which had been read as fourteen separate faults. D-83.
+
+**A folder that arrived completely was reported as not having arrived.** Twice
+in six runs. The final step of putting it in place is a rename, and Windows
+refuses that one at random while a scanner or the indexer holds the folder.
+Everything either side of it already waited; that step did not. D-88.
+
+**Opening the Workspace tab took between 1.5 and 2.2 seconds, every time,** and
+again every twenty seconds, because it reached GitHub before drawing anything.
+Now about 210 ms. D-87.
+
+**Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
+Accounts tab" — there is no Accounts tab. An action naming a place that does not
+exist is a dead end with a helpful tone.
 
 ---
 
@@ -139,7 +185,12 @@ when the two values are wrong. What has not happened is a real client ID and a
 real account picker, because that needs an application registered in a Google
 account and only you can make one.
 
-**The other device.** The code is now on GitHub and the installer is built. Everything on this computer is verified — the workspace is joined, the key is in place, this machine is findable, offering and taking a folder are proved end to end against the real network code. What has not happened is a **second** computer. That is the next thing to do and it needs the installer, not more code.
+**The other device — done, and it was worth every minute.** A second computer
+joined and broke six things, all of them listed above and all of them fixed.
+Both computers now hear each other on the network. What still has to happen on
+the second one is the ordinary thing: **set a name for saved work.** Nothing it
+writes can leave until that is done, and it now says so on the page instead of
+failing in silence.
 
 **Signing in to an AI app has not been checked against a real provider.** The manager opens a terminal and runs that app's own sign-in. Whether the app then ends up signed in exactly as it would have otherwise is believed, not verified. Same family of unknown as account switching, which is still untried against real Claude Code or Codex — **try that with a throwaway account before you trust it.**
 
@@ -179,8 +230,29 @@ account and only you can make one.
 
 ---
 
+**A guard written in one language cannot catch a decision made in another.** D-77
+made "nothing may end this manager" true for every failure that travels through
+JavaScript. The watcher's assertion does not travel through JavaScript, so the
+net was never in its path. The only defence against that class is to never hand
+the lower thing a value it cannot live with — which means knowing what it cannot
+live with, which means finding out the hard way at least once.
+
+**Six runs of the tests say things one run does not.** Two of six reported a
+folder as having failed to arrive when every byte of it was there. One run looks
+like a pass; six looks like a bug that would have reached somebody.
+
+**Four sentences named a place that had not existed for several decisions.**
+Nothing checks that an action is pointing at something real, and nothing can,
+short of somebody reading them — which is what the vocabulary test does for
+words and could just as easily do for places.
+
+---
+
 ## The one thing I still need from you
 
-**Put the installer on the second device and press Join.** That is the only untested half of the thing you asked for, and no test here can reach it.
+**On the second computer, set a name for saved work** — the account button at the
+bottom left, then your name and email. Nothing that computer writes can leave it
+until that is done. Everything else about the two of them meeting is fixed and
+proved; this is the one part that is yours to fill in, because it is your name.
 
 After that: use it for a week and tell me where it annoys you.

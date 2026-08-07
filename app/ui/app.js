@@ -2095,6 +2095,9 @@ SCREENS.workspace = async () => {
       Folders move straight between them across this network — never through GitHub.
       ${w.mismatch ? '<b style="color:var(--attention)">You are signed in as somebody else right now, so this is out of step.</b>' : ''}</p>
     ${saidHtml()}
+    ${w.trouble ? `<div class="said bad"><b>${esc(w.trouble.sentence)}</b>
+      <span>${esc(w.trouble.action ?? '')}</span>
+      <span>Until this is fixed, your other computers cannot see this one at all.</span></div>` : ''}
 
     <div class="tally">
       <div class="one"><b>${known.length}</b><span>computer${known.length === 1 ? '' : 's'} in all</span></div>
@@ -2220,7 +2223,18 @@ SCREENS.workspace = async () => {
     if (!r.ok) say(r);
     draw();
   };
-  $('#w-refresh').onclick = async () => { await post('/workspace/refresh'); draw(); };
+  // Acknowledged before anything is asked of the manager, per D-62 — this
+  // reaches GitHub and takes seconds, and it used to look untouched for all of
+  // them. What came back used to be thrown away too, so a computer that could
+  // not write a word of what it knew pressed this and was told nothing at all.
+  $('#w-refresh').onclick = async () => {
+    const b = $('#w-refresh');
+    b.disabled = true;
+    b.textContent = 'Checking…';
+    const r = await post('/workspace/refresh');
+    say(r.ok === false ? r : (r.trouble ?? { ok: true, sentence: 'Checked. Everything this computer knows has gone out.' }));
+    draw();
+  };
   $('#w-share-on')?.addEventListener('click', async () => { say(await post('/local/on')); await refreshMe(); draw(); });
   $('#w-rename')?.addEventListener('click', async () => {
     const name = await ask({

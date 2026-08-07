@@ -58,6 +58,12 @@ const HEARTBEAT = 2 * 60 * 1000;
 const git = (...args) => run('git', args, { cwd: HERE, maxBuffer: 32 * 1024 * 1024 });
 
 let lastBeat = 0;
+/**
+ * The last reason this computer could not write, kept so the page can say it
+ * even on the reads that do no work. A fault that only appears on the two
+ * seconds an errand happens to be running is a fault nobody sees.
+ */
+let lastTrouble = null;
 
 // ---------------------------------------------------------------------------
 // Setting it up
@@ -115,7 +121,7 @@ export async function join({ machine, name = null } = {}) {
     return {
       ok: false,
       sentence: 'You are not signed in to GitHub, so there is nowhere for your computers to meet.',
-      action: 'Sign in to GitHub from the Accounts tab, then join.',
+      action: 'Sign in to GitHub with the account button at the bottom left, then join.',
     };
   }
 
@@ -168,11 +174,18 @@ export async function join({ machine, name = null } = {}) {
   if (refreshed.reached === false) {
     // Joined here, but the others cannot see it yet. Saying "joined" and
     // stopping would be true and misleading, which is the worse kind of true.
+    //
+    // It says which dead end it is, rather than always blaming the network.
+    // Telling somebody with no name set to try again in a moment sends them
+    // round a loop with no way out of it — the same fault as D-80, in a
+    // different room.
     return {
       ...refreshed,
       ok: false,
-      sentence: 'This computer joined, but what it wrote has not reached GitHub yet.',
-      action: 'Press Join again in a moment — it will send what is waiting.',
+      ...(refreshed.trouble ?? {
+        sentence: 'This computer joined, but what it wrote has not reached GitHub yet.',
+        action: 'Press Join again in a moment — it will send what is waiting.',
+      }),
     };
   }
   return { ok: true, sentence: 'This computer has joined your shared workspace.', ...refreshed };
@@ -211,7 +224,7 @@ export async function secret() {
   const made = randomBytes(32).toString('hex');
   await writeFile(at, `${made}\n`, 'utf8');
   const kept = await push('Set the key this workspace is recognised by');
-  if (!kept) return null;
+  if (!kept.ok) return null;
 
   // Somebody else may have written one first and won the race; theirs wins.
   const settled = await quiet(() => readFile(at, 'utf8'), made);
@@ -240,22 +253,65 @@ async function pull() {
   return !!ok;
 }
 
-/** Put this computer's own three files back, and say why. */
+/**
+ * Whether this computer can sign what it writes.
+ *
+ * Asked of the thing that actually refuses — the same question saving asks
+ * itself before it runs — so a name set for this folder alone counts exactly as
+ * much as one set for the whole computer. Reading the setting directly would
+ * answer a narrower question than the one that matters.
+ */
+const canSign = async () => !!(await quiet(() => git('var', 'GIT_AUTHOR_IDENT')));
+
+/**
+ * Put this computer's own three files back, and say why.
+ *
+ * Returns the product's one failure shape rather than a bare yes-or-no, because
+ * this is where a whole afternoon went. A computer with no name set cannot keep
+ * anything it writes, so nothing it wrote ever left — it never appeared to the
+ * other computer, it was never reachable on the network, and every reply it got
+ * said nothing at all was wrong. The failure was real, repeated every couple of
+ * minutes for hours, and completely silent.
+ *
+ * The two ways this fails need opposite things from whoever is reading. Being
+ * offline fixes itself; having no name never does, and waiting for it to is the
+ * worst possible advice.
+ */
 async function push(why) {
   const added = await quiet(() => git('add', '--all'));
-  if (!added) return false;
+  if (!added) {
+    return { ok: false, sentence: 'What this computer wanted to write could not be read back.', action: 'Try again in a moment.' };
+  }
 
   const pending = await quiet(() => git('status', '--porcelain'));
-  if (!pending?.stdout.trim()) return true;
+  if (!pending?.stdout.trim()) return { ok: true };
+
+  // Asked before writing rather than after it fails, so the answer is a sentence
+  // about a name rather than a shrug about something going wrong.
+  if (!(await canSign())) {
+    return {
+      ok: false,
+      sentence: 'What this computer writes has to be signed with a name, and none is set here.',
+      action: 'Put your name and email behind the account button at the bottom left, then check again.',
+    };
+  }
 
   const saved = await quiet(() => git('commit', '--quiet', '--no-verify', '-m', why));
-  if (!saved) return false;
+  if (!saved) {
+    return { ok: false, sentence: 'What this computer wrote could not be kept.', action: 'Try again in a moment.' };
+  }
 
-  if (await quiet(() => git('push', '--quiet'))) return true;
+  if (await quiet(() => git('push', '--quiet'))) return { ok: true };
 
   // Somebody else got there first. Take theirs, put ours on top, try once more.
   await pull();
-  return !!(await quiet(() => git('push', '--quiet')));
+  if (await quiet(() => git('push', '--quiet'))) return { ok: true };
+
+  return {
+    ok: false,
+    sentence: 'What this computer wrote has not reached GitHub.',
+    action: 'Check you are online — it will go next time.',
+  };
 }
 
 /**
@@ -274,6 +330,7 @@ export async function sync({ machine, name = null, project = null, sharing = nul
   const me = thisMachine(machine, name || (await marker())?.name);
   const due = force || sharing !== null || Date.now() - lastBeat > HEARTBEAT;
   let reached = null;
+  let trouble = null;
 
   if (due) {
     await mkdir(path.join(HERE, 'machines'), { recursive: true });
@@ -287,11 +344,36 @@ export async function sync({ machine, name = null, project = null, sharing = nul
         JSON.stringify(sharing, null, 2), 'utf8');
     }
 
-    reached = await push(sharing ? `${me.name} changed what it is offering` : `${me.name} is here`);
+    const sent = await push(sharing ? `${me.name} changed what it is offering` : `${me.name} is here`);
+    reached = sent.ok;
+    // Carried out whole rather than reduced to a no. The Workspace page draws
+    // this as a standing sentence, because a computer that cannot write is a
+    // computer the others will never see, and nothing else on that page says so.
+    trouble = sent.ok ? null : { sentence: sent.sentence, action: sent.action };
+    lastTrouble = trouble;
     lastBeat = Date.now();
   }
 
-  return { ok: true, reached, ...(await read(machine)) };
+  return { ok: true, reached, trouble: trouble ?? lastTrouble, ...(await read(machine)) };
+}
+
+/**
+ * The picture as it already is on this computer, with nothing asked of the
+ * network.
+ *
+ * Opening the Workspace page used to reach GitHub before it drew anything,
+ * which measured at 1.5 to 2.2 seconds every single time you pressed the tab.
+ * Nothing on that page is about your own work — it is who else is about, what
+ * they have, and what was said — so drawing what is already known and fetching
+ * behind it costs nobody anything true. D-63 forbids buying speed with being
+ * wrong about somebody's work; this buys it with being a few seconds behind
+ * another computer, which is the same trade D-78 already accepted.
+ */
+export async function known(machine) {
+  if (!existsSync(path.join(HERE, '.git'))) {
+    return { ok: false, sentence: 'This computer is not in a shared workspace yet.', action: 'Join one first.' };
+  }
+  return { ok: true, reached: null, trouble: lastTrouble, ...(await read(machine)) };
 }
 
 /** Everything in the workspace, folded together. */
@@ -390,15 +472,11 @@ export async function say({ machine, name = null, text }) {
   await appendFile(path.join(HERE, 'said', `${machine}.jsonl`),
     `${JSON.stringify({ at: Date.now(), fromName: name || hostname(), text: words })}\n`, 'utf8');
 
+  // Kept here either way, so nothing anybody typed is lost — but the sentence
+  // says which of the two happened, because "written down" and "your other
+  // computer will see it" are not the same claim.
   const sent = await push(`${name || hostname()} said something`);
-  if (!sent) {
-    return {
-      ok: false,
-      sentence: 'That was written down here but has not reached your other computers.',
-      action: 'Check you are online — it will go next time.',
-      ...(await read(machine)),
-    };
-  }
+  if (!sent.ok) return { ...(await read(machine)), ...sent };
   return { ok: true, ...(await read(machine)) };
 }
 
