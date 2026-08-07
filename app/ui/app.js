@@ -727,6 +727,62 @@ addEventListener('keydown', (e) => {
 // is the rule that keeps a tooltip a convenience rather than a hiding place.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// A menu where the pointer is
+//
+// The same items a row's own overflow button opens, so right-clicking is a
+// shortcut for people who expect it and never the only way to reach anything.
+// A menu that exists only on right-click is a menu most people never find.
+// ---------------------------------------------------------------------------
+
+let ctxEl = null;
+
+const closeCtx = () => { ctxEl?.remove(); ctxEl = null; };
+
+/**
+ * @param {{x:number,y:number}} where  In window coordinates.
+ * @param {Array<{what:string,run:Function,danger?:boolean}|'-'>} items
+ */
+function menuAt(where, items) {
+  closeCtx();
+  closePanels();
+
+  ctxEl = document.createElement('div');
+  ctxEl.className = 'panel';
+  ctxEl.setAttribute('role', 'menu');
+  ctxEl.style.position = 'fixed';
+  ctxEl.innerHTML = items.map((one, i) => (one === '-'
+    ? '<hr>'
+    : `<button class="pick ${one.danger ? 'danger' : ''}" role="menuitem" data-ctx="${i}">
+         <span class="grow">${esc(one.what)}</span>
+       </button>`)).join('');
+  document.body.appendChild(ctxEl);
+
+  // Measured at the moment of opening and placed where there is actually room,
+  // which is D-57 — the answer is only knowable now.
+  const room = ctxEl.getBoundingClientRect();
+  ctxEl.style.left = `${Math.max(8, Math.min(where.x, innerWidth - room.width - 8))}px`;
+  ctxEl.style.top = `${Math.max(8, Math.min(where.y, innerHeight - room.height - 8))}px`;
+
+  const buttons = [...ctxEl.querySelectorAll('[data-ctx]')];
+  for (const b of buttons) {
+    b.onclick = () => { closeCtx(); items[Number(b.dataset.ctx)].run(); };
+  }
+  buttons[0]?.focus();
+
+  ctxEl.onkeydown = (e) => {
+    const n = buttons.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); buttons[Math.min(n + 1, buttons.length - 1)]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); buttons[Math.max(n - 1, 0)]?.focus(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeCtx(); }
+  };
+}
+
+addEventListener('pointerdown', (e) => {
+  if (ctxEl && !ctxEl.contains(e.target)) closeCtx();
+}, true);
+addEventListener('scroll', closeCtx, { passive: true, capture: true });
+
 let tipTimer = null;
 let tipEl = null;
 
@@ -779,9 +835,52 @@ addEventListener('scroll', hideTip, { passive: true, capture: true });
  */
 let lastDrawn = '';
 
+/**
+ * The shape of what is coming, while it is still coming.
+ *
+ * Every screen here asks the manager something before it can draw, and until
+ * now it drew nothing at all while it waited — so pressing a place did visibly
+ * nothing for as long as that took. The Workspace tab was the worst of them at
+ * two seconds (D-87 fixed the cause) but every one of them has a moment of it,
+ * and a moment of nothing reads as the app being stuck rather than busy.
+ *
+ * Held back by a beat, deliberately. Anything that answers quickly should never
+ * flash a skeleton on the way — that is a flicker being added in the name of
+ * removing one. Below the threshold you see the page appear; above it you see
+ * the shape of the page and then the page, which is the difference between
+ * waiting and wondering.
+ */
+const HOLD_BACK = 120;
+
+const skeleton = () => `
+  <div class="skel" aria-hidden="true">
+    <div class="line" style="width:11rem;height:18px;margin:0 0 .6rem"></div>
+    <div class="line" style="width:24rem;max-width:100%;height:11px;margin:0 0 2rem"></div>
+    <div class="lane">
+      ${('<div class="row-skel"><div class="line" style="flex:1;max-width:16rem"></div>'
+        + '<div class="line" style="width:4rem"></div></div>').repeat(4)}
+    </div>
+  </div>`;
+
 async function draw({ quietly = false } = {}) {
   if (!quietly) {
-    await SCREENS[at.tab]?.();
+    // Only if it is actually slow. Cleared the moment the real page is ready,
+    // whether that is before or after this fires.
+    // Compared against what was there when the wait began, so a screen that
+    // draws in two stages is never overwritten by a skeleton arriving late.
+    let drawn = false;
+    const before = view.innerHTML;
+    const waiting = setTimeout(() => {
+      if (!drawn && view.innerHTML === before) view.innerHTML = skeleton();
+    }, HOLD_BACK);
+
+    try {
+      await SCREENS[at.tab]?.();
+    } finally {
+      drawn = true;
+      clearTimeout(waiting);
+    }
+
     lastDrawn = view.innerHTML;
     paintNews();
     return;
@@ -1022,8 +1121,16 @@ SCREENS.projects = async () => {
   };
   $('#p-cloud')?.addEventListener('click', fromGitHub);
 
+  lastMarks = d.marks;
+
   for (const el of document.querySelectorAll('[data-open]')) {
     el.onclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
+    // The same items the overflow button opens. Never the only way to reach them.
+    el.oncontextmenu = (e) => {
+      e.preventDefault();
+      const one = d.projects.find((p) => p.path === el.dataset.open);
+      menuAt({ x: e.clientX, y: e.clientY }, moreForProject(el.dataset.open, !!one?.private));
+    };
   }
   if (me.github) {
     drawCloud(d.projects);
@@ -1035,13 +1142,24 @@ SCREENS.projects = async () => {
   }
   for (const b of document.querySelectorAll('[data-mark]')) b.onclick = () => markSheet(b.dataset.mark, d.marks);
   for (const b of document.querySelectorAll('[data-look]')) b.onclick = () => statusSheet(b.dataset.look);
-  for (const b of document.querySelectorAll('[data-private]')) {
-    b.onclick = async () => {
-      say(await post('/projects/private', { path: b.dataset.private, private: b.dataset.now !== '1' }));
-      draw();
+  for (const b of document.querySelectorAll('[data-more]')) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const room = b.getBoundingClientRect();
+      menuAt({ x: room.right - 200, y: room.bottom + 6 },
+        moreForProject(b.dataset.more, b.dataset.now === '1'));
     };
   }
 };
+
+/**
+ * The four marks, kept from the last time the list was drawn.
+ *
+ * The sheet that sets one is now reached from a menu built outside the function
+ * that has the list to hand, and passing it down through three layers to be
+ * used once is worse than remembering it here.
+ */
+let lastMarks = [];
 
 /**
  * One project, with the four things worth knowing at a glance: what state it is
@@ -1068,13 +1186,34 @@ function projectSlab(p) {
       </div>
       <div class="acts">
         <button class="go small" data-open-now="${esc(p.path)}">Open</button>
-        <button class="small" data-look="${esc(p.path)}">Contents</button>
-        <button class="small" data-mark="${esc(p.path)}">Status</button>
-        <button class="quiet small" data-private="${esc(p.path)}" data-now="${p.private ? '1' : '0'}">
-          ${p.private ? 'let my computers see it' : 'keep it private'}</button>
+        <button class="small icon" data-more="${esc(p.path)}" data-now="${p.private ? '1' : '0'}"
+          data-tip="More for this project" aria-label="More for ${esc(p.name)}">⋯</button>
       </div>
     </div>`;
 }
+
+/**
+ * Everything else a project row can do.
+ *
+ * There were four buttons on every row, competing with each other and with the
+ * four facts the row exists to show. Only one of them is what you came for —
+ * Open — and the rest are things you do occasionally to one project. One
+ * primary action and an overflow says that; four equal buttons says they are
+ * four equally likely things, which is not true of any of them.
+ */
+const moreForProject = (path, isPrivate) => [
+  { what: 'Open it', run: () => openProject(path) },
+  { what: 'What is in it', run: () => statusSheet(path) },
+  { what: 'Where you have got to', run: () => markSheet(path, lastMarks) },
+  '-',
+  {
+    what: isPrivate ? 'Let my other computers see it' : 'Keep it private to this computer',
+    run: async () => {
+      say(await post('/projects/private', { path, private: !isPrivate }));
+      draw();
+    },
+  },
+];
 
 /**
  * The projects on your GitHub account that are not on this computer yet.

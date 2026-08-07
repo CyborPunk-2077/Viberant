@@ -1057,6 +1057,28 @@ This is the single loudest signal of a hurriedly-styled interface, and removing 
 
 ---
 
+### D-94 `[DECIDED]` — A wait shows the shape of what is coming, after a beat
+
+**Decision.** A screen that has not drawn within 120 ms shows the shape of itself — a heading, a line, and four rows — until it has. Under that, nothing.
+
+**Why.** Every screen here asks the manager something before it can draw, and until now it drew *nothing at all* while it waited. Pressing a place did visibly nothing for as long as that took, which is the reported complaint: not that the app is slow, but that it feels stuck. Those are different faults and this is the second one — D-62 already established that speed and the appearance of speed both have to be fixed, and fixed separately.
+
+**The beat is the load-bearing part.** Showing a skeleton immediately means every fast screen flashes one on the way past, which is a flicker introduced in the name of removing one — precisely what D-68 spent a session undoing. Below the threshold you see the page appear. Above it you see the shape and then the page, which is the difference between waiting and wondering.
+
+**And it is compared, not assumed.** The skeleton only lands if what is on screen has not changed since the wait began, so a screen that draws in two stages is never overwritten by a skeleton arriving late behind it.
+
+---
+
+### D-95 `[DECIDED]` — One action on a row, and everything else behind one more press
+
+**Decision.** A project row carries Open and an overflow. The overflow opens the same list as right-clicking the row.
+
+**Why.** There were four buttons on every row, competing with each other and with the four facts the row exists to show. Only one of them is what anybody came for. Four equal buttons is a claim that they are four equally likely things to want, and that is not true of any of them.
+
+**The rule attached to right-click, which matters more than the feature.** It is never the only way to reach anything. A menu that exists only on right-click is a menu most people never find, so it is a shortcut for those who expect one and nothing else. The same items, in the same order, are one visible press away.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
