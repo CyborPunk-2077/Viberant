@@ -390,6 +390,23 @@ export async function publish(dir, { message, makeIfMissing = true, private: isP
     }
   }
 
+  /*
+   * Make the sending use the account this app says you are.
+   *
+   * Being signed in to the GitHub helper does not decide who `git push`
+   * authenticates as — that goes through whatever credential helper this
+   * computer keeps, which on Windows is a store that may hold a different
+   * account from a different day. That is the whole of the reported fault: the
+   * app said one account and the work went to another.
+   *
+   * Set for this folder only, so nothing outside the project is changed, and
+   * cleared first because credential helpers are a list and whatever was
+   * already there is asked first (D-42). No token is written anywhere: the
+   * helper is asked for one each time, by the account that is active now.
+   */
+  await git(dir, 'config', '--local', '--replace-all', 'credential.helper', '').catch(() => {});
+  await git(dir, 'config', '--local', '--add', 'credential.helper', '!gh auth git-credential').catch(() => {});
+
   try {
     const branch = (await git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim();
     await git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch);

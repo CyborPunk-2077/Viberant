@@ -22,9 +22,10 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
-import { join, basename } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { join, basename, resolve } from 'node:path';
 import { platform } from 'node:process';
+import * as workspace from './workspace.mjs';
 
 const run = promisify(execFile);
 const WINDOWS = platform === 'win32';
@@ -91,12 +92,155 @@ export async function who({ fresh = false } = {}) {
   return name;
 }
 
+// ---------------------------------------------------------------------------
+// Who Viberant is, and where a project actually sends
+//
+// These two questions were being answered in different places by different
+// means, and the gap between them is a whole class of fault: the app says one
+// account and the send uses another.
+//
+// **They are genuinely two identity systems.** `gh` has an active account.
+// `git push` does not use it — it authenticates through whatever credential
+// helper this computer has, which on Windows is usually the credential store
+// and may hold a completely different account from a completely different day.
+// D-42 found this once already, for the case where the store held nothing. The
+// worse case is the one where it holds somebody else.
+//
+// So: one function that says who Viberant is, one that says where a project is
+// bound, and one that holds the two together and refuses to guess when they
+// disagree.
+// ---------------------------------------------------------------------------
+
 /**
- * Every GitHub account signed in on this computer, and which one is in use.
+ * Who Viberant is on GitHub. The single source, for everything.
  *
- * Read out of the helper's own account list rather than kept here, so it can
- * never drift from the truth.
+ * Nothing else in this product may work out the account for itself, and nothing
+ * anywhere may assume a name.
  */
+export async function session({ fresh = false } = {}) {
+  if (!(await haveGitHubTool())) {
+    return { tool: false, signedIn: false, login: null, id: null };
+  }
+  const login = await who({ fresh });
+  if (!login) return { tool: true, signedIn: false, login: null, id: null };
+
+  const id = await quiet(() => gh(['api', 'user', '--jq', '.id']));
+  return { tool: true, signedIn: true, login, id: id ? id.stdout.trim() || null : null };
+}
+
+/** A folder by the name the computer itself uses for it. */
+const realOf = (at) => { try { return realpathSync.native(at); } catch { return at; } };
+
+/** owner/repo out of any of the shapes a GitHub address comes in. */
+export function ownerAndRepo(remote) {
+  const s = String(remote ?? '').trim();
+  if (!s) return null;
+  const m = s.match(/github\.com[/:]+([^/]+)\/([^/]+?)(?:\.git)?\/?$/i);
+  return m ? { owner: m[1], repo: m[2] } : null;
+}
+
+/**
+ * What a project is bound to, read from the project itself.
+ *
+ * The binding belongs to the project and is discovered from it — never from
+ * settings, never from the workspace, never from what was bound last time.
+ *
+ * `gitRoot` is asked for separately from the folder somebody chose, because
+ * those are different things: a project folder can sit inside a larger one that
+ * keeps the history, and sending from the folder would send the larger thing.
+ */
+export async function bindingOf(dir) {
+  const at = resolve(dir);
+  const base = {
+    purpose: 'project', localRoot: at, gitRoot: null, bound: false,
+    remote: null, owner: null, repo: null, branch: null, url: null,
+    isWorkspace: false,
+  };
+  if (!existsSync(at)) return base;
+
+  const top = await quiet(() => git(at, 'rev-parse', '--show-toplevel'));
+  if (!top) return base;
+  // Asked of the computer, so this and anything it is compared against are the
+  // same name for the same folder. Windows keeps two, and these two values
+  // arrive by different routes — see `sameNameAs` in workspace.mjs.
+  base.gitRoot = realOf(resolve(top.stdout.trim()));
+
+  // The one thing that must never happen. A project whose history turns out to
+  // be the workspace's history is not a project — it is somebody's work sitting
+  // inside this product's plumbing, and sending it would put source code into
+  // a folder that exists to hold three small files about which computers are
+  // about. Answered by path rather than by name, because the names are one
+  // hyphen apart.
+  if (workspace.isInsideWorkspace(base.gitRoot)) {
+    return { ...base, isWorkspace: true, purpose: 'workspace' };
+  }
+
+  const remote = await quiet(() => git(base.gitRoot, 'remote', 'get-url', 'origin'));
+  const url = remote ? remote.stdout.trim() : '';
+  const named = ownerAndRepo(url);
+
+  const branch = await quiet(() => git(base.gitRoot, 'rev-parse', '--abbrev-ref', 'HEAD'));
+
+  return {
+    ...base,
+    bound: !!named,
+    remote: url || null,
+    owner: named?.owner ?? null,
+    repo: named?.repo ?? null,
+    branch: branch ? branch.stdout.trim() : null,
+    url: url ? webAddress(url) : null,
+  };
+}
+
+/**
+ * Where sending this project would go, and whether that is somewhere the
+ * account Viberant is signed in as actually owns.
+ *
+ * Called before anything leaves the computer. It never picks for you: when the
+ * project belongs to one account and Viberant is signed in as another, that is
+ * a fact to be shown, not a thing to resolve quietly in either direction.
+ * Silently sending somebody's work to an account they were not thinking about
+ * is the worst outcome available here, and it is the one that happens if this
+ * function decides to be helpful.
+ */
+export async function destinationFor(dir) {
+  const [now, binding] = await Promise.all([session(), bindingOf(dir)]);
+
+  if (!now.tool) return { ok: false, ...notSetUp, session: now, binding };
+  if (!now.signedIn) return { ok: false, ...notSignedIn, session: now, binding };
+
+  if (binding.isWorkspace) {
+    return {
+      ok: false, session: now, binding,
+      sentence: 'That folder is the one this manager uses to let your computers find each other, not a project.',
+      action: 'Pick the folder your work is actually in.',
+    };
+  }
+
+  if (!binding.gitRoot) {
+    return {
+      ok: false, session: now, binding,
+      sentence: 'This folder does not keep a history yet, so there is nothing to send.',
+      action: 'Save it once first.',
+    };
+  }
+
+  if (!binding.bound) {
+    return { ok: true, needsRepo: true, session: now, binding };
+  }
+
+  const mismatch = binding.owner.toLowerCase() !== now.login.toLowerCase();
+  return {
+    ok: !mismatch,
+    mismatch,
+    session: now,
+    binding,
+    ...(mismatch ? {
+      sentence: `This project belongs to ${binding.owner} on GitHub, and you are signed in here as ${now.login}.`,
+      action: 'Sign in as that account, or make this project a copy of its own on the account you are using.',
+    } : {}),
+  };
+}
 export async function accounts() {
   if (!(await haveGitHubTool())) return { here: false, accounts: [], active: null };
 

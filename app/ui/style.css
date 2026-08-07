@@ -1080,6 +1080,36 @@ h2:first-of-type { margin-top: 0; }
 .find:focus-within { border-color: var(--vibe-a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vibe-a) 16%, transparent); }
 .find .mark { color: var(--dim); flex: none; }
 
+/*
+ * Where work is about to go, said next to the button that sends it.
+ *
+ * Quiet by default because most days it is simply correct, and loud only when
+ * the project belongs somewhere other than the account you are signed in as —
+ * which is the one case where somebody needs to stop and look.
+ */
+.going {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-meta);
+  color: var(--faint);
+  min-width: 0;
+}
+.going b { color: var(--quiet); font-weight: var(--w-mid); }
+.going a { color: var(--vibe-b); text-decoration: none; }
+.going a:hover { text-decoration: underline; }
+.going .acts { display: flex; gap: var(--s2); margin-top: var(--s2); }
+.going span { overflow-wrap: anywhere; }
+
+.going.bad {
+  border-top-color: var(--trouble);
+  color: var(--quiet);
+}
+.going.bad b { color: var(--ink); font-weight: var(--w-semi); display: block; }
+
 /* ------------------------------------------------------------------------- */
 /* Nothing here yet                                                           */
 /* ------------------------------------------------------------------------- */

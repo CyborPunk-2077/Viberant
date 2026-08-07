@@ -1658,9 +1658,10 @@ async function drawOpenProject() {
       <label class="field">What did you do?</label>
       <div class="bar" style="margin:0">
         <input id="msg" placeholder="Made the sign-in page work" style="flex:1">
-        <button class="go" id="pub">Save and send to GitHub</button>
+        <button class="go" id="pub">Save and send</button>
         <button id="more">More…</button>
       </div>
+      <div id="going" class="going"></div>
     </div>
     ${saidHtml()}
 
@@ -1699,6 +1700,7 @@ async function drawOpenProject() {
   $('#back').onclick = async () => { at.inside = false; await post('/close'); await refreshMe(); draw(); };
   $('#pub').onclick = saveAndSend;
   $('#msg').onkeydown = (e) => { if (e.key === 'Enter') saveAndSend(); };
+  showWhereItGoes();
   $('#more').onclick = () => gitHubSheet(p);
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');
@@ -1791,11 +1793,75 @@ async function openAgain(assistant) {
   draw();
 }
 
+/**
+ * Where this project's work would go, said before you press anything.
+ *
+ * The reported fault was work arriving on an account nobody chose. Half the fix
+ * is refusing to send when the project and the signed-in account disagree; the
+ * other half is this — the destination on screen, next to the button, so a
+ * wrong one is obvious while it is still cheap to notice.
+ *
+ * Fetched after the page is drawn rather than before, because it asks GitHub
+ * who you are and nothing else on this screen should wait for that.
+ */
+let goingTo = null;
+
+async function showWhereItGoes() {
+  const box = $('#going');
+  if (!box) return;
+
+  const d = await get('/project/destination');
+  goingTo = d;
+  if (!box.isConnected) return;
+
+  if (d.binding?.isWorkspace) {
+    box.className = 'going bad';
+    box.innerHTML = `<b>${esc(d.sentence)}</b><span>${esc(d.action)}</span>`;
+    return;
+  }
+  if (d.mismatch) {
+    box.className = 'going bad';
+    box.innerHTML = `
+      <b>${esc(d.sentence)}</b>
+      <span>${esc(d.action)}</span>
+      <span class="acts">
+        <button class="small" id="going-switch">Switch to ${esc(d.binding.owner)}</button>
+      </span>`;
+    $('#going-switch').onclick = () => openWhoPanel();
+    $('#pub').disabled = true;
+    return;
+  }
+  if (d.needsRepo) {
+    box.className = 'going';
+    box.innerHTML = `<span>Not on GitHub yet. Sending makes a copy on
+      <b>${esc(d.session.login)}</b>, private, called <b>${esc(tail(d.binding.localRoot))}</b>.</span>`;
+    return;
+  }
+  if (!d.ok) {
+    box.className = 'going';
+    box.innerHTML = `<span>${esc(d.sentence ?? '')}</span>`;
+    return;
+  }
+
+  box.className = 'going';
+  box.innerHTML = `<span>Goes to
+    <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>
+    ${d.binding.branch ? `<span class="mono">· ${esc(d.binding.branch)}</span>` : ''}
+    ${d.binding.url ? `<a href="${esc(d.binding.url)}" target="_blank" rel="noreferrer">on GitHub ↗</a>` : ''}</span>`;
+}
+
 async function saveAndSend() {
   const button = $('#pub');
   button.disabled = true;
   button.textContent = 'Saving…';
-  say(await post('/publish', { message: $('#msg').value.trim() }));
+
+  // What the page said, handed back with the press. If the project has been
+  // repointed since this screen was drawn, the manager refuses rather than
+  // sending somewhere the person was never shown.
+  const expect = goingTo?.binding?.bound
+    ? `${goingTo.binding.owner}/${goingTo.binding.repo}` : null;
+
+  say(await post('/publish', { message: $('#msg').value.trim(), expect }));
   draw();
 }
 

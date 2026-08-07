@@ -35,7 +35,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir, readdir, rm, appendFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
 import * as path from 'node:path';
 import { hostname, platform, release } from 'node:os';
 import { randomBytes } from 'node:crypto';
@@ -49,6 +49,58 @@ const quiet = async (fn, fallback = null) => { try { return await fn(); } catch 
 export const WORKSPACE_NAME = 'viberant-workspace';
 const HERE = path.join(HOUSE, 'workspace');
 const MARKER = path.join(HOUSE, 'workspace.json');
+
+/**
+ * The workspace folder, named as what it is: this product's own plumbing.
+ *
+ * It holds three kinds of file and nothing else — who each computer is, what
+ * each is offering, and what each has said. **No project's source may ever
+ * enter it.** The names are close enough to be dangerous: somebody's project is
+ * called `Viberant` and this is called `viberant-workspace`, and a code path
+ * that told them apart by looking at the name would be wrong on the first day
+ * somebody named a project after the workspace.
+ *
+ * So they are told apart by *purpose*, declared here, and by `isInsideWorkspace`
+ * below, which answers with a path rather than a string comparison.
+ */
+export const PURPOSE = 'workspace';
+export const workspaceRoot = () => HERE;
+
+/**
+ * Is this path the workspace, or inside it?
+ *
+ * The one check that stands between a project send and the plumbing. Compared
+ * as resolved paths, so a folder that merely starts with the same letters is
+ * not mistaken for one inside it.
+ */
+export function isInsideWorkspace(dir) {
+  if (!dir) return false;
+  const at = sameNameAs(dir);
+  const root = sameNameAs(HERE);
+  return at === root || at.startsWith(root + path.sep);
+}
+
+/**
+ * A path by the name the computer itself would use for it.
+ *
+ * Windows keeps two names for anything longer than eight characters, and the
+ * two halves of this comparison arrive by different routes: one from a folder
+ * somebody picked, the other from asking what folder a project's history is
+ * kept in — which answers in the long form, always.
+ *
+ * So the check that stands between somebody's source code and this product's
+ * plumbing was comparing `C:\Users\ADMINI~1\…` against `C:\Users\Administrator\…`
+ * and finding them different. It would have said no every time, and said it
+ * confidently. Caught by a test rather than by reading, which is the only way
+ * this kind of thing is ever caught — it is the same trap as D-83, which ended
+ * the whole process instead of merely being wrong.
+ *
+ * Case is folded too: Windows does not distinguish it and neither may this.
+ */
+function sameNameAs(dir) {
+  const at = path.resolve(dir);
+  try { return realpathSync.native(at).toLowerCase(); } catch { return at.toLowerCase(); }
+}
 
 /** How long a computer counts as being about after its last word. */
 const STILL_HERE = 6 * 60 * 1000;

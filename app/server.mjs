@@ -669,11 +669,43 @@ const routes = {
     return { ...(await github.fixSendingEverywhere()), ...(await routes['GET /github']()) };
   },
 
+  /**
+   * Where this project's work would go, checked before any of it moves.
+   *
+   * Asked by the page so the destination is on screen next to the button, and
+   * asked again by the button itself — because the answer can change between
+   * drawing a screen and pressing what is on it.
+   */
+  async 'GET /project/destination'() {
+    if (!current) return noProject;
+    return github.destinationFor(current.dir);
+  },
+
   async 'POST /publish'({ body }) {
     if (!current) return noProject;
+
+    // Nothing leaves until it is known where it is going. A project that
+    // belongs to one account while this app is signed in as another is a fact
+    // to be shown, never a thing to be resolved by guessing — and the guess
+    // that used to happen was made by the computer's credential store, which
+    // has no idea what anybody intended.
+    const going = await github.destinationFor(current.dir);
+    if (going.mismatch || going.binding?.isWorkspace) {
+      return { ...going, ok: false, ...(await routes['GET /project']()) };
+    }
+    if (body.expect && going.binding?.bound
+      && `${going.binding.owner}/${going.binding.repo}` !== body.expect) {
+      return {
+        ok: false,
+        sentence: `This project now sends to ${going.binding.owner}/${going.binding.repo}, not where the page said.`,
+        action: 'Look at where it is going, then send it again.',
+        ...(await routes['GET /project']()),
+      };
+    }
+
     const r = await projects.publish(current.dir, { message: body.message, private: body.private !== false });
     projects.forgetSituations();
-    return { ...r, ...(await routes['GET /project']()) };
+    return { ...r, destination: going.binding, ...(await routes['GET /project']()) };
   },
 
   async 'POST /github/save'({ body }) {
