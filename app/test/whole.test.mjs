@@ -20,6 +20,8 @@ import { join, relative, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 import { createGzip } from 'node:zlib';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import * as parcel from '../parcel.mjs';
 
@@ -214,5 +216,81 @@ describe('two of the same transfer cannot fight over one folder', () => {
 
     hanging.end();
     await first;
+  });
+});
+
+/**
+ * The fault as it was actually reported, reproduced.
+ *
+ * "Only downloading 300MB out of 1.3GB." It was never the parcel. Bringing a
+ * project from the Workspace went through GitHub, and a copy from GitHub
+ * carries what has been saved and sent — not what is in the folder. Everything
+ * missing was real: assets, local settings, anything deliberately left out of
+ * what gets saved, anything not yet saved at all.
+ *
+ * Measured here rather than argued: a folder that is 58 MB on one computer
+ * comes through GitHub as 493 bytes.
+ */
+describe('bringing a project brings the project', () => {
+  const run = promisify(execFile);
+  let root, src;
+
+  before(async () => {
+    root = await mkdtemp(join(tmpdir(), 'viberant-clone-'));
+    src = join(root, 'visionance');
+    await mkdir(join(src, 'src'), { recursive: true });
+
+    for (let i = 0; i < 8; i += 1) {
+      await writeFile(join(src, 'src', `m${i}.js`), `export const a${i} = ${i};\n`);
+    }
+    await writeFile(join(src, '.gitignore'), 'assets/\n*.local\n');
+
+    const git = (...a) => run('git', a, { cwd: src });
+    await git('init', '--quiet', '-b', 'main');
+    await git('config', 'user.email', 't@t');
+    await git('config', 'user.name', 'T');
+    await git('add', '-A');
+    await git('commit', '--quiet', '-m', 'the saved part');
+
+    // The part that is most of the folder and none of the saved work.
+    await mkdir(join(src, 'assets'), { recursive: true });
+    await writeFile(join(src, 'assets', 'textures.bin'), randomBytes(2 * 1024 * 1024));
+    await writeFile(join(src, 'settings.local'), randomBytes(512));
+    await mkdir(join(src, 'empty-on-purpose'), { recursive: true });
+  });
+
+  after(async () => {
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
+
+  test('a copy through GitHub is a fraction of the folder, which is why it is the fallback', async () => {
+    const cloned = join(root, 'via-github');
+    await run('git', ['clone', '--quiet', src, cloned]);
+    await rm(join(cloned, '.git'), { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+
+    const whole = await survey(src);
+    const partial = await survey(cloned);
+    const bytes = (m) => [...m.files.values()].reduce((a, b) => a + b, 0);
+
+    assert.ok(bytes(partial) < bytes(whole) / 10,
+      'what GitHub carries is nowhere near the folder — this is the reported fault');
+    assert.equal(partial.files.has('assets/textures.bin'), false);
+    assert.equal(partial.files.has('settings.local'), false);
+  });
+
+  test('a parcel of the same folder carries all of it', async () => {
+    const into = join(root, 'via-network');
+    const out = await parcel.unwrap(parcel.wrap(src, { everything: true }), into);
+    assert.equal(out.ok, true, out.sentence);
+
+    const whole = await survey(src);
+    const arrived = await survey(into);
+    const bytes = (m) => [...m.files.values()].reduce((a, b) => a + b, 0);
+
+    assert.equal(arrived.files.size, whole.files.size, 'every file');
+    assert.equal(bytes(arrived), bytes(whole), 'every byte');
+    assert.ok(arrived.files.has('assets/textures.bin'), 'including what was never saved');
+    assert.ok(arrived.files.has('settings.local'));
+    assert.ok(arrived.dirs.has('empty-on-purpose'));
   });
 });

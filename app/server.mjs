@@ -841,9 +841,55 @@ const routes = {
     });
   },
 
+  /**
+   * Bring a project from one of your other computers.
+   *
+   * **Across the network when that computer is reachable, and only otherwise
+   * through GitHub.** That order is the fix for the fault this route had, and
+   * the fault was not a small one: it only ever went through GitHub, which
+   * means it brought down `gh repo clone` — and a clone carries what has been
+   * saved and sent, and nothing else.
+   *
+   * So a project whose folder is 1.3 GB on the other computer arrived here as
+   * 300 MB, and everything missing was real: anything not yet saved, anything
+   * deliberately left out of what gets saved, every asset, every local setting,
+   * every build. The card said 1.3 GB because it was describing the folder. The
+   * transfer was describing something else entirely, and nothing on screen said
+   * they were different things.
+   *
+   * The parcel checks added since — what was promised, what was sent, what
+   * landed — could never have caught this, because a clone is not a parcel and
+   * never passed through any of them.
+   *
+   * When the other computer is not on this network, GitHub is still offered,
+   * and now it says what it carries.
+   */
   async 'POST /workspace/bring'({ body }) {
     const into = body.into ?? (await settings.get('workFolder'));
-    const r = await workspace.bring({ entry: body.entry, into });
+    const entry = body.entry ?? {};
+    const near = lan.around().some((p) => p.machine === entry.from);
+
+    if (near) {
+      const target = join(resolve(into), entry.name);
+      if (existsSync(target)) {
+        return {
+          ok: false,
+          sentence: `There is already a folder called ${entry.name} in there.`,
+          action: 'Pick a different folder to put it in.',
+        };
+      }
+      const job = jobs.begin({ what: `Bringing ${entry.name} from ${entry.fromName}`, where: target });
+      lan.takeProject({ machine: entry.from, name: entry.name, into: target, job, jobs })
+        .then((done) => registerIfItArrived(done))
+        .catch(() => jobs.end(job, {
+          ok: false,
+          sentence: `${entry.name} did not make it across.`,
+          action: 'Check both computers are on the same network, then try again.',
+        }));
+      return { ok: true, job: job.id, whole: true };
+    }
+
+    const r = await workspace.bring({ entry, into });
     if (r.ok) { current = await open(r.path); await watchProject(current.dir); }
     return { ...r, ...(await routes['GET /projects']()) };
   },
@@ -942,9 +988,7 @@ const routes = {
     const into = body.into ?? (await settings.get('workFolder'));
     const job = jobs.begin({ what: `Bringing ${body.name} to this computer`, where: into });
     lan.take({ machine: body.machine, offerId: body.offer, into, name: body.name, job, jobs })
-      .then(async (done) => {
-        if (done?.ok && done.at) { current = await open(done.at); await watchProject(done.at); }
-      })
+      .then(registerIfItArrived)
       .catch(() => jobs.end(job, {
         ok: false,
         sentence: 'That folder did not make it across.',
@@ -1099,6 +1143,26 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
 }
 
 const quietly = async (fn) => { try { return await fn(); } catch { return null; } };
+
+/**
+ * Something arrived. Put it in the list of projects, once, in one place.
+ *
+ * Every way of bringing a folder to this computer ends here, which is the point
+ * — the last two lines of a transfer are exactly the sort of thing that gets
+ * written three times and corrected twice.
+ *
+ * A file is left alone. It is a file: it lands where you chose to put it and
+ * that is the whole errand. Registering it as a project would put something in
+ * the list that cannot be opened, which is worse than it not being there.
+ */
+async function registerIfItArrived(done) {
+  if (!done?.ok || !done.at) return done;
+  if (!existsSync(done.at) || !statSync(done.at).isDirectory()) return done;
+
+  current = await open(done.at);
+  await watchProject(current.dir);
+  return done;
+}
 
 /**
  * Let the other computers know what changed here, without keeping anybody

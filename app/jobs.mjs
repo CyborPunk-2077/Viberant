@@ -35,6 +35,7 @@ function snapshot(job) {
     ok: job.ok,
     sentence: job.sentence,
     action: job.action,
+    at: job.at ?? null,
     lines: job.lines,
     steps: job.steps,
   };
@@ -82,12 +83,28 @@ export function write(job, text) {
   if (job.lines.length > KEEP_LINES) job.lines.splice(0, job.lines.length - KEEP_LINES);
 }
 
-/** Settle it: one plain sentence about what is true, and one thing to do. */
-export function end(job, { ok, sentence, action = null }) {
+/**
+ * Settle it: one plain sentence about what is true, and one thing to do.
+ *
+ * `at` is where whatever this errand was doing ended up, and it is carried
+ * rather than dropped. It used to be neither: the three fields below were
+ * picked out by name and everything else thrown away, so a transfer that ended
+ * with `{ ok: true, at: 'D:\\Projects\\thing' }` came back without the one
+ * piece of that sentence anybody needed.
+ *
+ * What that produced is the reported fault — a folder that came across the
+ * network completely and then **never appeared in Projects**. The line meant to
+ * register it read `if (done.ok && done.at)`, and `done.at` was always
+ * undefined, so it silently did nothing. Nothing failed; a step simply never
+ * happened, which is this codebase's signature failure and the reason D-65
+ * exists.
+ */
+export function end(job, { ok, sentence, action = null, at = null }) {
   job.finished = Date.now();
   job.ok = ok;
   job.sentence = sentence;
   job.action = action;
+  job.at = at;
   return snapshot(job);
 }
 

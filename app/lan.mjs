@@ -526,7 +526,11 @@ async function intoFolder(res, target, { job, jobs }) {
  * rule about not destroying somebody's folder deserves better than being taken
  * on trust. Nothing in the app calls this.
  */
-export const __testOnly = { receiveInto };
+export const __testOnly = {
+  receiveInto,
+  /** Put a peer in the list without waiting to hear one shout across a room. */
+  remember: (peer) => seen.set(peer.machine, peer),
+};
 
 /** Roughly how long, said the way somebody waiting would say it. */
 const inTime = (seconds) => (seconds < 90

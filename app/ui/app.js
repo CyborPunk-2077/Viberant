@@ -759,8 +759,19 @@ function menuAt(where, items) {
   closeCtx();
   closePanels();
 
+  // `hanging` rather than `panel`, and the difference is the whole bug.
+  //
+  // A menu here used to be given the class every dropdown in the app uses. The
+  // click that opened it then carried on up to the document, where the handler
+  // that closes dropdowns hid every `.panel` on the page — including the one
+  // half a millisecond old. Pressing Offer created a menu and hid it, so the
+  // button did nothing at all.
+  //
+  // Answering that with `stopPropagation` on each caller is the version that
+  // works until somebody adds a caller and forgets. These menus have their own
+  // class and their own closing, so the two mechanisms cannot reach each other.
   ctxEl = document.createElement('div');
-  ctxEl.className = 'panel';
+  ctxEl.className = 'panel hanging';
   ctxEl.setAttribute('role', 'menu');
   ctxEl.style.position = 'fixed';
   ctxEl.innerHTML = items.map((one, i) => (one === '-'
@@ -932,7 +943,10 @@ async function draw({ quietly = false } = {}) {
 }
 
 function closePanels() {
-  for (const p of document.querySelectorAll('.panel')) {
+  // Not the ones that hang at the pointer. Those are made and destroyed by
+  // `menuAt`, and a second thing quietly hiding them is how pressing Offer came
+  // to open a menu and close it in the same click.
+  for (const p of document.querySelectorAll('.panel:not(.hanging)')) {
     p.hidden = true;
     p.classList.remove('above', 'leftward');
   }
@@ -2767,11 +2781,16 @@ SCREENS.workspace = async () => {
             <span class="chip">on ${esc(p.fromName)}</span></div>
           <div class="fact">${esc(p.says ?? '')}${p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</div>
         </div>
-        <span class="state ${p.url ? 'finished' : 'notStarted'}"><span class="pip"></span>${
-  p.url ? 'Available' : 'Not on GitHub'}</span>
+        <span class="state ${nearby.has(p.from) ? 'finished' : p.url ? 'working' : 'notStarted'}">
+          <span class="pip"></span>${nearby.has(p.from) ? 'Whole' : p.url ? 'Saved work only' : 'Out of reach'}</span>
         <div class="acts">
-          <button class="small" data-bring='${esc(JSON.stringify(p))}' ${p.url ? '' : 'disabled'}
-            ${p.url ? '' : `data-tip="Ask ${esc(p.fromName)} to offer the folder instead"`}>Bring it here</button>
+          <button class="small" data-bring='${esc(JSON.stringify(p))}'
+            ${nearby.has(p.from) || p.url ? '' : 'disabled'}
+            data-tip="${nearby.has(p.from)
+    ? `Straight from ${esc(p.fromName)} across this network — the whole folder`
+    : p.url
+      ? `${esc(p.fromName)} is not on this network, so this comes from GitHub and carries only what has been saved`
+      : `Ask ${esc(p.fromName)} to offer the folder instead`}">Bring it here</button>
         </div>
       </div>`).join('')}</div>`
     : `<div class="empty"><b>Nothing offered to this computer.</b>
@@ -2887,11 +2906,37 @@ SCREENS.workspace = async () => {
   for (const b of document.querySelectorAll('[data-bring]')) {
     b.onclick = async () => {
       const entry = JSON.parse(b.dataset.bring);
+
+      // Said before it happens, not discovered afterwards. A copy from GitHub
+      // carries what has been saved and sent and nothing else, and somebody
+      // who wanted the folder deserves to know that is not what they are
+      // getting — that gap is exactly how 1.3 GB arrived as 300 MB.
+      if (!nearby.has(entry.from)) {
+        const anyway = await confirmThat({
+          title: `Bring ${entry.name} from GitHub`,
+          what: `${entry.fromName} is not on this network, so this comes from GitHub.`,
+          why: 'That carries what has been saved and sent — not anything unsaved, and nothing '
+            + 'deliberately left out of what gets saved. For the whole folder, have both computers '
+            + 'on the same network and press this again.',
+          confirm: 'Bring the saved work',
+        });
+        if (!anyway) return;
+      }
+
       const into = await pickFolder({ title: `Where should ${entry.name} go?`, confirm: 'Put it in here', startAt: w.workFolder });
       if (!into) return;
-      say({ sentence: `Bringing ${entry.name} to this computer…` });
-      draw();
-      say(await post('/workspace/bring', { entry, into }));
+
+      // Acknowledged before anything is asked of the manager, and not
+      // pressable again while it is on its way — two of these into the same
+      // folder is two transfers writing over each other (D-102).
+      b.disabled = true;
+      b.classList.add('working');
+      b.textContent = 'Bringing it…';
+
+      const r = await post('/workspace/bring', { entry, into });
+      if (r.job) { await watchJob(r.job); return; }
+
+      say(r);
       await refreshMe();
       draw();
     };
