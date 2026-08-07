@@ -3,13 +3,45 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 252 passing on Windows, six runs in a row. Three of those are the ones
-that never ran at all: the file holding them was killing the process before it
-could report anything (D-83).
+**Tests:** 267 passing on Windows, and the new ones are the ones that matter:
+a parcel that lies about its own size is caught, a folder that is empty on
+purpose survives, and two transfers cannot fight over one folder.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
-**Being redesigned, and the foundation is in.** Every screen is already drawn on
-it, because they all share the same handful of classes:
+## Viberant 2.0, so far
+
+**The transfer is the part that had to be right, and it was not.** A folder now
+arrives whole or does not arrive. Three numbers have to agree — what was
+promised before anything moved, what the far end says it sent, what landed on
+this disk — and any two of them agreeing proves nothing, because a sender that
+skipped a folder tells itself a consistent story the whole way through. Empty
+folders survive. The number on the card and the number that travels come from
+one walk, taken at the moment of asking. A folder that cannot be read stops the
+send rather than vanishing from it. D-96, D-97.
+
+**Nothing is offered until somebody offers it.** Reversed from D-44 by reading
+the other computer's screen, which listed two of Windows' own folders because
+being in the projects list *was* the offer. Files can be offered now as well as
+folders, into the same register, and that register is the only thing another
+computer is ever told about. Stopping an offer is not deleting. D-98.
+
+**Three complaints, one cause.** Every screen that could show a long errand
+started another loop watching it, and nothing stopped the one already running —
+so each redraw added a poller. That was the flashing, the constant refreshing,
+and why it got worse the longer you used it. One owned timer now: two pending
+after sixteen tab switches, against unbounded growth. D-99.
+
+**Scrolling stays where you put it.** Nothing ever called `scrollTo`; replacing
+the page empties the thing that scrolls, and the browser clamps you to the top.
+Measured: parked at 2,190 of 3,801, still at 2,190 after a live update. D-100.
+
+**Two transfers into one folder is refused** rather than allowed to fight over
+the same half-finished folder. D-102.
+
+---
+
+**The look, rebuilt from tokens up.** Every screen is already drawn on it,
+because they all share the same handful of classes:
 
 *Done.* Tokens, and a rule that survives editing — a literal value in the
 stylesheet is now visibly wrong (D-89). Lists are one panel with lines in them
@@ -22,12 +54,23 @@ the shape of what is coming after a beat (D-94). Measured against the brief:
 rail rows 32px, bar 48px, buttons 36 and 32, radii 6/7/9/12, page title 24px.
 No sideways scroll at 1440, 1000 or 620. Seven screens, no errors.
 
-*Left.* A detail pass on the AI apps, Terminals, Deploy and Settings screens —
-they inherit the system and are consistent, but have not had individual
-attention. An inspector beside the work, where there is something worth
-inspecting. Whether notes belong in a corner or stay in the one place a sentence
-is shown, which is a real question about what this product is and not a styling
-one.
+*Left, and stated plainly rather than glossed.*
+
+- **The wallpaper themes are not built.** Six appearances exist and are properly
+  tokenised, but Deep Space, Orbital, Nebula and Rig Room need real 4K imagery
+  with licensing, an asset pipeline, a dim/blur/motion layer behind the surfaces
+  and a way to fall back when an asset fails. That is a day of work on its own
+  and none of it is started.
+- **No transfers affordance in the bar across the top.** Progress is honest and
+  live, but it lives in the errand panel on the page that started it. A count in
+  the corner opening a small list is not there.
+- **No inspector beside the work.** The shell has room for one; nothing fills it.
+- **A detail pass on AI apps, Terminals, Deploy and Settings.** They inherit the
+  system and are consistent, but have not had individual attention.
+- **Resuming an interrupted transfer.** It fails honestly and can be retried
+  from the start. It does not pick up where it stopped.
+- **Whether notes belong in a corner** or stay in the one place a sentence is
+  shown. A real question about what this product is, not a styling one.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the

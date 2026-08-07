@@ -407,7 +407,7 @@ export async function takeProject({ machine, name, into, job, jobs }) {
     });
   }
 
-  const out = await receiveInto(res, into, { job, jobs });
+  const out = await receiveInto(res, into, { job, jobs, called: name });
   if (!out.ok) return jobs.end(job, out);
 
   await refresh();
@@ -418,6 +418,32 @@ export async function takeProject({ machine, name, into, job, jobs }) {
     action: 'Your own copy was kept aside first, in case you want anything back out of it.',
   });
 }
+
+/**
+ * The transfers happening right now, by where they are going.
+ *
+ * Pressing "Bring it here" twice used to start two of them, and because both
+ * write to the same folder-plus-`.part` while they work, the second one deletes
+ * what the first has written and then both try to move a folder into the same
+ * place. Whichever finished second would have been "verified" against a set of
+ * files the other one was in the middle of removing.
+ *
+ * The button is the wrong place to fix this. A button can be disabled, and a
+ * second window, a keyboard shortcut and a command palette entry all still
+ * reach the same errand. The rule belongs where the errand is.
+ */
+const arriving = new Map();
+
+const alreadyComing = (target) => {
+  const at = resolve(target);
+  const held = arriving.get(at);
+  if (!held) return null;
+  return {
+    ok: false,
+    sentence: `${held} is already arriving here.`,
+    action: 'Wait for it to finish, or leave it and it will be along.',
+  };
+};
 
 /**
  * Take a folder off the wire, watch it arrive, and check it all did.
@@ -431,7 +457,19 @@ export async function takeProject({ machine, name, into, job, jobs }) {
  * headers and again in the parcel itself, how many files and how many bytes are
  * coming; the percentage is measured against that, and so is the verdict.
  */
-async function receiveInto(res, target, { job, jobs }) {
+async function receiveInto(res, target, { job, jobs, called = null }) {
+  const busy = alreadyComing(target);
+  if (busy) { res.resume(); return busy; }
+  arriving.set(resolve(target), called ?? basename(target));
+
+  try {
+    return await intoFolder(res, target, { job, jobs });
+  } finally {
+    arriving.delete(resolve(target));
+  }
+}
+
+async function intoFolder(res, target, { job, jobs }) {
   const wantFiles = Number(res.headers['x-viberant-files']) || 0;
   const wantBytes = Number(res.headers['x-viberant-bytes']) || 0;
 
@@ -482,6 +520,13 @@ async function receiveInto(res, target, { job, jobs }) {
 
   return out;
 }
+
+/**
+ * Reachable from a test, because the rule it holds is a data-safety one and a
+ * rule about not destroying somebody's folder deserves better than being taken
+ * on trust. Nothing in the app calls this.
+ */
+export const __testOnly = { receiveInto };
 
 /** Roughly how long, said the way somebody waiting would say it. */
 const inTime = (seconds) => (seconds < 90
@@ -720,7 +765,7 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     ? join(resolve(into), `${called}.viberant-arriving`)
     : join(resolve(into), called);
 
-  const out = await receiveInto(res, target, { job, jobs });
+  const out = await receiveInto(res, target, { job, jobs, called });
   if (!out.ok) return jobs.end(job, out);
 
   if (isFile) {

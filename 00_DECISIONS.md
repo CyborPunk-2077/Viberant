@@ -1079,6 +1079,86 @@ This is the single loudest signal of a hurriedly-styled interface, and removing 
 
 ---
 
+### D-96 `[LOCKED]` — Three numbers agree, or nothing is kept
+
+**Decision.** A parcel says what is coming before it sends anything, and says what it sent when it finishes. The receiver holds both against what actually landed on its disk. Unless all three agree on the file count and the byte count, the transfer failed and nothing is kept.
+
+**Why.** The reported fault was one computer advertising 1.3 GB and the other ending up with about 300 MB — **and being told it had worked.** The second half of that sentence is the whole reason for this entry.
+
+The closing line has said what was sent since the format was written. Nobody was comparing it to anything: the receiver read it, threw it away, and reported its own count as the answer. So every way a folder can quietly lose part of itself came out looking like a success — a folder the sender could not open, skipped whole and silently; a file too large for one parcel, dropped without a word; a write that failed on the receiving disk, counted as though it had worked.
+
+**Why two numbers are not enough.** A sender that skipped a subtree tells itself a consistent story the entire way through: it did not see those files, so it does not count them, so its closing line matches what it sent. Only a count taken *before* the walk went wrong disagrees with it. That is what the opening line is for, and it is also what makes an honest percentage possible.
+
+**Locked** for the same reason D-55 is. This is the second thing in the product that can destroy work, and the failure mode is the worst one available: silent, plausible, and discovered weeks later when somebody opens the folder.
+
+---
+
+### D-97 `[DECIDED]` — One walk decides what a thing weighs, and it happens at the moment of asking
+
+**Decision.** `survey()` is the only walk. The number on a card, the opening line of a parcel and the bytes actually put on the wire all come from it, and it runs when somebody asks for the folder rather than whenever it was first offered.
+
+**Why.** There were two walks and they disagreed by design. A project's size came from the fingerprint, which skips the history folder and stops counting at thirty thousand files; the bytes that travelled came from the parcel, which does neither. On a project with a large history or a lot of files those are simply different numbers, **and the one on the screen was never the one that moved.** An offer's size was measured the same way as its send, but at the moment it was offered, which on a project somebody is working in is a different folder by the afternoon.
+
+**A folder that cannot be read is not an empty folder.** `readdir` failures were caught and turned into an empty list, so a subtree this computer could not open disappeared from the parcel and from the count, consistently, and the receiver had no way to know. They are counted now, and the sender refuses to send at all rather than send a folder with a hole in it.
+
+---
+
+### D-98 `[LOCKED]` — Nothing is offered until somebody offers it
+
+**Decision.** Reverses D-44. A project is not visible to your other computers until it is offered, one project at a time, on purpose. Files and folders are offered the same way, into the same register, and that register is the only thing any other computer is ever told about.
+
+**Why.** Read off the other computer's screen:
+
+> 1MS22AI · Contacts · Download · Viberant
+
+Two of those are Windows' own folders. Nobody offered them to anything. They were on another computer because **being in the projects list was the offer**, and the only way out was to notice each one and object to it.
+
+D-44 argued that they are your own computers and your own account, so hiding your work from yourself is a strange place to start. That is a fair thing to say about projects and the wrong shape for a rule: it makes the quiet path the one that gives things away and the loud path the one that keeps them. Offering is one press, once, per thing — and somebody who has pressed it knows what is out there, which is the property that actually matters.
+
+**Kept as an absence, exactly as before.** What is not offered is not in the list this computer publishes, so there is nothing to ask about and nothing to get around.
+
+**Stopping is not deleting**, and the two may never become the same gesture. The sentence says so and a test holds it.
+
+---
+
+### D-99 `[DECIDED]` — One loop watches an errand, and it is owned
+
+**Decision.** One timer, held in one place, cancelled before another is ever set. A screen redrawing while an errand runs paints it once and does not start a second loop.
+
+**Why.** This is where three separate complaints came from — the app refreshing by itself, flashing during a deploy or a transfer, and losing your place. Every screen that can show an errand ended with `if (watching) paintJob()`, and `paintJob` ended by asking for itself again in a second, with nothing stopping the loop already running. **Each redraw added a loop.** Deploy something, change tabs twice, and four independent pollers are replacing the same part of the page on four different beats. Measured after: two pending timers after sixteen tab switches, against unbounded growth before.
+
+**And an errand is edited rather than rebuilt.** Replacing that panel every second threw away whether you had opened what it printed and where you had scrolled inside it. Lines are appended, and it follows to the bottom only if you were already there — scrolling back to read something is a decision, not an accident to be corrected every second.
+
+---
+
+### D-100 `[DECIDED]` — Where you were is restored, because replacing a page does not preserve it
+
+**Decision.** A redraw captures how far down the page is and what was focused, and puts both back.
+
+**Why.** Nothing in this codebase ever called `scrollTo`, which is why it was not found by looking for one. Rebuilding the page empties the one element that scrolls; an empty element has no height; the browser clamps how far down it is to zero; and the new page arrives underneath you at the top. It happened whenever anything at all changed — another computer appearing, a transfer counting up, or "3 min ago" becoming "4 min ago".
+
+**Measured:** parked at 2,190 of 3,801 pixels, still at 2,190 after a live update.
+
+---
+
+### D-101 `[DECIDED]` — Rows get the desk, sentences get a column
+
+**Decision.** Two widths. Screens made of rows use the width of the window; screens made of sentences and controls keep a reading column, and a paragraph keeps its column even on a screen using the full width.
+
+**Why.** One number was serving both. On a 1920 screen it left a third of the workspace empty while the rows inside it squeezed their own contents. Rows are read across — a name, its facts, what you can do — and want the monitor; prose is read down, and a line 1,600 pixels wide is one nobody's eye can track back from.
+
+---
+
+### D-102 `[DECIDED]` — Two of the same transfer cannot fight over one folder
+
+**Decision.** A destination that is already receiving something refuses a second transfer into it, in the product's one failure shape.
+
+**Why.** Both transfers write to the same folder and the same half-finished folder beside it. The second deletes what the first has written, then both try to move a folder into the same place, and whichever finished second was "verified" against files the other was in the middle of removing.
+
+**The button is the wrong place for this rule.** A button can be disabled, and a second window, a keyboard shortcut and the palette all still reach the same errand. It belongs where the errand is, which is also where it can be tested without a browser.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

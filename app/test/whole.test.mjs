@@ -189,3 +189,30 @@ describe('a folder arrives whole, or not at all', () => {
     assert.ok(told.every((s) => s.bytes <= seen.bytes), 'and never claims more than there is');
   });
 });
+
+describe('two of the same transfer cannot fight over one folder', () => {
+  test('the second is refused while the first is still arriving', async () => {
+    const { PassThrough: PT } = await import('node:stream');
+    const lan = await import('../lan.mjs');
+
+    // A reply that never finishes, so the first transfer stays in flight.
+    const hanging = new PT();
+    hanging.headers = { 'x-viberant-files': '1', 'x-viberant-bytes': '10' };
+
+    const jobs = { step() {}, write() {}, end(_j, r) { return r; } };
+    const into = join(root, 'contested');
+
+    const first = lan.__testOnly.receiveInto(hanging, into, { job: 'a', jobs, called: 'Thing' });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const second = new PT();
+    second.headers = { 'x-viberant-files': '1', 'x-viberant-bytes': '10' };
+    const refused = await lan.__testOnly.receiveInto(second, into, { job: 'b', jobs, called: 'Thing' });
+
+    assert.equal(refused.ok, false, 'the second one does not start');
+    assert.match(refused.sentence, /already arriving/);
+
+    hanging.end();
+    await first;
+  });
+});
