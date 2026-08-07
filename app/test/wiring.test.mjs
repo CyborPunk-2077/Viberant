@@ -140,3 +140,31 @@ describe('the page defines everything its way in depends on', () => {
     assert.ok(text.includes('showGate({ trouble:'), 'a failed sign-in does not say so on the welcome');
   });
 });
+
+/**
+ * No address is written twice.
+ *
+ * The routes are one object literal, and a duplicate key in an object literal
+ * is not an error — the later one silently replaces the earlier one. So writing
+ * a route that already exists deletes the old behaviour without a warning,
+ * without a failing test, and without anything on screen changing until
+ * somebody presses the one button that used to work.
+ *
+ * Found by doing exactly that: `POST /projects/forget` was written a second
+ * time, four hundred lines below the first.
+ */
+test('every address is defined exactly once', async () => {
+  const source = await readFile(join(here, '..', 'server.mjs'), 'utf8');
+
+  const seen = new Map();
+  const twice = [];
+  for (const m of source.matchAll(/^\s{2}async '((?:GET|POST) [^']+)'\(/gm)) {
+    const address = m[1];
+    if (seen.has(address)) twice.push(address);
+    seen.set(address, true);
+  }
+
+  assert.deepEqual(twice, [],
+    'a second definition of the same address quietly replaces the first');
+  assert.ok(seen.size > 40, `only found ${seen.size} addresses, so the reading is wrong`);
+});

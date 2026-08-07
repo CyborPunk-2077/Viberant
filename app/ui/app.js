@@ -1073,7 +1073,7 @@ function sheet({ title, body, foot = '', narrow = false, onOpen }) {
  * The browser's own box for this does not exist inside the app's own window, so
  * asking for it would silently do nothing. This is that, in the app.
  */
-function ask({ title, label, value = '', placeholder = '', confirm = 'Done' }) {
+function ask({ title, label, value = '', placeholder = '', confirm = 'Done', danger = false }) {
   return new Promise((resolve) => {
     sheet({
       title,
@@ -1081,7 +1081,7 @@ function ask({ title, label, value = '', placeholder = '', confirm = 'Done' }) {
       body: `<label class="field">${esc(label)}</label>
              <input id="ask-input" style="width:100%" value="${esc(value)}" placeholder="${esc(placeholder)}">`,
       foot: `<button class="quiet" id="ask-no">Never mind</button>
-             <button class="go" id="ask-yes">${esc(confirm)}</button>`,
+             <button class="${danger ? 'danger' : 'go'}" id="ask-yes">${esc(confirm)}</button>`,
       onOpen: () => {
         const input = $('#ask-input');
         input.focus();
@@ -1364,9 +1364,11 @@ function projectRow(p) {
  */
 const moreForProject = (path, isPrivate) => [
   { what: 'Open it', run: () => openProject(path) },
+  { what: 'Show it in Explorer', run: () => post('/reveal', { path }) },
+  { what: 'Copy where it is', run: () => navigator.clipboard?.writeText(path) },
+  '-',
   { what: 'What is in it', run: () => statusSheet(path) },
   { what: 'Where you have got to', run: () => markSheet(path, lastMarks) },
-  '-',
   {
     what: isPrivate ? 'Offer it to my other computers' : 'Stop offering it',
     run: async () => {
@@ -1374,7 +1376,57 @@ const moreForProject = (path, isPrivate) => [
       draw();
     },
   },
+  '-',
+  { what: 'Take it out of this list', run: () => forgetProject(path) },
+  { what: 'Delete it from this computer…', danger: true, run: () => deleteProject(path) },
 ];
+
+/**
+ * Stop keeping a project in the list. Nothing on disk is touched.
+ *
+ * Asked about anyway, because "remove" is a word people read as "delete" and
+ * the two live next to each other in the same menu. One sentence saying what
+ * this is *not* costs a press and prevents a fright.
+ */
+async function forgetProject(path) {
+  const sure = await confirmThat({
+    title: `Take ${tail(path)} out of the list`,
+    what: 'It stops being listed here.',
+    why: `Every file stays exactly where it is, at ${path}. Nothing is deleted, `
+      + 'and nothing on GitHub or on your other computers changes. Add the folder '
+      + 'again whenever you like.',
+    confirm: 'Take it out',
+  });
+  if (!sure) return;
+  say(await post('/projects/forget', { path }));
+  draw();
+}
+
+/**
+ * Put a project's folder in the recycle bin.
+ *
+ * The only destructive thing in the product, so it says exactly what it will
+ * remove, exactly what it will not, and where it is going — and it asks for the
+ * project's own name, because a mis-click should not be able to reach this.
+ */
+async function deleteProject(path) {
+  const name = tail(path);
+  const typed = await ask({
+    title: `Delete ${name} from this computer`,
+    label: `This puts ${path} in your recycle bin. Nothing on GitHub is deleted, and `
+      + `no copy on your other computers is touched. Type ${name} to confirm.`,
+    value: '',
+    confirm: 'Delete it',
+    danger: true,
+  });
+  if (typed === null) return;
+  if (String(typed).trim() !== name) {
+    say({ ok: false, sentence: 'That is not the name of the project, so nothing was deleted.', action: 'Try again if you meant to.' });
+    return draw();
+  }
+  say(await post('/projects/delete', { path }));
+  draw();
+}
 
 /**
  * The projects on your GitHub account that are not on this computer yet.
@@ -3028,15 +3080,17 @@ SCREENS.workspace = async () => {
           <div class="fact">${esc(p.says ?? '')}${p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</div>
         </div>
         <span class="state ${nearby.has(p.from) ? 'finished' : p.url ? 'working' : 'notStarted'}">
-          <span class="pip"></span>${nearby.has(p.from) ? 'Whole' : p.url ? 'Saved work only' : 'Out of reach'}</span>
+          <span class="pip"></span>${nearby.has(p.from)
+    ? 'Direct transfer' : p.url ? 'GitHub copy' : 'Out of reach'}</span>
         <div class="acts">
           <button class="small" data-bring='${esc(JSON.stringify(p))}'
             ${nearby.has(p.from) || p.url ? '' : 'disabled'}
             data-tip="${nearby.has(p.from)
-    ? `Straight from ${esc(p.fromName)} across this network — the whole folder`
+    ? `Everything in the folder, straight from ${esc(p.fromName)} across this network`
     : p.url
-      ? `${esc(p.fromName)} is not on this network, so this comes from GitHub and carries only what has been saved`
-      : `Ask ${esc(p.fromName)} to offer the folder instead`}">Bring it here</button>
+      ? `${esc(p.fromName)} is not on this network. Only work that has been saved and sent to GitHub would come.`
+      : `Ask ${esc(p.fromName)} to offer the folder instead`}">${
+  nearby.has(p.from) ? 'Bring it here' : 'Get the GitHub copy'}</button>
         </div>
       </div>`).join('')}</div>`
     : `<div class="empty"><b>Nothing offered to this computer.</b>

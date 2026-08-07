@@ -409,10 +409,23 @@ const routes = {
     return { ...r, ...(await routes['GET /projects']()) };
   },
 
+  /**
+   * Stop keeping this project in the list. Nothing on the disk is touched.
+   *
+   * Deliberately a different route from `/projects/delete`, and worded so the
+   * two can never be read as the same thing. They are the pair people mix up,
+   * and mixing them up in one direction costs somebody their work.
+   */
   async 'POST /projects/forget'({ body }) {
-    await projects.forget(body.path);
-    if (current?.dir === resolve(body.path)) { current = null; await watchProject(null); }
-    return { ok: true, sentence: 'That project is off the list. The folder is untouched.', ...(await routes['GET /projects']()) };
+    const at = body?.path ? resolve(body.path) : null;
+    if (!at) return { ok: false, sentence: 'No project was named.', action: 'Pick one from the list.' };
+    await projects.forget(at);
+    if (current?.dir === at) { current = null; await watchProject(null); }
+    return {
+      ok: true,
+      sentence: `${basename(at)} is off the list. Every file of it is still on this computer.`,
+      ...(await routes['GET /projects']()),
+    };
   },
 
   // -- picking a folder ---------------------------------------------------
@@ -954,6 +967,41 @@ const routes = {
     });
   },
 
+  /**
+   * Put the project's folder in the recycle bin.
+   *
+   * The recycle bin rather than deleting it outright, because this is the only
+   * destructive thing in the product and somebody who presses it by mistake
+   * should be able to undo it with the tool they already know. Nothing on
+   * GitHub and nothing on any other computer is touched — those are separate
+   * places and separate decisions.
+   */
+  async 'POST /projects/delete'({ body }) {
+    const at = body?.path ? resolve(body.path) : null;
+    if (!at || !existsSync(at)) {
+      return { ok: false, sentence: 'That folder is not on this computer.', action: 'Refresh the list.' };
+    }
+    if (workspace.isInsideWorkspace(at)) {
+      return {
+        ok: false,
+        sentence: 'That folder is the one this manager uses to let your computers find each other.',
+        action: 'Take this computer out of the workspace instead, from the Workspace page.',
+      };
+    }
+
+    const gone = await recycle(at);
+    if (!gone.ok) return gone;
+
+    await projects.forget(at);
+    if (current?.dir === at) { current = null; await watchProject(null); }
+    return {
+      ok: true,
+      sentence: `${basename(at)} has gone to the recycle bin. Nothing on GitHub was touched.`,
+      action: 'Your recycle bin can put it back.',
+      ...(await routes['GET /projects']()),
+    };
+  },
+
   /** The file chooser this computer already has, for offering one file. */
   async 'POST /choose/file'({ body }) {
     return browse.chooseFile({ startAt: body?.startAt ?? null });
@@ -1175,6 +1223,57 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
 }
 
 const quietly = async (fn) => { try { return await fn(); } catch { return null; } };
+
+/**
+ * Send a folder to the recycle bin rather than destroying it.
+ *
+ * This is the only thing in the product that removes somebody's work, so it is
+ * the one place where "undo" has to exist — and the undo people already know is
+ * the recycle bin. Windows will do it properly if asked properly: the shell's
+ * own file operation, with the flag that says put it in the bin, which is not
+ * something a plain delete can be talked into doing.
+ *
+ * If the shell refuses, this refuses too. Falling back to deleting it outright
+ * would turn a recoverable action into an unrecoverable one at exactly the
+ * moment something was already going wrong.
+ */
+async function recycle(at) {
+  if (process.platform !== 'win32') {
+    return {
+      ok: false,
+      sentence: 'This computer has no recycle bin the manager can use.',
+      action: 'Move the folder to the bin yourself, then take it out of the list here.',
+    };
+  }
+
+  const script = `
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+      '${at.replace(/'/g, "''")}',
+      [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+      [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)`;
+
+  try {
+    await new Promise((done, fail) => {
+      const child = spawn('powershell',
+        ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        { windowsHide: true });
+      let said = '';
+      child.stderr.on('data', (d) => { said += d; });
+      child.on('error', fail);
+      child.on('exit', (code) => (code === 0 ? done() : fail(new Error(said.trim() || `exit ${code}`))));
+    });
+    return { ok: true };
+  } catch (e) {
+    return {
+      ok: false,
+      sentence: 'That folder could not be put in the recycle bin, so nothing was removed.',
+      action: /being used|access/i.test(String(e.message))
+        ? 'Something has it open. Close it and try again.'
+        : 'Move it to the bin yourself instead.',
+    };
+  }
+}
 
 /**
  * Something arrived. Put it in the list of projects, once, in one place.
