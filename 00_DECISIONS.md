@@ -1207,6 +1207,60 @@ Nothing failed. A step simply never happened, which is this codebase's signature
 
 ---
 
+### D-107 `[LOCKED]` — One session says who Viberant is, and a mismatch is shown rather than resolved
+
+**Decision.** `github.session()` is the only answer to "who is Viberant on GitHub". `github.bindingOf(dir)` is the only answer to "where does this project send", read from the project itself. `destinationFor(dir)` holds the two together and **refuses when they disagree**. The destination is on screen beside the button, and the press hands back what the page said.
+
+**Why.** Reported: Viberant showed one account and pushed as another.
+
+They are genuinely two identity systems and nothing was holding them against each other. `gh` has an active account. **`git push` does not use it** — it authenticates through whatever credential helper this computer keeps, which on Windows is a store that may hold a different name from a different day. D-42 found this once for the case where the store held *nothing*; the worse case is the one where it holds *somebody else*, because that one succeeds.
+
+**Why it refuses rather than picking.** Either choice is a guess about intent, and one of them puts somebody's work on an account they were not thinking about. That is the worst outcome available at this point in the product, and it is exactly what happens if this code tries to be helpful. A mismatch is a fact to show.
+
+**Locked** because the failure is silent, plausible and discovered late — the same shape as D-96, and for the same reason.
+
+---
+
+### D-108 `[LOCKED]` — The workspace is infrastructure, told apart by path and never by name
+
+**Decision.** The workspace repository declares `PURPOSE = 'workspace'`. Anything asking whether a folder is part of it asks `isInsideWorkspace()`, which compares real paths. No code path decides this by looking at a name.
+
+**Why.** A project called `Viberant` is one hyphen from `viberant-workspace`. A rule that read the name would be wrong the first day somebody named a project after the workspace — and being wrong here means source code entering a repository that exists to hold three small files about which computers are about.
+
+**And the guard was broken when written, which is the part worth recording.** `git rev-parse --show-toplevel` answers with Windows' long name, always. Paths from elsewhere in the app may be the eight-character short form. So the check compared `C:\Users\ADMINI~1\…` against `C:\Users\Administrator\…`, found them different, and would have answered "not the workspace" **every single time, confidently**. Caught by writing the test, not by reading the code. It is the same trap as D-83, which had the decency to end the process rather than merely be wrong.
+
+---
+
+### D-109 `[DECIDED]` — Taking a project off the list and deleting it are two words, two routes, two sentences
+
+**Decision.** *Off the list* touches no file. *Delete* puts the folder in the recycle bin, asks for the project's own name first, and says what it is not touching. Neither goes near GitHub or another computer.
+
+**Why.** A project could be added and never removed, so the feature had to exist; the only question was how to stop the two being confused. The answer is not a well-worded dialog — it is that they share no wording, no route and no code path, so there is nothing to confuse.
+
+**The recycle bin rather than a delete.** This is the only destructive thing in the product, and the undo people already have is the one Windows gives them. If the shell refuses, this refuses too: falling back to deleting outright would turn a recoverable action into an unrecoverable one at the exact moment something was already going wrong.
+
+---
+
+### D-110 `[DECIDED]` — Every address is defined exactly once, and a test says so
+
+**Decision.** A test reads the routes and fails if any address appears twice.
+
+**Why.** The routes are one object literal, and **a duplicate key in an object literal is not an error** — the later one silently replaces the earlier. Writing a route that already exists therefore deletes the old behaviour with no warning, no failing test, and nothing on screen changing until somebody presses the one button that used to work.
+
+Found by doing it: `POST /projects/forget` written a second time, four hundred lines below the first, and the old one stopped existing.
+
+---
+
+### D-111 `[DECIDED]` — A list of one kind of thing is a table
+
+**Decision.** Projects, AI apps and Terminals are tables sharing one column system, built on `subgrid` so rows take their column edges from the table rather than each deciding for itself.
+
+**Why.** Eleven AI apps as eleven cards filled a screen to say what a table says in a third of it, with nine accent buttons competing for the same eye. Sixteen projects as sixteen 97-pixel rows put a hundred-and-twenty-character path under every name, in monospace, each beginning with the same eighty characters.
+
+**Two faults found by photographing it rather than reading it.** The columns were declared on each row, so every row was its own grid and `1fr` resolved against that row's own content — the state, the date and the actions landed somewhere different in every row, drifting further the longer the path. And `.trow.pick` collided with `.pick`, the hanging-menu item, which sets `display: flex` — so a clickable row silently stopped being a grid at all. Neither is visible in the source; both are obvious in a screenshot.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

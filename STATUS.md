@@ -3,12 +3,39 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 269 passing on Windows, and the new ones are the ones that matter:
+**Tests:** 278 passing on Windows, and the new ones are the ones that matter:
 a parcel that lies about its own size is caught, a folder that is empty on
 purpose survives, and two transfers cannot fight over one folder.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
+
+**Work goes where the app says it goes.** Viberant showed one GitHub account and
+pushed as another, because those are two identity systems that nothing was
+holding against each other: `gh` has an active account, and `git push`
+authenticates through the computer's credential store, which may hold somebody
+else. There is now one session, one per-project binding read from the project,
+and a check that **refuses when they disagree** rather than picking. The
+destination is on screen beside the button. D-107.
+
+**The workspace is infrastructure, and told apart by path.** A project called
+`Viberant` is one hyphen from `viberant-workspace`. Writing the test found the
+guard was broken as written — `git rev-parse --show-toplevel` answers in
+Windows' long name while paths elsewhere may be the short one, so it compared
+`ADMINI~1` against `Administrator` and would have said "not the workspace" every
+time. D-108.
+
+**Projects can be removed, two ways that share no wording.** Off the list touches
+no file; delete puts the folder in the recycle bin and asks for the project's
+name. Verified against real folders. D-109.
+
+**Every address is defined exactly once**, held by a test — a duplicate key in
+the routes object silently replaces the earlier one, which is a fault with no
+symptom until somebody presses the button that used to work. D-110.
+
+**Projects, AI apps and Terminals are tables.** Eleven apps now occupy a third of
+the screen instead of all of it. D-111.
+
 
 **The download was never the parcel.** Bringing a project from the Workspace
 went through `gh repo clone`, which carries what has been saved and sent and
