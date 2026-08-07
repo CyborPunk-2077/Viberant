@@ -3,12 +3,30 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 267 passing on Windows, and the new ones are the ones that matter:
+**Tests:** 269 passing on Windows, and the new ones are the ones that matter:
 a parcel that lies about its own size is caught, a folder that is empty on
 purpose survives, and two transfers cannot fight over one folder.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
+
+**The download was never the parcel.** Bringing a project from the Workspace
+went through `gh repo clone`, which carries what has been saved and sent and
+nothing else — so a 1.3 GB folder arrived as the committed fraction of it.
+Measured over a real socket: a 58 MB folder comes through GitHub as **493
+bytes**, and across the network **whole**. It now takes the network whenever the
+other computer is reachable, and when it is not, it says what a copy from GitHub
+carries before you agree to it. Every parcel check added last time could never
+have caught this, because a clone is not a parcel. D-103.
+
+**A folder that arrived never appeared in Projects.** `jobs.end` picked three
+fields out of its result by name and dropped the rest, including where the thing
+had landed — so the line that registers it was reading `undefined` and silently
+doing nothing. D-104.
+
+**The Offer button opened a menu and hid it in the same click**, because the
+menu wore the class the dropdown-closer owns. D-105.
+
 
 **The transfer is the part that had to be right, and it was not.** A folder now
 arrives whole or does not arrive. Three numbers have to agree — what was
@@ -56,14 +74,11 @@ No sideways scroll at 1440, 1000 or 620. Seven screens, no errors.
 
 *Left, and stated plainly rather than glossed.*
 
-- **The wallpaper themes are not built.** Six appearances exist and are properly
-  tokenised, but Deep Space, Orbital, Nebula and Rig Room need real 4K imagery
-  with licensing, an asset pipeline, a dim/blur/motion layer behind the surfaces
-  and a way to fall back when an asset fails. That is a day of work on its own
-  and none of it is started.
-- **No transfers affordance in the bar across the top.** Progress is honest and
-  live, but it lives in the errand panel on the page that started it. A count in
-  the corner opening a small list is not there.
+- **A background engine.** There is no wallpaper layer at all, so brightness,
+  dim, blur and motion controls have nothing to control yet.
+- **The imagery themes.** Deep Space, Orbital, Nebula and Rig Room need licensed
+  4K assets, a pipeline, and a dim-and-blur layer that costs nothing at rest.
+  Not started, and deliberately not faked with a name.
 - **No inspector beside the work.** The shell has room for one; nothing fills it.
 - **A detail pass on AI apps, Terminals, Deploy and Settings.** They inherit the
   system and are consistent, but have not had individual attention.

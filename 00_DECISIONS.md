@@ -1159,6 +1159,54 @@ D-44 argued that they are your own computers and your own account, so hiding you
 
 ---
 
+### D-103 `[LOCKED]` — Bringing a project brings the project, and GitHub is the fallback that says so
+
+**Decision.** A project comes across the local network whenever the computer that has it is reachable. GitHub is used only when it is not, and says what a copy from GitHub carries **before** you agree to it.
+
+**Why.** This is the reported fault — "only downloading 300MB out of 1.3GB" — and it was in none of the places the previous session had been looking.
+
+Bringing a project from the Workspace went through `gh repo clone`. **A clone carries what has been saved and sent, and nothing else.** So a folder that is 1.3 GB on the other computer arrived as the fraction of it that had been committed, and everything missing was real: assets, local settings, anything deliberately left out of what gets saved, anything not yet saved at all. The card said 1.3 GB because it was describing the folder. The transfer was describing something else entirely, and nothing on any screen said they were different things.
+
+**Measured, two computers over a real socket:** a 58 MB folder comes through GitHub as **493 bytes**, and across the network as 58 MB, 71 files, 38 directories, whole.
+
+**The part worth keeping.** Every check added in D-96 — promised, sent, landed — could never have caught this, because a clone is not a parcel and passed through none of them. Verification protects a path; it says nothing about a path going somewhere else. The lesson is not "add more checks", it is *check that the thing being measured is the thing that happens.*
+
+---
+
+### D-104 `[DECIDED]` — An errand's result carries where the thing landed
+
+**Decision.** `jobs.end` carries `at` through to whatever is watching, and one function registers anything that arrived.
+
+**Why.** A folder that came across the network completely then **never appeared in Projects**. `jobs.end` picked three fields out of its result by name and threw the rest away, including where the thing had gone. The line meant to register it read `if (done.ok && done.at)`, and `done.at` was always undefined, so it silently did nothing.
+
+Nothing failed. A step simply never happened, which is this codebase's signature failure and the fourth time it has been recorded — a promise nobody awaited, a 404 parsed as JSON, a handler that threw inside `onclick`, and now a field dropped by a destructure.
+
+**And the registering is one function**, because the last two lines of a transfer are exactly the sort of thing that gets written three times and corrected twice. A file is left alone: registering it as a project would put something in the list that cannot be opened.
+
+---
+
+### D-105 `[DECIDED]` — A menu that hangs at the pointer is not a dropdown
+
+**Decision.** Menus opened at the pointer carry their own class and their own closing. The handler that closes dropdowns does not touch them.
+
+**Why.** Pressing Offer did nothing at all. The menu was given the class every dropdown in the app uses, so the click that created it carried on up to the document, where the handler that closes dropdowns hid every panel on the page — including the one half a millisecond old. It was created and hidden by the same click.
+
+**Why not `stopPropagation`.** It works, and it works per caller, which means it works until somebody adds a caller. Two mechanisms that can reach each other will eventually be made to.
+
+**Recorded because of how it survived being checked.** It was verified — by asking whether the menu's items existed in the page. They did. It was invisible. **A check that asks the wrong question passes exactly as convincingly as one that asks the right one.** Visibility is now asserted by hit-testing what is on screen, and the same test caught that this environment does not advance animations at all.
+
+---
+
+### D-106 `[DECIDED]` — A look is chosen by looking at it
+
+**Decision.** Appearance is eight small pictures of the actual shell, each drawn with that look's own values. The default palette and `[data-theme="dark"]` are one selector rather than two copies.
+
+**Why.** It was a dropdown reading "Deep blue", which tells you the word somebody chose and not the question anybody is asking. Choosing was picking a name, waiting for the whole app to change, and undoing it.
+
+**What is deliberately not here.** The imagery themes — Deep Space, Orbital, Nebula, Rig Room — are not built and are not pretended at. Naming a theme "Deep Space" with no space in it would be a worse lie than not having it, and they need licensed 4K assets, a pipeline, and a dim-and-blur layer that does not cost anything at rest.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
