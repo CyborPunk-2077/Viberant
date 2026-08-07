@@ -841,15 +841,264 @@ h2:first-of-type { margin-top: 0; }
 .needs .need .cross { color: var(--dim); }
 .needs .need span { color: var(--quiet); }
 
+/* ========================================================================= */
+/* Tables of things                                                          */
+/*                                                                           */
+/* The shape almost every screen here actually wants: a name that gets the    */
+/* room, facts in columns that line up down the page, and one action at the   */
+/* end. Rows were 97 pixels tall and their status chips sat wherever the name */
+/* happened to end, so nothing lined up with anything and sixteen of them     */
+/* filled a screen with four facts.                                          */
+/*                                                                           */
+/* Grid rather than flex, because columns that agree down the page is the     */
+/* entire point and flex gives every row its own opinion.                     */
+/* ========================================================================= */
+
+/*
+ * One grid for the whole table, and the rows take their columns from it.
+ *
+ * This was got wrong first and the screenshot showed it immediately: the
+ * columns were declared on each row, so every row was its own grid and `1fr`
+ * resolved against that row's own content. The state, the date and the actions
+ * landed at a different place in every row, drifting further the longer the
+ * path was. A table whose columns disagree with each other is the single most
+ * legible sign that nobody looked at the result.
+ *
+ * `subgrid` is what makes rows keep their own hover, border and focus while
+ * still taking their column edges from the table above them. The alternative,
+ * `display: contents` on the row, shares the tracks and throws away the row as
+ * a thing that can be styled at all.
+ */
+.sheetlist {
+  display: grid;
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--card);
+  overflow: hidden;
+}
+.sheetlist > * + * { border-top: 1px solid var(--line-soft); }
+.sheetlist > * { grid-column: 1 / -1; }
+
+.trow {
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: var(--s4);
+  padding: 0 var(--s4);
+  min-height: 44px;
+  min-width: 0;
+  position: relative;
+  background: transparent;
+  transition: background var(--m-hover) var(--ease);
+}
+.trow:hover { background: var(--hover); }
+/*
+ * `tap`, not `pick`. `.pick` already meant "an item in a hanging menu" further
+ * down this sheet, where it sets `display: flex` — so a clickable row silently
+ * stopped being a grid and every column in the table disagreed with the header
+ * above it. Found by measuring the rendered row rather than by reading, which
+ * is the only way this kind of collision ever gets found.
+ */
+.trow.tap { cursor: pointer; }
+.trow.on { background: var(--vibe-wash); }
+.trow.on::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 2px;
+  background: var(--vibe-a);
+}
+
+/* The head of a table: the same columns, in the label voice. */
+.thead {
+  display: grid;
+  grid-template-columns: subgrid;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s2) var(--s4);
+  min-height: 0;
+  border-bottom: 1px solid var(--line);
+  background: var(--deep);
+  font-size: var(--t-tiny);
+  font-weight: var(--w-mid);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* A name and, under it, where it is. The name gets the weight. */
+.tname { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.tname b {
+  font-size: var(--t-body);
+  font-weight: var(--w-mid);
+  letter-spacing: -.006em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/*
+ * Where a thing is, said in the smallest number of characters that identifies
+ * it. The full path is on the row for anybody who hovers it.
+ *
+ * A hundred-and-twenty-character path under every name, in monospace, was
+ * competing with the name for the same eye — and every one of them began with
+ * the same eighty characters, which is the definition of noise.
+ */
+.tname .where {
+  font-family: var(--mono);
+  font-size: var(--t-tiny);
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tcell {
+  min-width: 0;
+  font-size: var(--t-sub);
+  color: var(--quiet);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tcell.num {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.tcell.dim { color: var(--faint); }
+
+/* What you do with a row. Visible on hover, always present to a keyboard. */
+.tacts { display: flex; align-items: center; gap: var(--s1); justify-content: flex-end; min-width: 0; }
+.tacts .onhover { opacity: 0; transition: opacity var(--m-hover) var(--ease); }
+.trow:hover .tacts .onhover,
+.trow:focus-within .tacts .onhover { opacity: 1; }
+@media (hover: none) { .tacts .onhover { opacity: 1; } }
+
+/*
+ * The columns each table uses.
+ *
+ * Declared once per table rather than per row, so the head and every row agree
+ * by construction. `minmax(0, 1fr)` on the name is what lets a seventy-
+ * character project name shorten instead of pushing the rest off the screen.
+ */
+.projects-cols {
+  grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, 8.5rem) minmax(0, auto);
+}
+.apps-cols {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(0, 10rem) minmax(0, auto);
+}
+.term-cols {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
+}
+.offer-cols {
+  grid-template-columns: 26px minmax(0, 1fr) auto minmax(0, 6rem) auto minmax(0, auto);
+}
+.avail-cols {
+  grid-template-columns: 26px minmax(0, 1fr) auto auto minmax(0, auto);
+}
+
+@media (max-width: 74rem) {
+  .projects-cols { grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, auto); }
+  .projects-cols > :nth-child(4) { display: none; }
+  .offer-cols { grid-template-columns: 26px minmax(0, 1fr) auto auto minmax(0, auto); }
+  .offer-cols > :nth-child(4) { display: none; }
+}
+@media (max-width: 58rem) {
+  .apps-cols { grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto); }
+  .apps-cols > :nth-child(3) { display: none; }
+  .avail-cols { grid-template-columns: 26px minmax(0, 1fr) auto minmax(0, auto); }
+  .avail-cols > :nth-child(3) { display: none; }
+}
+
+/* ------------------------------------------------------------------------- */
+/* A section, with its count and its own controls                             */
+/* ------------------------------------------------------------------------- */
+
+.sect {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin: var(--s6) 0 var(--s3);
+  min-width: 0;
+}
+.sect:first-child { margin-top: 0; }
+.sect h2 { margin: 0; }
+.sect .count {
+  font-family: var(--mono);
+  font-size: var(--t-tiny);
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.sect .rest { flex: 1 1 auto; }
+.sect .acts { display: flex; align-items: center; gap: var(--s2); align-self: center; }
+
+/* ------------------------------------------------------------------------- */
+/* The head of a page                                                         */
+/*                                                                            */
+/* Title, one line saying what this place is for, and the one action that      */
+/* belongs to the whole page — on the same line, because a title on its own    */
+/* row is 90 pixels spent saying what the rail already said.                   */
+/* ------------------------------------------------------------------------- */
+
+.pagehead {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s5);
+  margin: 0 0 var(--s6);
+  min-width: 0;
+}
+.pagehead .grow { flex: 1 1 auto; min-width: 0; }
+.pagehead h1 { margin-bottom: var(--s1); }
+.pagehead .sub { margin: 0; }
+.pagehead .acts { display: flex; gap: var(--s2); align-items: center; flex: none; padding-top: 2px; }
+
+/* A field for narrowing a list down. */
+.find {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--tap);
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--deep);
+  min-width: 0;
+  width: min(18rem, 30vw);
+}
+.find input {
+  flex: 1;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-size: var(--t-sub);
+}
+.find input:focus { box-shadow: none; }
+.find:focus-within { border-color: var(--vibe-a); box-shadow: 0 0 0 3px color-mix(in srgb, var(--vibe-a) 16%, transparent); }
+.find .mark { color: var(--dim); flex: none; }
+
 /* ------------------------------------------------------------------------- */
 /* Nothing here yet                                                           */
 /* ------------------------------------------------------------------------- */
 
+/*
+ * Understated, and never the full width of a monitor.
+ *
+ * The Deploy page was a dashed box 1,300 pixels wide holding two short lines,
+ * with 800 pixels of nothing under it. An empty state is a small note that says
+ * what is missing and offers the thing that fixes it — not a large rectangle
+ * drawing attention to how empty a page is.
+ */
 .empty {
-  border: 1px dashed var(--line);
-  border-radius: var(--r-panel);
-  padding: var(--s7) var(--s5);
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s2);
+  max-width: 34rem;
+  padding: var(--s5) 0;
   color: var(--quiet);
   font-size: var(--t-sub);
   line-height: 1.6;
@@ -859,7 +1108,14 @@ h2:first-of-type { margin-top: 0; }
   font-weight: var(--w-semi);
   color: var(--ink);
   font-size: var(--t-body);
-  margin-bottom: var(--s1);
+}
+.empty .acts { display: flex; gap: var(--s2); margin-top: var(--s2); flex-wrap: wrap; }
+/* Inside a list that is otherwise a panel, it keeps the panel's edges. */
+.sheetlist > .empty, .lane > .empty {
+  align-items: center;
+  text-align: center;
+  max-width: none;
+  padding: var(--s7) var(--s5);
 }
 
 /*

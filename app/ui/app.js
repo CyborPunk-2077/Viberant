@@ -75,6 +75,19 @@ const size = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
 
 const tail = (path) => String(path ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
 
+/**
+ * Where something is, in the fewest characters that still identify it.
+ *
+ * The last two parts and the drive. Every project on this computer shares the
+ * first eighty characters of its path, so showing them puts the same string
+ * under sixteen different names and calls it information.
+ */
+function shortPath(path) {
+  const parts = String(path ?? '').split(/[\\/]/).filter(Boolean);
+  if (parts.length <= 3) return String(path ?? '');
+  return `${parts[0]}\\…\\${parts.slice(-2).join('\\')}`;
+}
+
 // ---------------------------------------------------------------------------
 // The one place a sentence is shown
 // ---------------------------------------------------------------------------
@@ -1198,36 +1211,80 @@ SCREENS.projects = async () => {
   const busy = d.projects.filter((p) => p.unsaved).length;
 
   view.innerHTML = `
-    <h1>Your projects</h1>
-    <p class="sub">Pick one, and every app on this computer opens already inside it.
-      ${d.projects.length
-    ? `${d.projects.length} here${busy ? `, ${busy} with work you have not saved` : ', all saved'}.`
-    : ''}</p>
-
-    <div class="bar">
-      <button class="go" id="p-add">Choose a folder…</button>
-      ${me.github ? '<button id="p-cloud">Bring one down from GitHub…</button>' : ''}
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Projects</h1>
+        <p class="sub">Pick one, and every app on this computer opens already inside it.</p>
+      </div>
+      <div class="acts">
+        ${me.github ? '<button id="p-cloud">From GitHub…</button>' : ''}
+        <button class="go" id="p-add">Add a folder…</button>
+      </div>
     </div>
     ${saidHtml()}
 
-    ${d.projects.length
-    ? `<h2>On this computer</h2><div class="stack">${d.projects.map(projectSlab).join('')}</div>`
-    : `<div class="empty"><b>Nothing here yet.</b>
-         Choose a folder above and it becomes the project every app opens into.</div>`}
+    ${d.projects.length ? `
+      <div class="sect">
+        <h2>On this computer</h2>
+        <span class="count">${d.projects.length}${busy ? ` · ${busy} unsaved` : ''}</span>
+        <div class="rest"></div>
+        <div class="acts">
+          <label class="find">
+            <span class="mark" aria-hidden="true">⌕</span>
+            <input id="p-find" placeholder="Filter projects" aria-label="Filter projects">
+          </label>
+        </div>
+      </div>
+      <div class="sheetlist projects-cols" id="p-list">
+        <div class="thead">
+          <span></span><span>Project</span><span>State</span>
+          <span>Last saved</span><span></span>
+        </div>
+        ${d.projects.map(projectRow).join('')}
+      </div>`
+    : `<div class="empty">
+         <b>No projects yet.</b>
+         A project is just a folder. Add one and every app here opens straight into it.
+         <span class="acts"><button class="go" id="p-add-2">Add a folder…</button></span>
+       </div>`}
 
     ${me.github ? `
-      <h2>On GitHub, not on this computer
-        <button class="quiet small" id="p-refresh" style="float:right;text-transform:none;letter-spacing:0">check again</button>
-      </h2>
-      <div id="cloud"><div class="row"><span class="spin"></span>
-        <div class="grow">Asking GitHub what you have…</div></div></div>` : ''}`;
+      <div class="sect">
+        <h2>On GitHub, not here</h2>
+        <div class="rest"></div>
+        <div class="acts"><button class="quiet small" id="p-refresh">Check again</button></div>
+      </div>
+      <div id="cloud" class="sheetlist projects-cols"><div class="trow"><span class="spin"></span>
+        <span class="tcell">Asking GitHub what you have…</span></div></div>` : ''}`;
   said = null;
 
-  $('#p-add').onclick = async () => {
+  const addFolder = async () => {
     const path = await pickFolder({ title: 'Which folder is the project?', confirm: 'Open this folder' });
     if (path) await openProject(path);
   };
+  $('#p-add')?.addEventListener('click', addFolder);
+  $('#p-add-2')?.addEventListener('click', addFolder);
   $('#p-cloud')?.addEventListener('click', fromGitHub);
+
+  // Narrowing a list is a thing you do to the page you are looking at, so it
+  // happens here rather than by asking the manager again and redrawing.
+  const find = $('#p-find');
+  if (find) {
+    find.oninput = () => {
+      const want = find.value.trim().toLowerCase();
+      let showing = 0;
+      for (const row of document.querySelectorAll('#p-list .trow[data-name]')) {
+        const match = !want || row.dataset.name.includes(want);
+        row.hidden = !match;
+        if (match) showing += 1;
+      }
+      $('#p-none')?.remove();
+      if (!showing) {
+        $('#p-list').insertAdjacentHTML('beforeend',
+          `<div class="empty" id="p-none"><b>No project matches “${esc(find.value.trim())}”.</b></div>`);
+      }
+    };
+  }
 
   lastMarks = d.marks;
 
@@ -1273,30 +1330,26 @@ let lastMarks = [];
  * One project, with the four things worth knowing at a glance: what state it is
  * in, when you last stopped, what you were doing when you did, and where it is.
  */
-function projectSlab(p) {
+function projectRow(p) {
   const mark = MARK_LOOK[p.mark] ? p.mark : 'notStarted';
-  const spine = mark === 'published' ? 'published' : p.unsaved ? 'unsaved' : 'clean';
   return `
-    <div class="slab" data-open="${esc(p.path)}">
-      <span class="spine ${spine}"></span>
-      <div class="grow">
-        <div class="line1">
-          <b>${esc(p.name)}</b>
-          ${stateChip(mark)}
-          ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
-          ${p.private ? '' : '<span class="chip vibe">offered</span>'}
-          ${p.toSend ? `<span class="chip attention">${p.toSend} to send</span>` : ''}
-        </div>
-        <div class="fact"><em>${esc(p.says)}</em> · ${esc(p.saved)}
-          · ${p.shared ? 'on GitHub' : 'only on this computer'}</div>
-        ${p.lastDid ? `<div class="did">Last time: ${esc(p.lastDid)}</div>` : ''}
-        <div class="path">${esc(p.path)}</div>
-      </div>
-      <div class="acts">
-        <button class="go small" data-open-now="${esc(p.path)}">Open</button>
-        <button class="small icon" data-more="${esc(p.path)}" data-now="${p.private ? '1' : '0'}"
-          data-tip="More for this project" aria-label="More for ${esc(p.name)}">⋯</button>
-      </div>
+    <div class="trow tap" data-open="${esc(p.path)}"
+      data-name="${esc(p.name.toLowerCase())} ${esc(String(p.path).toLowerCase())}">
+      <span class="dot ${p.unsaved ? 'attention' : 'off'}"
+        data-tip="${p.unsaved ? `${p.unsaved} unsaved` : 'Everything saved'}"></span>
+      <span class="tname">
+        <b>${esc(p.name)}</b>
+        <span class="where">${esc(shortPath(p.path))}</span>
+      </span>
+      ${stateChip(mark)}
+      <span class="tcell dim">${esc(p.saved ?? '')}</span>
+      <span class="tacts">
+        ${p.private ? '' : '<span class="chip" data-tip="Your other computers can ask for this">offered</span>'}
+        ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
+        <span class="onhover"><button class="small" data-open-now="${esc(p.path)}">Open</button></span>
+        <button class="quiet small icon" data-more="${esc(p.path)}" data-now="${p.private ? '1' : '0'}"
+          data-tip="More for ${esc(p.name)}" aria-label="More for ${esc(p.name)}">⋯</button>
+      </span>
     </div>`;
 }
 
@@ -2001,21 +2054,33 @@ SCREENS.apps = async () => {
   const away = t.tools.filter((x) => !x.here);
 
   view.innerHTML = `
-    <h1>AI apps</h1>
-    <p class="sub">Each one opens already inside the folder shown on its card, with the
-      account you picked. You never add the folder by hand again.</p>
-    ${whereBar(p)}
+    <div class="pagehead">
+      <div class="grow">
+        <h1>AI apps</h1>
+        <p class="sub">Each one opens already inside the folder below, as the account you
+          picked. You never add the folder by hand again.</p>
+      </div>
+      <div class="acts">${whereBar(p)}</div>
+    </div>
     ${saidHtml()}
 
     ${here.length ? `
-      <h2>On this computer</h2>
-      <div class="grid">${here.map((x) => appTile(x, p, t)).join('')}</div>` : `
+      <div class="sect">
+        <h2>Ready on this computer</h2><span class="count">${here.length}</span>
+      </div>
+      <div class="sheetlist apps-cols">
+        ${here.map((x) => appRow(x, p, t)).join('')}
+      </div>` : `
       <div class="empty"><b>None of the AI apps were found here.</b>
-        Any of the ones below can be installed from this page.</div>`}
+        Any of the ones below installs from this page.</div>`}
 
     ${away.length ? `
-      <h2>Not on this computer</h2>
-      <div class="grid">${away.map((x) => appTile(x, p, t)).join('')}</div>` : ''}
+      <div class="sect">
+        <h2>Not installed</h2><span class="count">${away.length}</span>
+      </div>
+      <div class="sheetlist apps-cols">
+        ${away.map((x) => appRow(x, p, t)).join('')}
+      </div>` : ''}
 
     <div id="job"></div>`;
   said = null;
@@ -2057,23 +2122,36 @@ function wireWhereBar() {
 
 const whereFor = (id, p) => chosen.folder.all ?? p?.dir ?? null;
 
-function appTile(x, p, t) {
+/**
+ * One AI app, as a row.
+ *
+ * It was a card in a grid: eleven of them, each with its own border, its own
+ * primary purple button, and — for the six that are not installed — the same
+ * sentence repeated word for word. Cards are for things that are conceptually
+ * separate from each other. These are eleven of one kind of thing, which is a
+ * list, and a list of eleven fits on a screen with room left over.
+ *
+ * The account, which is the thing you change just before pressing Open, sits
+ * next to Open rather than three lines below the name (D-35).
+ */
+function appRow(x, p, t) {
   const ways = x.ways ?? [];
   const account = chosen.account[x.id] ?? x.active ?? null;
 
   if (!x.here) {
     return `
-      <div class="tile flat away">
-        <div class="top"><span class="dot off"></span><span class="title">${esc(x.name)}</span>
-          ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}</div>
-        <div class="note">Not on this computer. Its own page has the installer and the steps.</div>
-        <div class="doing">
-          ${x.installs
-    ? `<button class="go small" data-install="${esc(x.id)}">Install ${esc(x.name)}</button>` : ''}
-          <button class="${x.installs ? 'quiet ' : ''}small" data-getpage="${esc(x.install ?? '')}">
-            ${x.installs ? 'Its page ↗' : `How to install ${esc(x.name)} ↗`}</button>
-        </div>
-        ${x.installs ? `<div class="note" style="color:var(--faint);font-size:.76rem">Runs ${esc(x.installs)}</div>` : ''}
+      <div class="trow">
+        <span class="kindmark quiet" aria-hidden="true">${APP_MARK}</span>
+        <span class="tname">
+          <b>${esc(x.name)}</b>
+          ${x.installs ? `<span class="where">${esc(x.installs)}</span>` : ''}
+        </span>
+        <span class="tcell dim">${x.made ? esc(x.made) : ''}</span>
+        <span class="tacts">
+          <button class="quiet small" data-getpage="${esc(x.install ?? '')}"
+            data-tip="Its own installation page">Instructions ↗</button>
+          ${x.installs ? `<button class="small" data-install="${esc(x.id)}">Install</button>` : ''}
+        </span>
       </div>`;
   }
 
@@ -2082,38 +2160,45 @@ function appTile(x, p, t) {
   const canWindow = ways.includes('desktop');
   const windowElsewhere = !canWindow && x.windowElsewhere;
 
-  return `
-    <div class="tile flat">
-      <div class="top">
-        <span class="dot ${account || x.signedIn ? 'live' : 'off'}"></span>
-        <span class="title">${esc(x.name)}</span>
-        ${x.made ? `<span class="chip" style="margin-left:auto">${esc(x.made)}</span>` : ''}
-      </div>
-      <div class="note">${account
-    ? `Will open as “${esc(account)}”`
-    : x.signedIn ? 'Signed in on this computer'
-      : x.config ? 'Not signed in yet' : 'Signs you in inside its own window'}</div>
-      ${x.opensInBrowser ? '<div class="note" style="color:var(--faint);font-size:.78rem">Its window is a page it opens in your browser.</div>' : ''}
-      ${windowElsewhere ? `<div class="note" style="color:var(--faint);font-size:.78rem">${esc(x.terminalOnlyBecause ?? 'Its own window is not on this computer yet.')}</div>` : ''}
+  const says = account ? `as ${account}`
+    : x.signedIn ? 'signed in'
+      : x.config ? 'no account chosen' : 'signs you in itself';
 
-      <div class="doing">
-        ${canWindow
-    ? `<button class="go small" data-launch="${esc(x.id)}" data-how="desktop">Open</button>`
-    : windowElsewhere
-      ? `<button class="go small" data-getwindow="${esc(x.windowElsewhere)}" data-name="${esc(x.name)}">Open ↗</button>`
-      : ''}
+  return `
+    <div class="trow">
+      <span class="kindmark" aria-hidden="true">${APP_MARK}</span>
+      <span class="tname">
+        <b>${esc(x.name)}</b>
+        <span class="where">${esc(says)}${x.opensInBrowser ? ' · opens in your browser' : ''}${
+  windowElsewhere ? ' · window not here yet' : ''}</span>
+      </span>
+      <span class="tcell dim">${x.made ? esc(x.made) : ''}</span>
+      <span class="tacts">
+        <span class="drop">
+          <button class="quiet small" data-account="${esc(x.id)}"
+            data-tip="Which account ${esc(x.name)} opens as">
+            <span class="dot ${account || x.signedIn ? 'live' : 'off'}"></span>Account ▾</button>
+          <div class="panel" hidden id="acct-${esc(x.id)}">${accountPanel(x, t)}</div>
+        </span>
         ${ways.includes('terminal') ? `
           <span class="pair">
             <button class="small" data-launch="${esc(x.id)}" data-how="terminal">Terminal</button>
-            <button class="small" data-which="${esc(x.id)}">▾</button>
+            <button class="small" data-which="${esc(x.id)}" aria-label="Which terminal">▾</button>
           </span>` : ''}
-        <span class="drop">
-          <button class="small" data-account="${esc(x.id)}">Account ▾</button>
-          <div class="panel" hidden id="acct-${esc(x.id)}">${accountPanel(x, t)}</div>
-        </span>
-      </div>
+        ${canWindow
+    ? `<button class="go small" data-launch="${esc(x.id)}" data-how="desktop">Open</button>`
+    : windowElsewhere
+      ? `<button class="small" data-getwindow="${esc(x.windowElsewhere)}" data-name="${esc(x.name)}"
+           data-tip="${esc(x.terminalOnlyBecause ?? 'Its own window is a separate download')}">Get window ↗</button>`
+      : ''}
+      </span>
     </div>`;
 }
+
+/** One mark for an AI app, so a row says what kind of thing it is at a glance. */
+const APP_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M8 2.2l1.5 3.6 3.6 1.5-3.6 1.5L8 12.4 6.5 8.8 2.9 7.3l3.6-1.5z"/></svg>';
 
 /**
  * The account panel: the services this app can sign you in with, and the
@@ -2411,35 +2496,57 @@ SCREENS.terminals = async () => {
   const dir = whereFor(null, p);
 
   view.innerHTML = `
-    <h1>Terminals</h1>
-    <p class="sub">Each of these opens already inside the folder above, so the first thing
-      you type is the thing you meant to type.</p>
-    ${whereBar(p)}
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Terminals</h1>
+        <p class="sub">Each of these opens already inside the folder below, so the first thing
+          you type is the thing you meant to type.</p>
+      </div>
+      <div class="acts">${whereBar(p)}</div>
+    </div>
     ${saidHtml()}
 
-    <h2>On this computer</h2>
-    <div class="grid">
+    ${dir ? '' : `<div class="empty"><b>No folder chosen yet.</b>
+      A terminal has to open somewhere. Pick the folder above, or open a project.
+      <span class="acts"><button class="go" id="t-pick">Choose a folder…</button></span></div>`}
+
+    <div class="sect"><h2>On this computer</h2><span class="count">${terminals.length}</span></div>
+    <div class="sheetlist term-cols">
       ${terminals.map((t) => `
-        <div class="tile flat">
-          <div class="top"><span class="dot live"></span><span class="title">${esc(t.name)}</span></div>
-          <div class="note">${esc(t.blurb)}</div>
-          <div class="doing">
-            <button class="go small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Open here</button>
-          </div>
+        <div class="trow ${dir ? 'tap' : ''}" ${dir ? `data-open-term="${esc(t.id)}"` : ''}>
+          <span class="kindmark" aria-hidden="true">${TERM_MARK}</span>
+          <span class="tname">
+            <b>${esc(t.name)}</b>
+            <span class="where">${esc(t.blurb)}</span>
+          </span>
+          <span class="tacts">
+            <span class="onhover">
+              <button class="small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Open here</button>
+            </span>
+          </span>
         </div>`).join('')}
     </div>`;
   said = null;
 
+  $('#t-pick')?.addEventListener('click', () => $('#where')?.click());
+
   wireWhereBar();
 
   for (const b of document.querySelectorAll('[data-open-term]')) {
-    b.onclick = async () => {
-      b.classList.add('working');
+    b.onclick = async (e) => {
+      if (e.target !== b && e.target.closest('button') !== b && e.target.closest('button')) return;
+      const pressed = e.target.closest('button') ?? b;
+      pressed.classList?.add('working');
       say(await post('/terminal', { terminal: b.dataset.openTerm, dir: whereFor(null, p) }));
       draw();
     };
   }
 };
+
+/** The mark for a terminal. A prompt, which is what one actually looks like. */
+const TERM_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">'
+  + '<path d="M4 5.5L6.8 8 4 10.5M8.6 10.8h3.4"/></svg>';
 
 // ---------------------------------------------------------------------------
 // Putting it out into the world
@@ -2450,8 +2557,21 @@ let watching = null;
 SCREENS.ship = async () => {
   const d = await get('/ship');
   if (!d.open) {
-    view.innerHTML = `<h1>Deploy</h1>
-      <div class="empty"><b>No project is open.</b> Pick one first and this page fills in.</div>`;
+    view.innerHTML = `
+      <div class="pagehead">
+        <div class="grow">
+          <h1>Deploy</h1>
+          <p class="sub">Put a website into the world, or hand out an application under a
+            version. Two errands, never one button.</p>
+        </div>
+      </div>
+      <div class="empty">
+        <b>No project is open.</b>
+        Deploying is something you do to a project, so pick one and this fills in with
+        what it can actually be sent to.
+        <span class="acts"><button class="go" id="s-pick">Choose a project…</button></span>
+      </div>`;
+    $('#s-pick').onclick = () => go('projects');
     return;
   }
 
@@ -3796,19 +3916,43 @@ async function signInToGoogle({ inGate = false } = {}) {
   }, 1500);
 }
 
+/**
+ * Open somewhere in particular, wearing something in particular.
+ *
+ * Only for photographing the app. A camera cannot press a tab, so the place and
+ * the look are askable in the address — which is how every picture in the
+ * design work is taken of the real thing running rather than of a mock-up.
+ *
+ * It reads and never writes: nothing here is remembered, so a link cannot
+ * change what somebody's app looks like the next time they open it.
+ */
+function asAsked() {
+  const asked = new URLSearchParams(location.search);
+  return {
+    place: asked.get('at'),
+    look: asked.get('look'),
+    instant: asked.has('instant'),
+  };
+}
+
 const start = async () => {
+  const wanted = asAsked();
   shedGrains();
   await refreshMe();
+  if (wanted.look) document.documentElement.dataset.theme = wanted.look;
   const p = await get('/project');
   at.inside = !!p.open;
+  if (wanted.place) { at.tab = wanted.place; at.inside = false; }
+  drawNav();
   await draw();
 
-  const skip = me.settings?.opening === false
+  const skip = wanted.instant || me.settings?.opening === false
     || matchMedia('(prefers-reduced-motion: reduce)').matches;
   setTimeout(() => {
     $('#opening')?.classList.add('going');
     $('#frame').classList.add('up');
-    setTimeout(() => $('#opening')?.remove(), 500);
+    setTimeout(() => $('#opening')?.remove(), skip ? 0 : 500);
+    if (wanted.instant) { $('#opening')?.remove(); return; }
     // Asked once, on a computer that has never signed in to anything. After
     // that the corner is where you go, and nothing stands in front of the app
     // again.
