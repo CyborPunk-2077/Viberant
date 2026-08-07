@@ -31,7 +31,14 @@
 /* Everything below this block refers to these and never to a literal.       */
 /* ========================================================================= */
 
-:root {
+/*
+ * The default look, named as well as assumed.
+ *
+ * `[data-theme="dark"]` is the same selector rather than a copy of the values,
+ * so a preview can be drawn in Obsidian Signal without this palette existing in
+ * two places waiting to disagree.
+ */
+:root, [data-theme="dark"] {
   /* -- surfaces, darkest to lightest ------------------------------------- */
   --page:        #09090b;
   --deep:        #060607;
@@ -143,7 +150,7 @@
  * redesign tidier. Each one is re-tuned to the same surface ladder rather than
  * left on the old one, so density, contrast and hierarchy survive the switch.
  */
-:root[data-theme="light"] {
+:root[data-theme="light"], [data-theme="light"] {
   --page: #fbfbfc; --deep: #f1f1f4; --card: #ffffff; --raised: #ffffff;
   --lifted: #ffffff; --hover: #f4f4f6;
   --line: #e4e4e7; --line-soft: rgba(0, 0, 0, .05); --line-strong: #d4d4d8;
@@ -154,7 +161,24 @@
   --shadow-lift: 0 4px 12px rgba(24, 24, 27, .08), 0 16px 40px -20px rgba(24, 24, 27, .25);
 }
 
-:root[data-theme="neon"] {
+/*
+ * Minimal Graphite: neutral throughout, and the accent is demoted to the same
+ * grey as everything else. Colour then appears *only* where something is
+ * genuinely happening — a live dot, a warning, a failure — which is what
+ * somebody choosing this wants it for.
+ */
+:root[data-theme="graphite"], [data-theme="graphite"] {
+  --page: #0b0b0c; --deep: #080809; --card: #111112; --raised: #171718;
+  --lifted: #1c1c1e; --hover: #191919;
+  --line: #262627; --line-soft: rgba(255, 255, 255, .05); --line-strong: #3a3a3c;
+  --ink: #f2f2f3; --quiet: #a3a3a5; --faint: #737375; --dim: #545456;
+  --live: #6aa88a; --attention: #b99a5c; --trouble: #c07d84; --cool: #7f96b8;
+  --vibe-a: #6e6e72; --vibe-b: #86868b; --vibe-c: #57575b;
+  --vibe-ink: #ffffff;
+  --glow: transparent;
+}
+
+:root[data-theme="neon"], [data-theme="neon"] {
   --page: #07060f; --deep: #040309; --card: #0e0c1a; --raised: #141024;
   --lifted: #191330; --hover: #17122b;
   --line: #241d45; --line-soft: rgba(255, 255, 255, .07); --line-strong: #362a63;
@@ -163,7 +187,7 @@
   --vibe-a: #a855f7; --vibe-b: #c084fc; --vibe-c: #00e5ff;
 }
 
-:root[data-theme="steam"] {
+:root[data-theme="steam"], [data-theme="steam"] {
   --page: #0d131b; --deep: #090e14; --card: #141d28; --raised: #192433;
   --lifted: #1e2b3c; --hover: #1b2735;
   --line: #263749; --line-soft: rgba(255, 255, 255, .06); --line-strong: #375068;
@@ -172,7 +196,7 @@
   --vibe-a: #1a9fff; --vibe-b: #66c0f4; --vibe-c: #4b8ec4;
 }
 
-:root[data-theme="fire"] {
+:root[data-theme="fire"], [data-theme="fire"] {
   --page: #100a07; --deep: #0a0604; --card: #19110c; --raised: #201610;
   --lifted: #281c14; --hover: #241a13;
   --line: #35231a; --line-soft: rgba(255, 255, 255, .06); --line-strong: #543328;
@@ -182,7 +206,7 @@
   --vibe-ink: #1a0d06;
 }
 
-:root[data-theme="crimson"] {
+:root[data-theme="crimson"], [data-theme="crimson"] {
   --page: #0e070e; --deep: #090409; --card: #170c17; --raised: #1e111d;
   --lifted: #251625; --hover: #221422;
   --line: #341b31; --line-soft: rgba(255, 255, 255, .06); --line-strong: #532a4b;
@@ -480,6 +504,40 @@ nav {
 }
 .seek:hover { border-color: var(--line-strong); background: var(--raised); }
 .seek .what { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/*
+ * What is moving, in the corner.
+ *
+ * Absent entirely when nothing is moving, rather than present and reading zero.
+ * A control whose job is to say "nothing is happening" is furniture.
+ */
+.moving {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  height: var(--tap);
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--card);
+  color: var(--quiet);
+  font-size: var(--t-meta);
+  flex: none;
+}
+.moving:hover { background: var(--raised); border-color: var(--line-strong); color: var(--ink); }
+.moving .spin { width: 11px; height: 11px; border-width: 1.5px; }
+
+#moving-panel { min-width: 20rem; max-width: 26rem; }
+.mover { padding: var(--s2) var(--s3); }
+.mover + .mover { border-top: 1px solid var(--line-soft); margin-top: var(--s1); padding-top: var(--s3); }
+.mover .line1 { font-size: var(--t-sub); font-weight: var(--w-mid); overflow-wrap: anywhere; }
+.mover .fact {
+  font-size: var(--t-tiny);
+  color: var(--faint);
+  margin-top: 1px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
 
 .kbd {
   display: inline-flex;
@@ -1384,6 +1442,68 @@ select { cursor: pointer; }
 .setting .about b { font-weight: var(--w-mid); display: block; }
 .setting .about span { color: var(--quiet); font-size: var(--t-sub); line-height: 1.55; }
 .setting .set { flex: none; display: flex; gap: var(--s2); align-items: center; }
+
+/* ------------------------------------------------------------------------- */
+/* Choosing a look by looking at it                                           */
+/*                                                                            */
+/* Each sample carries its own `data-theme`, so it is drawn with that look's   */
+/* real values rather than an approximation somebody typed in twice.           */
+/* ------------------------------------------------------------------------- */
+
+.looks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: var(--s3);
+  width: 100%;
+}
+
+.look {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s1);
+  height: auto;
+  padding: var(--s2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--card);
+  text-align: left;
+  white-space: normal;
+}
+.look:hover { border-color: var(--line-strong); background: var(--hover); }
+.look.on { border-color: var(--vibe-a); background: var(--vibe-wash); }
+.look .what { font-size: var(--t-sub); font-weight: var(--w-mid); color: var(--ink); }
+.look .why { font-size: var(--t-tiny); color: var(--faint); line-height: 1.45; }
+
+.sample {
+  display: flex;
+  gap: 3px;
+  height: 58px;
+  padding: 4px;
+  margin-bottom: var(--s1);
+  border: 1px solid var(--line);
+  border-radius: var(--r-button);
+  background: var(--page);
+  overflow: hidden;
+}
+.sample .s-rail {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 3px;
+  width: 16px;
+  padding: 3px 2px;
+  border-radius: 3px;
+  background: var(--card);
+  flex: none;
+}
+.sample .s-rail i { height: 3px; border-radius: 2px; background: var(--faint); }
+.sample .s-rail i:first-child { background: var(--vibe-a); }
+.sample .s-body { display: flex; flex-direction: column; gap: 3px; flex: 1; padding: 3px; min-width: 0; }
+.sample .s-bar { height: 4px; border-radius: 2px; background: var(--line-strong); }
+.sample .s-row { height: 7px; border-radius: 2px; background: var(--card); border: 1px solid var(--line); }
+.sample .s-row.short { width: 65%; }
+.sample .s-go { height: 7px; width: 34%; border-radius: 2px; background: var(--vibe-a); margin-top: auto; }
 
 /* ========================================================================= */
 /* Notes between computers                                                   */

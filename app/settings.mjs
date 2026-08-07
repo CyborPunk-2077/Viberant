@@ -52,17 +52,18 @@ export const KNOWN = [
   },
   {
     id: 'appearance',
-    name: 'Colours',
-    why: 'Follow this computer, or pick a look and stay in it. A theme changes colours and nothing else.',
-    kind: 'choice',
+    name: 'Appearance',
+    why: 'A look changes colours and nothing else — never a layout, never a control, never a sentence.',
+    kind: 'appearance',
     choices: [
-      { id: 'system', name: 'Follow this computer' },
-      { id: 'light', name: 'Light' },
-      { id: 'dark', name: 'Dark' },
-      { id: 'steam', name: 'Deep blue' },
-      { id: 'neon', name: 'Neon' },
-      { id: 'fire', name: 'Fire' },
-      { id: 'crimson', name: 'Crimson' },
+      { id: 'system', name: 'Follow this computer', why: 'Light or dark, whichever this computer is set to.' },
+      { id: 'dark', name: 'Obsidian Signal', why: 'The one it is designed in. Near-black, one violet accent, meaning in colour.' },
+      { id: 'graphite', name: 'Minimal Graphite', why: 'Neutral throughout. Colour appears only where something is happening.' },
+      { id: 'light', name: 'Light Precision', why: 'A warm off-white, precise borders, the same restraint the other way up.' },
+      { id: 'steam', name: 'Deep Blue', why: 'Cool slate and a bright blue.' },
+      { id: 'neon', name: 'Neon', why: 'Deep violet with a hard cyan edge.' },
+      { id: 'fire', name: 'Ember', why: 'Warm dark, amber and orange.' },
+      { id: 'crimson', name: 'Crimson', why: 'Dark plum and magenta.' },
     ],
     fallback: () => 'system',
   },
@@ -201,7 +202,11 @@ export async function set(id, value) {
   if (known.kind === 'text' || known.kind === 'secret') {
     clean = String(value ?? '').trim().slice(0, known.longest ?? 60);
   }
-  if (known.kind === 'choice' && !known.choices.some((c) => c.id === value)) {
+  // Anything that has choices is held to them, rather than anything whose kind
+  // happens to be called `choice`. Those two were the same thing until a
+  // setting was drawn a different way and quietly stopped being checked —
+  // caught by a test, which is the honest way to report it.
+  if (known.choices && !known.choices.some((c) => c.id === value)) {
     return { ok: false, sentence: 'That is not one of the choices.', action: 'Pick one from the list.' };
   }
   if (known.kind === 'text' && !known.optional && !clean) {

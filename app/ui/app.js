@@ -395,9 +395,69 @@ function drawTop() {
       <span aria-hidden="true">⌕</span>
       <span class="what">Search Viberant…</span>
       <span class="kbd">Ctrl K</span>
-    </button>`;
+    </button>
+    <div class="drop" id="moving-drop" hidden>
+      <button class="moving" id="moving" data-tip="What is moving right now">
+        <span class="spin" aria-hidden="true"></span>
+        <span id="moving-count" class="mono"></span>
+      </button>
+      <div class="panel" hidden id="moving-panel"></div>
+    </div>`;
 
   $('#seek').onclick = openPalette;
+  $('#moving').onclick = (e) => { e.stopPropagation(); openMovingPanel(); };
+  paintMoving();
+}
+
+// ---------------------------------------------------------------------------
+// What is moving right now
+//
+// A transfer belongs to the manager, not to the page that started it — it keeps
+// going when you walk away from Workspace, and there was nowhere to see that.
+// One count in the corner, and it is absent entirely when nothing is moving.
+// ---------------------------------------------------------------------------
+
+let moving = [];
+
+/** Errands worth a place in the corner: things carrying bytes somewhere. */
+const isMoving = (j) => j.running && /^Bringing /.test(j.what ?? '');
+
+async function checkMoving() {
+  const { jobs: all } = await get('/jobs');
+  const now = (all ?? []).filter(isMoving);
+
+  // Compared before anything is touched, so a corner that has nothing new to
+  // say does not redraw itself every two seconds (D-68).
+  const before = moving.map((j) => `${j.id}:${j.lines?.length ?? 0}`).join('|');
+  const after = now.map((j) => `${j.id}:${j.lines?.length ?? 0}`).join('|');
+  moving = now;
+  if (before !== after) paintMoving();
+}
+
+function paintMoving() {
+  const drop = $('#moving-drop');
+  if (!drop) return;
+  drop.hidden = moving.length === 0;
+  if (!moving.length) { $('#moving-panel').hidden = true; return; }
+
+  $('#moving-count').textContent = String(moving.length);
+  const panel = $('#moving-panel');
+  if (panel.hidden) return;
+  panel.innerHTML = movingHtml();
+}
+
+const movingHtml = () => `
+  <div class="head">Moving now</div>
+  ${moving.map((j) => `
+    <div class="mover">
+      <div class="line1"><b>${esc(j.what.replace(/^Bringing /, ''))}</b></div>
+      <div class="fact mono">${esc(j.lines?.[j.lines.length - 1] ?? 'Getting ready…')}</div>
+    </div>`).join('')}`;
+
+function openMovingPanel() {
+  const panel = $('#moving-panel');
+  panel.innerHTML = movingHtml();
+  openPanel(panel);
 }
 
 /**
@@ -3126,11 +3186,28 @@ SCREENS.settings = async () => {
       draw();
     };
   }
-  for (const sel of document.querySelectorAll('[data-choose]')) {
+  for (const sel of document.querySelectorAll('select[data-choose]')) {
     sel.onchange = async () => {
       say(await post('/settings', { id: sel.dataset.choose, value: sel.value }));
       await refreshMe();
       draw();
+    };
+  }
+  for (const b of document.querySelectorAll('button[data-choose]')) {
+    b.onclick = async () => {
+      // Applied to the page before the manager is even asked, so choosing a
+      // look is instant and nothing flashes through the old one on the way.
+      // If saving fails, the sentence says so and the next draw puts it back.
+      const want = b.dataset.value;
+      document.documentElement.dataset.theme = want === 'system' ? '' : want;
+      for (const other of document.querySelectorAll('button[data-choose]')) {
+        other.classList.toggle('on', other === b);
+        other.setAttribute('aria-pressed', String(other === b));
+      }
+      const r = await post('/settings', { id: b.dataset.choose, value: want });
+      if (!r.ok) say(r);
+      await refreshMe();
+      if (!r.ok) draw();
     };
   }
 
@@ -3159,6 +3236,29 @@ function control(s, terminals) {
     return `<select data-choose="${esc(s.id)}">
       ${s.choices.map((c) => `<option value="${esc(c.id)}" ${c.id === s.value ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
     </select>`;
+  }
+  /**
+   * A look, shown rather than named.
+   *
+   * "Deep blue" in a dropdown tells you the word somebody chose for it, which
+   * is not the question anybody is asking. Each of these is a small picture of
+   * the actual shell — rail, bar, a row, an accent — drawn with that look's own
+   * values, so choosing is looking rather than guessing and then undoing.
+   */
+  if (s.kind === 'appearance') {
+    return `<div class="looks">${s.choices.map((c) => `
+      <button class="look ${c.id === s.value ? 'on' : ''}" data-choose="${esc(s.id)}"
+        data-value="${esc(c.id)}" aria-pressed="${c.id === s.value}">
+        <span class="sample" data-theme="${c.id === 'system'
+    ? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+    : esc(c.id)}">
+          <span class="s-rail"><i></i><i></i><i></i></span>
+          <span class="s-body"><span class="s-bar"></span><span class="s-row"></span>
+            <span class="s-row short"></span><span class="s-go"></span></span>
+        </span>
+        <span class="what">${esc(c.name)}</span>
+        <span class="why">${esc(c.why ?? '')}</span>
+      </button>`).join('')}</div>`;
   }
   if (s.kind === 'terminal') {
     return `<select data-choose="${esc(s.id)}">
@@ -3399,6 +3499,10 @@ async function checkPulse() {
   } catch { /* the server is starting or stopping; nothing to say about it */ }
 }
 setInterval(checkPulse, 4000);
+
+// One interval, armed once at startup, never from inside a render — which is
+// the mistake D-99 was written about.
+setInterval(() => { if (!document.hidden) checkMoving().catch(() => {}); }, 2000);
 
 // ---------------------------------------------------------------------------
 // Start
