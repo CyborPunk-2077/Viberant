@@ -1002,6 +1002,26 @@ const routes = {
     };
   },
 
+  /**
+   * Open an address in the browser this computer uses, not in this window.
+   *
+   * The manager's window is the manager. Navigating it to somebody's newly
+   * published website would replace the app with the website, and the way back
+   * is not obvious to anybody who has not met an Electron window before.
+   */
+  async 'POST /open-outside'({ body }) {
+    const url = String(body?.url ?? '');
+    if (!/^https?:\/\//i.test(url)) {
+      return { ok: false, sentence: 'That is not an address this computer can open.', action: 'Copy it instead.' };
+    }
+    letGoOf(spawn(
+      process.platform === 'win32' ? 'cmd' : 'open',
+      process.platform === 'win32' ? ['/c', 'start', '', url] : [url],
+      { detached: true, stdio: 'ignore', windowsHide: true },
+    ));
+    return { ok: true };
+  },
+
   /** The file chooser this computer already has, for offering one file. */
   async 'POST /choose/file'({ body }) {
     return browse.chooseFile({ startAt: body?.startAt ?? null });

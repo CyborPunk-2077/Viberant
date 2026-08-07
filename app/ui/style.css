@@ -1727,7 +1727,11 @@ select { cursor: pointer; }
 .setting .about { flex: 1 1 18rem; min-width: 0; }
 .setting .about b { font-weight: var(--w-mid); display: block; }
 .setting .about span { color: var(--quiet); font-size: var(--t-sub); line-height: 1.55; }
-.setting .set { flex: none; display: flex; gap: var(--s2); align-items: center; }
+.setting .set { flex: none; display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+
+/* The account in use, said as a name with a light beside it. */
+.who-now { display: inline-flex; align-items: center; gap: var(--s2); }
+.who-now .dot { flex: none; }
 
 /* ------------------------------------------------------------------------- */
 /* Choosing a look by looking at it                                           */
@@ -1736,9 +1740,21 @@ select { cursor: pointer; }
 /* real values rather than an approximation somebody typed in twice.           */
 /* ------------------------------------------------------------------------- */
 
+/*
+ * A setting whose control is a gallery gets the whole row.
+ *
+ * Every other setting here is a name on the left and one small control on the
+ * right, so the control slot is sized to its contents. Eight theme previews in
+ * that slot get pushed into whatever is left over at the end of a sentence,
+ * which is a column about a fifth of the width they need.
+ */
+.setting:has(.looks) { flex-direction: column; align-items: stretch; gap: var(--s4); }
+.setting:has(.looks) .set { justify-content: stretch; }
+.setting:has(.looks) .about { flex: 1 1 auto; }
+
 .looks {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
   gap: var(--s3);
   width: 100%;
 }

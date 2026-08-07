@@ -22,7 +22,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { platform } from 'node:process';
 
 import * as jobs from './jobs.mjs';
@@ -200,7 +200,8 @@ async function toVercel(job, dir) {
   const address = job.lines.map((l) => l.match(/https:\/\/\S+\.vercel\.app\S*/)).filter(Boolean).pop();
   return jobs.end(job, {
     ok: true,
-    sentence: address ? `Your site is online at ${address[0]}` : 'Your site is online.',
+    at: address ? address[0] : null,
+    sentence: address ? `Your site is live at ${address[0]}` : 'Your site is live.',
     action: 'Anyone with the address can see it now.',
   });
 }
@@ -221,7 +222,8 @@ async function toNetlify(job, dir) {
   const address = job.lines.map((l) => l.match(/https:\/\/\S+\.netlify\.app\S*/)).filter(Boolean).pop();
   return jobs.end(job, {
     ok: true,
-    sentence: address ? `Your site is online at ${address[0]}` : 'Your site is online.',
+    at: address ? address[0] : null,
+    sentence: address ? `Your site is live at ${address[0]}` : 'Your site is live.',
     action: 'Anyone with the address can see it now.',
   });
 }
@@ -280,11 +282,66 @@ async function toPages(job, dir) {
     });
   }
 
+  // Asked for, rather than assumed. `git push` returning zero says the work
+  // reached GitHub; it says nothing at all about whether a website exists at
+  // the other end. GitHub builds these on its own schedule and can decide it
+  // cannot — so this waits for it to say which, and reports what it said.
+  const settled = await waitForPages(job, dir);
+
   return jobs.end(job, {
-    ok: true,
-    sentence: `Your site is online at ${address}`,
-    action: 'GitHub takes a minute or two to build it the first time.',
+    ok: settled.ok,
+    at: settled.ok ? address : null,
+    sentence: settled.ok
+      ? `${basename(dir)} is live at ${address}`
+      : settled.sentence,
+    action: settled.ok
+      ? 'Anyone with the address can see it now.'
+      : settled.action,
   });
+}
+
+/**
+ * Wait for GitHub to say whether it built the site, rather than assuming it did.
+ *
+ * A push that returns zero means the work arrived. It says nothing about
+ * whether a website exists at the other end — GitHub builds these on its own
+ * schedule, and it can decide it cannot, in which case the address exists and
+ * serves nothing. Reporting success at the push is how somebody ends up sending
+ * a link to a page that is not there.
+ *
+ * Asked a handful of times with the gap growing, and given up on politely: a
+ * build that is still going after two minutes is not a failure, it is a build
+ * that is still going, and saying so is more honest than either verdict.
+ */
+async function waitForPages(job, dir) {
+  jobs.step(job, 'Waiting for GitHub to build it.');
+  const gaps = [3000, 5000, 8000, 12000, 15000, 20000, 25000, 30000];
+
+  for (const gap of gaps) {
+    await new Promise((r) => setTimeout(r, gap));
+
+    const said = await quiet(async () => (await run('gh',
+      ['api', 'repos/{owner}/{repo}/pages/builds/latest', '--jq', '.status,.error.message'],
+      { cwd: dir })).stdout.trim(), null);
+    if (!said) continue;
+
+    const [status, why] = said.split('\n');
+    if (status === 'built') return { ok: true };
+    if (status === 'errored') {
+      return {
+        ok: false,
+        sentence: 'GitHub would not build the site, so nothing is at that address.',
+        action: why && why !== 'null' ? why : 'Check the site is a plain folder of finished files.',
+      };
+    }
+    jobs.write(job, `GitHub says: ${status}`);
+  }
+
+  return {
+    ok: false,
+    sentence: 'GitHub is still building the site, so it is not there yet.',
+    action: 'It usually takes a minute or two. Look again shortly.',
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -367,10 +424,15 @@ async function runApp(job, { dir, alsoGiveOut, version, notes }) {
   for (const m of made) jobs.write(job, `${m.name} — ${Math.round(m.size / 1024 / 1024)} MB`);
 
   if (!alsoGiveOut) {
+    const one = made[0];
     return jobs.end(job, {
       ok: true,
-      sentence: `Built. ${made.length === 1 ? 'One file is' : `${made.length} files are`} ready to hand out.`,
-      action: 'Give it out from here whenever you are happy with it.',
+      at: one.path,
+      made: made.map((m) => ({ name: m.name, path: m.path, size: m.size })),
+      sentence: made.length === 1
+        ? `Built ${one.name} — ${Math.round(one.size / 1024 / 1024)} MB.`
+        : `Built ${made.length} files people can install.`,
+      action: `In ${dirname(one.path)}`,
     });
   }
 
@@ -406,7 +468,10 @@ async function runApp(job, { dir, alsoGiveOut, version, notes }) {
 
   return jobs.end(job, {
     ok: true,
-    sentence: address ? `Version ${tag} is out, at ${address}` : `Version ${tag} is out.`,
-    action: 'Anyone can download and install it now.',
+    at: address ?? made[0]?.path ?? null,
+    made: made.map((m) => ({ name: m.name, path: m.path, size: m.size })),
+    release: address,
+    sentence: `Version ${tag} is out — ${made.length === 1 ? made[0].name : `${made.length} files`}.`,
+    action: address ? `Anyone can download it from ${address}` : 'Anyone can download and install it now.',
   });
 }

@@ -2762,27 +2762,45 @@ SCREENS.ship = async () => {
     $(id)?.addEventListener('click', () => firstTimeSheet());
   }
 
-  for (const b of document.querySelectorAll('[data-site]')) {
-    b.onclick = async () => {
-      b.classList.add('working');
-      const r = await post('/ship/site', { place: b.dataset.site });
-      if (r.ok) watchJob(r.job); else { say(r); draw(); }
-    };
-  }
-  $('#app-build').onclick = async () => {
-    const r = await post('/ship/app', { giveOut: false });
-    if (r.ok) watchJob(r.job); else { say(r); draw(); }
+  /**
+   * Start a long errand, and make it obvious that it started.
+   *
+   * These take minutes and the panel that reports them lives at the bottom of
+   * the page, under two full-height panels. Pressing a button that then does
+   * nothing you can see, in a place you cannot see, is indistinguishable from
+   * pressing a button that does not work — which is exactly how this was
+   * reported. Acknowledged at once (D-62), and the errand is brought into view.
+   */
+  const begin = async (button, where, body) => {
+    button.disabled = true;
+    button.classList.add('working');
+    const was = button.textContent;
+
+    const r = await post(where, body);
+    if (!r.ok) {
+      button.disabled = false;
+      button.classList.remove('working');
+      button.textContent = was;
+      say(r);
+      return draw();
+    }
+    await watchJob(r.job);
+    $('#job')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   };
+
+  for (const b of document.querySelectorAll('[data-site]')) {
+    b.onclick = () => begin(b, '/ship/site', { place: b.dataset.site });
+  }
+  $('#app-build').onclick = () => begin($('#app-build'), '/ship/app', { giveOut: false });
   $('#app-out').onclick = async () => {
     const version = await ask({
-      title: 'Give it out',
+      title: 'Build and publish',
       label: 'What version is this? People will see this number.',
       value: app.version ?? '1.0.0',
-      confirm: 'Build and give it out',
+      confirm: 'Build and publish',
     });
     if (!version) return;
-    const r = await post('/ship/app', { giveOut: true, version });
-    if (r.ok) watchJob(r.job); else { say(r); draw(); }
+    await begin($('#app-out'), '/ship/app', { giveOut: true, version });
   };
 
   // Redraw the errand once, without starting a second loop watching it.
@@ -2837,8 +2855,16 @@ async function paintJob({ again = true } = {}) {
   const j = await get(`/job?id=${encodeURIComponent(watching)}`);
   if (j.ok === false && !j.lines) { watching = null; stopWatchingJob(); return; }
 
-  // Built once. Everything after this is an edit, not a replacement.
-  if (jobShown !== watching) {
+  // Built when there is nothing to edit — which is a different question from
+  // "is this a different errand", and getting those two confused is what made
+  // a finished build vanish off the screen.
+  //
+  // Every redraw replaces the page, so `#job` comes back as an empty div while
+  // this function still believes it drew into it a moment ago. It then skipped
+  // the rebuild and wrote each piece into an element that no longer existed —
+  // silently, because writing into nothing is not an error. From the outside:
+  // press Build, watch it work, and then the whole result disappears.
+  if (jobShown !== watching || !box.querySelector('#job-says')) {
     jobShown = watching;
     box.innerHTML = `
       <h2>${esc(j.what)}</h2>
@@ -2850,6 +2876,7 @@ async function paintJob({ again = true } = {}) {
           <span id="job-clear"></span>
         </div>
         <p class="note" id="job-does" style="color:var(--quiet);margin:0 0 .7rem;display:none"></p>
+        <div class="bar" id="job-made" style="margin:0 0 .7rem;display:none"></div>
         <ul class="steps" id="job-steps"></ul>
         <details id="job-more">
           <summary style="cursor:pointer;color:var(--quiet);font-size:var(--t-sub)">What it printed</summary>
@@ -2875,6 +2902,41 @@ async function paintJob({ again = true } = {}) {
     const words = j.action && !j.running ? esc(j.action) : '';
     if (does.innerHTML !== words) does.innerHTML = words;
     does.style.display = words ? '' : 'none';
+  }
+
+  // What it produced, offered rather than described. An errand that made a file
+  // and then only tells you it made a file has stopped one step short of being
+  // useful — and the address of a site that is now live is the single thing
+  // anybody wants off this panel.
+  const madeBox = $('#job-made');
+  if (madeBox) {
+    const bits = [];
+    if (j.release) {
+      bits.push(`<button class="go small" data-open-out="${esc(j.release)}">Open the release ↗</button>`);
+    } else if (j.at && /^https?:/i.test(j.at)) {
+      bits.push(`<button class="go small" data-open-out="${esc(j.at)}">Open the website ↗</button>`);
+      bits.push(`<button class="small" data-copy-out="${esc(j.at)}">Copy the address</button>`);
+    }
+    for (const m of j.made ?? []) {
+      bits.push(`<button class="small" data-show-out="${esc(m.path)}"
+        data-tip="${esc(m.path)}">Show ${esc(m.name)}</button>`);
+    }
+    const html = bits.join('');
+    if (madeBox.innerHTML !== html) madeBox.innerHTML = html;
+    madeBox.style.display = bits.length ? '' : 'none';
+
+    for (const b of madeBox.querySelectorAll('[data-open-out]')) {
+      b.onclick = () => post('/open-outside', { url: b.dataset.openOut });
+    }
+    for (const b of madeBox.querySelectorAll('[data-copy-out]')) {
+      b.onclick = async () => {
+        await navigator.clipboard?.writeText(b.dataset.copyOut);
+        b.textContent = 'Copied';
+      };
+    }
+    for (const b of madeBox.querySelectorAll('[data-show-out]')) {
+      b.onclick = () => post('/reveal', { path: b.dataset.showOut });
+    }
   }
 
   // Appended rather than rewritten, and only the lines that are new. A log that
@@ -3359,15 +3421,110 @@ async function peekAt(machineId, w) {
 // Settings
 // ---------------------------------------------------------------------------
 
+/**
+ * Which GitHub account this manager will actually use, with room to say it.
+ *
+ * It had no home but the panel in the corner, which is 272 pixels wide and was
+ * being asked to hold a list of accounts, a paragraph explaining what signing
+ * in to another one does, and two buttons. That is where the reported clipping
+ * came from, and no amount of shortening the paragraph fixes a column that
+ * narrow — the answer is somewhere with room, which is here.
+ *
+ * The corner keeps quick switching. This is where you come to check.
+ *
+ * Drawn after the page rather than with it, because it asks GitHub who you are
+ * and nothing else on this screen should wait for the network.
+ */
+async function drawGitHubSettings() {
+  const box = $('#gh-settings');
+  if (!box) return;
+
+  const g = await get('/github');
+  if (!box.isConnected) return;
+
+  const row = (title, why, control) => `
+    <div class="setting">
+      <div class="about"><b>${title}</b><span>${why}</span></div>
+      <div class="set">${control}</div>
+    </div>`;
+
+  if (!g.here) {
+    box.innerHTML = row('GitHub is not on this computer',
+      'The GitHub helper is what lets this manager make copies of your work and find '
+      + 'your other computers. It is a separate free download.',
+      '<button class="small" id="gh-get">How to get it ↗</button>');
+    $('#gh-get').onclick = () => post('/open-outside', { url: 'https://cli.github.com' });
+    return;
+  }
+
+  const others = (g.accounts ?? []).filter((a) => a.name !== g.account);
+
+  box.innerHTML = `
+    ${g.account ? row(
+    `<span class="who-now"><span class="dot live"></span>${esc(g.account)}</span>`,
+    'Everything this manager does on GitHub uses this account — new copies of your '
+      + 'projects, sending your work, and the place your computers find each other.',
+    '<button class="small" id="gh-out">Sign out</button>',
+  ) : row(
+    'Not signed in',
+    'Nothing here needs an account, but a second copy of your work and your other '
+      + 'computers both do.',
+    '<button class="go small" id="gh-in">Sign in to GitHub</button>',
+  )}
+
+    ${others.length ? row(
+    'Also signed in on this computer',
+    'Switching changes which account every GitHub action here uses, at once.',
+    others.map((a) => `<button class="small" data-gh-use="${esc(a.name)}">Use ${esc(a.name)}</button>`).join(''),
+  ) : ''}
+
+    ${g.account ? row(
+    'Another account',
+    'Opens your browser so GitHub can confirm it is you. The account you are using '
+      + 'now stays signed in and is never replaced without you choosing it.',
+    '<button class="small" id="gh-add">Add an account</button>',
+  ) : ''}
+
+    ${row('Your name on saved work',
+    g.identity?.name
+      ? `Work saved here is signed ${esc(g.identity.name)} &lt;${esc(g.identity.email ?? '')}&gt;.`
+      : 'Nothing can be saved at all until this is set.',
+    `<button class="small" id="gh-name">${g.identity?.name ? 'Change it' : 'Set it'}</button>`)}`;
+
+  $('#gh-out')?.addEventListener('click', async () => { say(await post('/github/signout')); await refreshMe(); draw(); });
+  $('#gh-in')?.addEventListener('click', () => signInToGitHub({}));
+  $('#gh-add')?.addEventListener('click', () => signInToGitHub({}));
+  $('#gh-name').onclick = () => identitySheet(g);
+  for (const b of box.querySelectorAll('[data-gh-use]')) {
+    b.onclick = async () => {
+      b.classList.add('working');
+      say(await post('/github/switch', { name: b.dataset.ghUse }));
+      await refreshMe();
+      draw();
+    };
+  }
+}
+
 SCREENS.settings = async () => {
   const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
   view.innerHTML = `
-    <h1>Settings</h1>
-    <p class="sub">Everything here changes how the manager behaves, never what it tells you
-      is true.</p>
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Settings</h1>
+        <p class="sub">Everything here changes how the manager behaves, never what it tells
+          you is true.</p>
+      </div>
+    </div>
     ${saidHtml()}
 
+    <div class="sect"><h2>GitHub</h2></div>
+    <div class="card" id="gh-settings">
+      <div class="setting"><div class="about"><b>Account</b>
+        <span>Reading who this computer is signed in as…</span></div><div class="set"></div></div>
+    </div>
+
+    <div class="sect"><h2>This manager</h2></div>
     <div class="card">
       ${settings.map((s) => `
         <div class="setting">
@@ -3376,7 +3533,7 @@ SCREENS.settings = async () => {
         </div>`).join('')}
     </div>
 
-    <h2>This computer</h2>
+    <div class="sect"><h2>This computer</h2></div>
     <div class="card">
       <div class="setting">
         <div class="about"><b>Everything the manager has written down</b>
@@ -3395,6 +3552,8 @@ SCREENS.settings = async () => {
       </div>
     </div>`;
   said = null;
+
+  drawGitHubSettings();
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.onclick = async () => {

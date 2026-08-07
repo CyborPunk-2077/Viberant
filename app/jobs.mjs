@@ -36,6 +36,8 @@ function snapshot(job) {
     sentence: job.sentence,
     action: job.action,
     at: job.at ?? null,
+    made: job.made ?? null,
+    release: job.release ?? null,
     lines: job.lines,
     steps: job.steps,
   };
@@ -99,12 +101,17 @@ export function write(job, text) {
  * happened, which is this codebase's signature failure and the reason D-65
  * exists.
  */
-export function end(job, { ok, sentence, action = null, at = null }) {
+export function end(job, { ok, sentence, action = null, at = null, made = null, release = null }) {
   job.finished = Date.now();
   job.ok = ok;
   job.sentence = sentence;
   job.action = action;
   job.at = at;
+  // What the errand actually produced, so the panel can offer it rather than
+  // describe it. Named fields rather than a spread, because a job is read by a
+  // page and everything on it has to be something a page can show.
+  job.made = made;
+  job.release = release;
   return snapshot(job);
 }
 
