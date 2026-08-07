@@ -99,20 +99,30 @@ the shape of what is coming after a beat (D-94). Measured against the brief:
 rail rows 32px, bar 48px, buttons 36 and 32, radii 6/7/9/12, page title 24px.
 No sideways scroll at 1440, 1000 or 620. Seven screens, no errors.
 
-*Left, and stated plainly rather than glossed.*
+*Left, and stated plainly rather than glossed. In the order it matters.*
 
-- **A background engine.** There is no wallpaper layer at all, so brightness,
-  dim, blur and motion controls have nothing to control yet.
-- **The imagery themes.** Deep Space, Orbital, Nebula and Rig Room need licensed
-  4K assets, a pipeline, and a dim-and-blur layer that costs nothing at rest.
-  Not started, and deliberately not faked with a name.
-- **No inspector beside the work.** The shell has room for one; nothing fills it.
-- **A detail pass on AI apps, Terminals, Deploy and Settings.** They inherit the
-  system and are consistent, but have not had individual attention.
-- **Resuming an interrupted transfer.** It fails honestly and can be retried
-  from the start. It does not pick up where it stopped.
-- **Whether notes belong in a corner** or stay in the one place a sentence is
-  shown. A real question about what this product is, not a styling one.
+**Still functional, and therefore first:**
+
+- **Deploy has not been rebuilt.** Its empty state is fixed and its wording is
+  still the old friendly-but-vague set. The reported faults — a website deploy
+  with no verified result and no URL, and the two build buttons appearing to do
+  nothing — have **not** been traced yet. That is the next thing to do.
+- **Settings still has the layout defects** in the GitHub section: narrow
+  column, clipped text, controls running together. Release-blocking and not
+  yet fixed.
+- **Workspace still shows remote offers in more than one place.** One canonical
+  section is decided but not implemented.
+- **Resuming an interrupted transfer.** It fails honestly and retries from the
+  start. It does not pick up where it stopped.
+
+**Visual, after that:**
+
+- **No background engine at all**, so brightness, dim, blur and motion have
+  nothing to control. Deep Space, Orbital, Nebula and Rig Room are names with
+  no imagery behind them and are deliberately **not** presented as if they had
+  any.
+- **No inspector beside the work.** The shell has room; nothing fills it.
+- **Workspace's second polish pass**, and a final consistency sweep.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
