@@ -324,15 +324,27 @@ describe('where you have got to with a project', () => {
       'they are your own computers — hiding your work from yourself is a strange place to start');
   });
 
-  test('making one private, and letting it be seen again, is said plainly both ways', async () => {
-    const { remember, keepPrivate } = await import('../projects.mjs');
+  test('a project is not offered until it is offered, and says so both ways', async () => {
+    const { remember, share, isShared, remembered } = await import('../projects.mjs');
     const dir = join(root, 'secret');
     await mkdir(dir, { recursive: true });
     await remember(dir);
 
-    const hidden = await keepPrivate(dir, true);
-    assert.match(hidden.sentence, /private to this computer/);
-    const shown = await keepPrivate(dir, false);
-    assert.match(shown.sentence, /visible to your other computers/);
+    // The substance first: remembering something is not offering it. This is
+    // the reversal of D-44, and the reason is on another computer's screen —
+    // Windows' own Contacts folder, listed there because it had been opened
+    // here once.
+    const asRemembered = (await remembered()).find((p) => p.path === dir);
+    assert.equal(isShared(asRemembered), false, 'being in the list is not an offer');
+
+    const offered = await share(dir, true);
+    assert.match(offered.sentence, /offered to your other computers/);
+    assert.equal(isShared((await remembered()).find((p) => p.path === dir)), true);
+
+    const stopped = await share(dir, false);
+    assert.match(stopped.sentence, /no longer offered/);
+    assert.match(stopped.sentence, /Nothing on this computer was touched/,
+      'stopping an offer is never the same gesture as deleting');
+    assert.equal(isShared((await remembered()).find((p) => p.path === dir)), false);
   });
 });

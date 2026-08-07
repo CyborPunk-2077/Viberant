@@ -104,22 +104,69 @@ export async function mark(path, value) {
  * about. It is an absence, not a permission that could be got around.
  */
 export async function keepPrivate(path, yes) {
+  return share(path, !yes);
+}
+
+/**
+ * Whether this project is offered to your other computers.
+ *
+ * **Nothing is offered until you say so.** This reverses the default D-44 set,
+ * and it was reversed by looking at what the other computer actually saw:
+ *
+ *   1MS22AI · Contacts · Download · Viberant
+ *
+ * Two of those are Windows' own folders, sitting in the list because they were
+ * opened once. Nobody offered them to anything. They were on another computer's
+ * screen because being in the list *was* the offer, and the only way out was to
+ * notice and object.
+ *
+ * D-44's reasoning was that they are your own computers and your own account,
+ * so hiding your work from yourself is a strange place to start. That is a fair
+ * argument about *projects* and it is the wrong shape for a rule: it makes the
+ * quiet path the one that gives things away, and the loud path the one that
+ * keeps them. Offering is a thing somebody does on purpose, once, per project —
+ * and a person who has done it knows what is out there, which is the property
+ * that actually matters.
+ *
+ * Kept as an absence rather than a permission, exactly as before: what is not
+ * offered is not in the list this computer publishes, so there is nothing for
+ * another computer to ask about and nothing to get around.
+ */
+export async function share(path, yes) {
   const dir = resolve(path);
   const list = await remembered();
   const one = list.find((p) => p.path === dir);
   if (!one) {
     return { ok: false, sentence: 'That project is not one this manager is keeping.', action: 'Open it once first.' };
   }
-  one.private = !!yes;
+  one.shared = !!yes;
+  // The old word, kept in step so anything still reading it agrees.
+  one.private = !yes;
   await mkdir(HOUSE, { recursive: true });
   await writeFile(REMEMBERED, JSON.stringify(list, null, 2), 'utf8');
   return {
     ok: true,
     sentence: yes
-      ? `${one.name} is private to this computer now.`
-      : `${one.name} is visible to your other computers again.`,
+      ? `${one.name} is offered to your other computers now.`
+      : `${one.name} is no longer offered. Nothing on this computer was touched.`,
   };
 }
+
+/**
+ * Whether a remembered project is offered, for anything deciding what to tell
+ * the other computers.
+ *
+ * Written as a function because the answer has to be the same in the two places
+ * that ask — what goes into the shared workspace, and what this computer
+ * answers for on the network. Those were two separate expressions, which is two
+ * chances for only one of them to be corrected.
+ *
+ * A project remembered before this rule existed has no `shared` at all. It is
+ * treated as not offered, which is the safe direction: the worst that happens
+ * is somebody presses Share once on something they wanted shared, rather than
+ * something staying on another computer's screen that was never meant to be.
+ */
+export const isShared = (p) => p?.shared === true;
 
 /**
  * Look for projects under a folder, one level down.
@@ -249,7 +296,7 @@ export function reachInWords(s, { private: isPrivate = false } = {}) {
   if (!s.tracked) bits.push('no history yet');
   else if (!s.shared) bits.push('only on this computer');
   else bits.push('has a copy on GitHub');
-  bits.push(isPrivate ? 'private to this computer' : 'your other computers can see it');
+  bits.push(isPrivate ? 'not offered to your other computers' : 'offered to your other computers');
   return bits.join(' · ');
 }
 

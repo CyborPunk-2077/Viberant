@@ -22,7 +22,7 @@
 import { createServer, get as httpGet } from 'node:http';
 import { createSocket } from 'node:dgram';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
@@ -368,22 +368,7 @@ export async function takeProject({ machine, name, into, job, jobs }) {
     });
   }
 
-  const expected = Number(res.headers['x-viberant-bytes']) || 0;
-  jobs.step(job, `Bringing it in to ${into}.`);
-
-  let last = 0;
-  const out = await parcel.unwrap(res, into, {
-    onProgress: ({ files, bytes }) => {
-      if (bytes - last < 4_000_000) return;
-      last = bytes;
-      jobs.write(job, `${files} files, ${parcel.inWords(bytes)}${expected ? ` of ${parcel.inWords(expected)}` : ''}`);
-    },
-  }).catch((e) => ({
-    ok: false,
-    sentence: 'That folder could not be put together on this computer.',
-    action: String(e.message ?? e),
-  }));
-
+  const out = await receiveInto(res, into, { job, jobs });
   if (!out.ok) return jobs.end(job, out);
 
   await refresh();
@@ -394,6 +379,75 @@ export async function takeProject({ machine, name, into, job, jobs }) {
     action: 'Your own copy was kept aside first, in case you want anything back out of it.',
   });
 }
+
+/**
+ * Take a folder off the wire, watch it arrive, and check it all did.
+ *
+ * One of these rather than two. There were two copies of this — one for a
+ * project and one for an offered folder — with the same four-megabyte progress
+ * step, the same swallowed failure and, between them, two chances for only one
+ * to be fixed.
+ *
+ * What it reports is a fact rather than an impression. The far end says, in the
+ * headers and again in the parcel itself, how many files and how many bytes are
+ * coming; the percentage is measured against that, and so is the verdict.
+ */
+async function receiveInto(res, target, { job, jobs }) {
+  const wantFiles = Number(res.headers['x-viberant-files']) || 0;
+  const wantBytes = Number(res.headers['x-viberant-bytes']) || 0;
+
+  jobs.step(job, wantBytes
+    ? `Bringing in ${wantFiles} files, ${parcel.inWords(wantBytes)}, to ${target}.`
+    : `Bringing it in to ${target}.`);
+
+  const began = Date.now();
+  let fastest = 0;
+
+  const out = await parcel.unwrap(res, target, {
+    onProgress: ({ files, bytes }) => {
+      const seconds = Math.max((Date.now() - began) / 1000, 0.001);
+      const rate = bytes / seconds;
+      if (rate > fastest) fastest = rate;
+
+      const parts = [`${files}${wantFiles ? ` of ${wantFiles}` : ''} files`,
+        `${parcel.inWords(bytes)}${wantBytes ? ` of ${parcel.inWords(wantBytes)}` : ''}`];
+
+      if (wantBytes) parts.push(`${Math.floor((bytes / wantBytes) * 100)}%`);
+      if (rate > 0) parts.push(`${parcel.inWords(Math.round(rate))} a second`);
+      if (wantBytes && rate > 0 && bytes < wantBytes) {
+        parts.push(`about ${inTime((wantBytes - bytes) / rate)} left`);
+      }
+      jobs.write(job, parts.join(' · '));
+    },
+  }).catch((e) => ({
+    ok: false,
+    sentence: 'That folder could not be put together on this computer.',
+    action: String(e.message ?? e),
+  }));
+
+  if (!out.ok) return out;
+
+  // The far end said what was coming before it sent any of it. The parcel said
+  // it again on the way past, and `unwrap` has already held those two against
+  // what landed. This is the third: what the reply's own headers claimed. It
+  // costs nothing and it is the one that catches a reply that was cut short by
+  // something between the two computers rather than by either of them.
+  if ((wantFiles && out.files !== wantFiles) || (wantBytes && out.bytes !== wantBytes)) {
+    await rm(out.at, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    return {
+      ok: false,
+      sentence: `Only ${parcel.inWords(out.bytes)} of ${parcel.inWords(wantBytes)} arrived, so nothing was kept.`,
+      action: 'Nothing on this computer was changed. Try again when both are settled.',
+    };
+  }
+
+  return out;
+}
+
+/** Roughly how long, said the way somebody waiting would say it. */
+const inTime = (seconds) => (seconds < 90
+  ? `${Math.max(1, Math.round(seconds))} seconds`
+  : seconds < 5400 ? `${Math.round(seconds / 60)} minutes` : `${(seconds / 3600).toFixed(1)} hours`);
 
 // ---------------------------------------------------------------------------
 // Answering the others
@@ -426,36 +480,53 @@ async function handle(req, res) {
     return say(200, { ok: true, machine: me.machine, name: me.name, projects: await whatIHave() });
   }
 
+  /**
+   * Hand over a folder, having first counted exactly what is in it.
+   *
+   * The count and the sending come from the same walk, and the walk happens
+   * now rather than whenever the offer was made. Both of those were wrong:
+   * a project's size on the card came from the fingerprint, which skips the
+   * history folder and stops at thirty thousand files, while what travelled
+   * came from a different walk that does neither — so the number a person read
+   * before pressing was never the number that moved. An offer's size was at
+   * least measured the same way, but at the moment it was offered, which on a
+   * project somebody is working in is a different folder by the afternoon.
+   */
+  const handOver = async (path, { everything, name }) => {
+    const seen = await parcel.survey(path, { everything });
+
+    if (seen.unreadable.length) {
+      return say(409, {
+        ok: false,
+        sentence: `${seen.unreadable.length} folders inside ${name} could not be read on this computer.`,
+        action: 'Close anything using that folder, then ask again.',
+      });
+    }
+
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'x-viberant-files': String(seen.files.length),
+      'x-viberant-dirs': String(seen.dirs.length),
+      'x-viberant-bytes': String(seen.bytes),
+      'x-viberant-name': name,
+    });
+    return parcel.wrap(path, { everything, seen })
+      .on('error', () => res.destroy())
+      .pipe(res);
+  };
+
   // One project by name, for a computer that already has it and wants ours.
   if (url.pathname === '/project') {
     const wanted = url.searchParams.get('name');
     const one = (await whatIHave()).find((p) => p.name === wanted);
     if (!one || !existsSync(one.path)) return say(404, { ok: false });
-
-    res.writeHead(200, {
-      'content-type': 'application/octet-stream',
-      'x-viberant-files': String(one.state?.files ?? 0),
-      'x-viberant-bytes': String(one.state?.bytes ?? 0),
-      'x-viberant-name': one.name,
-    });
-    return parcel.wrap(one.path, { everything: false })
-      .on('error', () => res.destroy())
-      .pipe(res);
+    return handOver(one.path, { everything: false, name: one.name });
   }
 
   if (url.pathname === '/parcel') {
     const one = (await offers()).find((o) => o.id === url.searchParams.get('id'));
     if (!one || !existsSync(one.path)) return say(404, { ok: false });
-
-    res.writeHead(200, {
-      'content-type': 'application/octet-stream',
-      'x-viberant-files': String(one.files),
-      'x-viberant-bytes': String(one.bytes),
-      'x-viberant-name': one.name,
-    });
-    return parcel.wrap(one.path, { everything: one.everything })
-      .on('error', () => res.destroy())
-      .pipe(res);
+    return handOver(one.path, { everything: one.everything, name: one.name });
   }
 
   return say(404, { ok: false });
@@ -579,19 +650,8 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     });
   }
 
-  const expected = Number(res.headers['x-viberant-bytes']) || 0;
   const target = join(resolve(into), name || res.headers['x-viberant-name'] || 'folder');
-  jobs.step(job, `Bringing it in to ${target}.`);
-
-  let last = 0;
-  const out = await parcel.unwrap(res, target, {
-    onProgress: ({ files, bytes }) => {
-      if (bytes - last < 4_000_000) return;
-      last = bytes;
-      jobs.write(job, `${files} files, ${parcel.inWords(bytes)}${expected ? ` of ${parcel.inWords(expected)}` : ''}`);
-    },
-  }).catch((e) => ({ ok: false, sentence: 'That folder could not be put together on this computer.', action: String(e.message ?? e) }));
-
+  const out = await receiveInto(res, target, { job, jobs });
   if (!out.ok) return jobs.end(job, out);
 
   return jobs.end(job, {

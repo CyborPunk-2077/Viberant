@@ -1176,7 +1176,7 @@ function projectSlab(p) {
           <b>${esc(p.name)}</b>
           ${stateChip(mark)}
           ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
-          ${p.private ? '<span class="chip">private to this computer</span>' : ''}
+          ${p.private ? '' : '<span class="chip vibe">offered</span>'}
           ${p.toSend ? `<span class="chip attention">${p.toSend} to send</span>` : ''}
         </div>
         <div class="fact"><em>${esc(p.says)}</em> · ${esc(p.saved)}
@@ -1207,7 +1207,7 @@ const moreForProject = (path, isPrivate) => [
   { what: 'Where you have got to', run: () => markSheet(path, lastMarks) },
   '-',
   {
-    what: isPrivate ? 'Let my other computers see it' : 'Keep it private to this computer',
+    what: isPrivate ? 'Offer it to my other computers' : 'Stop offering it',
     run: async () => {
       say(await post('/projects/private', { path, private: !isPrivate }));
       draw();

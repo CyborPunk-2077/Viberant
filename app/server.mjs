@@ -220,14 +220,14 @@ const whereabouts = (body) => {
 /**
  * What this computer tells the others it has.
  *
- * Everything except what you have marked private — and private means left out
- * of this list entirely, so there is nothing for another computer to ask about.
+ * Only what has been offered on purpose. Anything else is left out of this list
+ * entirely, so there is nothing for another computer to ask about.
  */
 async function offering() {
   const list = await projects.remembered();
   const out = [];
   for (const p of list) {
-    if (p.private || !existsSync(p.path)) continue;
+    if (!projects.isShared(p) || !existsSync(p.path)) continue;
     const s = await projects.situation(p.path);
     out.push({
       id: p.path,
@@ -248,14 +248,16 @@ async function offering() {
  * fingerprint of each so another computer can tell in one comparison whether
  * they match — without anything being copied to find out.
  *
- * Private projects are absent, exactly as they are absent from the workspace.
- * There is nothing here for another computer to ask about.
+ * Anything not offered is absent, exactly as it is absent from the workspace.
+ * There is nothing here for another computer to ask about — which is the point,
+ * and is why this asks the same question the workspace list asks, through the
+ * same function rather than through a second expression that means to agree.
  */
 async function whatThisComputerHas() {
   const list = await projects.remembered();
   const out = [];
   for (const p of list) {
-    if (p.private || !existsSync(p.path)) continue;
+    if (!projects.isShared(p) || !existsSync(p.path)) continue;
     const [state, s] = await Promise.all([
       fingerprint.of(p.path),
       projects.situation(p.path),
