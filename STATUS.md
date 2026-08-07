@@ -8,10 +8,26 @@ that never ran at all: the file holding them was killing the process before it
 could report anything (D-83).
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
-**Being redesigned.** The foundation is in and every screen is drawn on it:
-tokens, a grouped rail, a bar across the work, one accent, lists as panels
-rather than columns of cards, and everything reachable by typing. What is left
-is the detail pass on each screen. D-89 to D-93.
+**Being redesigned, and the foundation is in.** Every screen is already drawn on
+it, because they all share the same handful of classes:
+
+*Done.* Tokens, and a rule that survives editing — a literal value in the
+stylesheet is now visibly wrong (D-89). Lists are one panel with lines in them
+rather than columns of floating cards (D-90). One accent, spent on four things,
+with the violet-into-cyan gradient gone (D-91). A grouped rail and a shallow bar
+across the work, keeping every place when the window narrows (D-93). Everything
+by typing on `Ctrl K`, and nothing living only there (D-92). Tooltips, context
+menus with the same items one visible press away (D-95), and a wait that shows
+the shape of what is coming after a beat (D-94). Measured against the brief:
+rail rows 32px, bar 48px, buttons 36 and 32, radii 6/7/9/12, page title 24px.
+No sideways scroll at 1440, 1000 or 620. Seven screens, no errors.
+
+*Left.* A detail pass on the AI apps, Terminals, Deploy and Settings screens —
+they inherit the system and are consistent, but have not had individual
+attention. An inspector beside the work, where there is something worth
+inspecting. Whether notes belong in a corner or stay in the one place a sentence
+is shown, which is a real question about what this product is and not a styling
+one.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
