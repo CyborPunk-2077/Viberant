@@ -60,13 +60,19 @@ before(async () => {
   // test is about the manager, not about that difference.
   // A real editor of this family is handed flags and then the folder, so the
   // stand-in records the last thing it was given rather than the first.
+  // It also writes down whether it was handed the one instruction that stops an
+  // app of this family putting a window up — see the test below, and the
+  // explanation in findtools.mjs.
   const openedAt = join(root, 'opened-at.txt');
+  const wasTold = join(root, 'was-told.txt');
   if (WINDOWS) {
     await writeFile(join(bin, 'cursor.cmd'),
-      `@echo off\r\n:last\r\nif not "%~2"=="" ( shift & goto last )\r\n>"${openedAt}" echo %~1\r\n`);
+      `@echo off\r\n>"${wasTold}" echo [%ELECTRON_RUN_AS_NODE%]\r\n`
+      + `:last\r\nif not "%~2"=="" ( shift & goto last )\r\n>"${openedAt}" echo %~1\r\n`);
   } else {
     const tool = join(bin, 'cursor');
-    await writeFile(tool, `#!/bin/bash\necho "\${@: -1}" > ${openedAt}\n`);
+    await writeFile(tool,
+      `#!/bin/bash\necho "[$ELECTRON_RUN_AS_NODE]" > ${wasTold}\necho "\${@: -1}" > ${openedAt}\n`);
     await chmod(tool, 0o755);
   }
 
@@ -80,6 +86,10 @@ before(async () => {
       USERPROFILE: house,
       PORT: String(PORT),
       PATH: `${bin}${delimiter}${process.env.PATH}`,
+      // Exactly what the real window leaves on the manager. It means nothing to
+      // this test's server, which is plain Node already — it is here so the test
+      // below can prove it is not passed on to the apps.
+      ELECTRON_RUN_AS_NODE: '1',
     },
     stdio: 'ignore',
   });
@@ -151,6 +161,27 @@ describe('the errand, start to finish', () => {
     await settle(400);
     const openedAt = (await readFile(join(root, 'opened-at.txt'), 'utf8')).trim();
     assert.equal(openedAt, projectDir, 'the app was handed the folder — no adding it by hand');
+  });
+
+  /**
+   * The fault this catches was reported as "Antigravity does not open any more",
+   * and nothing about it looked like what it was.
+   *
+   * Running Viberant as a window of its own means starting the manager with one
+   * instruction: be plain Node, not a window. Correct, and read once. But it
+   * stayed in the manager's surroundings afterwards, and every app the manager
+   * started inherited it — and half of these apps are built the same way
+   * underneath. Told not to be a window, they were not one. You pressed Open and
+   * nothing appeared, with no error anywhere.
+   *
+   * It only ever happened when Viberant was run from its own window and never
+   * from a terminal, which is exactly why it was believed to work.
+   */
+  test('and it is not handed the instruction that would stop it being a window', async () => {
+    await settle(200);
+    const told = (await readFile(join(root, 'was-told.txt'), 'utf8')).trim();
+    assert.equal(told, '[]',
+      'the app inherited the manager’s own "do not be a window" instruction');
   });
 
   test('and it is asked for a window, so a copy already running does not swallow it', async () => {

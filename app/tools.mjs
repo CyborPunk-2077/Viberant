@@ -291,13 +291,43 @@ export const KNOWN = [
 // Is it here, and is it what it claims to be?
 // ---------------------------------------------------------------------------
 
+/**
+ * What is on this computer, remembered for a moment.
+ *
+ * Asking "where is this?" costs a whole process, and the Apps page asks it
+ * about twenty times before it can draw anything — which was a second and a
+ * third of staring at nothing every time you went there, and again after every
+ * button press. Nothing installs itself in the seconds between two of those
+ * questions, so the answer is kept for a few seconds and the page becomes
+ * instant.
+ *
+ * Installing something clears it, so a thing you just installed appears at
+ * once rather than after a wait nobody can explain.
+ */
+const REMEMBER_FOR = 8000;
+const remembered = new Map();
+
+export function forgetWhatIsHere() {
+  remembered.clear();
+}
+
+async function askOnce(key, ask) {
+  const had = remembered.get(key);
+  if (had && Date.now() - had.at < REMEMBER_FOR) return had.answer;
+  const answer = await ask();
+  remembered.set(key, { at: Date.now(), answer });
+  return answer;
+}
+
 async function onPath(bin) {
   if (!bin) return null;
-  try {
-    const { stdout } = await run(WINDOWS ? 'where' : 'which', [bin]);
-    const first = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
-    return first ?? bin;
-  } catch { return null; }
+  return askOnce(`path:${bin}`, async () => {
+    try {
+      const { stdout } = await run(WINDOWS ? 'where' : 'which', [bin]);
+      const first = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+      return first ?? bin;
+    } catch { return null; }
+  });
 }
 
 /**
@@ -416,11 +446,13 @@ export async function present(tool) {
  */
 export async function installed(extra = []) {
   const all = [...KNOWN, ...extra];
-  const out = [];
-  for (const t of all) {
+  // Eleven apps, each asking the computer two or three questions. Asked one
+  // after another that is well over a second before the page can draw; asked
+  // all at once it is the slowest single question, which is a fraction of it.
+  return Promise.all(all.map(async (t) => {
     const ways = await waysIn(t);
     const how = ['desktop', 'terminal'].filter((k) => ways[k]);
-    out.push({
+    return {
       id: t.id,
       name: t.name,
       made: t.made ?? null,
@@ -448,9 +480,8 @@ export async function installed(extra = []) {
       signIn: t.signIn ?? null,
       install: t.install ?? null,
       installs: installCommand(t)?.what ?? null,
-    });
-  }
-  return out;
+    };
+  }));
 }
 
 export function find(id, extra = []) {
@@ -550,6 +581,16 @@ export async function launch({ tool, dir, how = null, terminal = null, carryOn =
       shell: WINDOWS,
       env: { ...process.env, ...env },
     });
+
+    const trouble = await didItDieAtOnce(child);
+    if (trouble) {
+      return {
+        ok: false,
+        sentence: `${tool.name} would not start.`,
+        action: 'Try opening it yourself once. If that works and this does not, tell us and say which app.',
+      };
+    }
+
     child.unref();
     return { ok: true, started: tool.id, how: chosen, at: dir, inBrowser: !!where.inBrowser };
   } catch {
@@ -559,6 +600,34 @@ export async function launch({ tool, dir, how = null, terminal = null, carryOn =
       action: 'Try opening it yourself once, then come back.',
     };
   }
+}
+
+/**
+ * Give a freshly started app a moment to fall over, and say so if it does.
+ *
+ * `spawn` does not throw when the thing cannot be started — it says so later,
+ * on the child, and a child nobody is listening to takes the whole manager down
+ * with it. That is how "the app stopped working" happened: one app that would
+ * not open, and every other button afterwards said the manager was not
+ * answering.
+ *
+ * So somebody listens. And while we are listening, half a second is long enough
+ * to catch a command that dies immediately, which is the difference between
+ * saying "it is starting" truthfully and saying it because we did not look.
+ * An app still running after that has started; big ones take seconds more to
+ * put a window up and that is not something to wait for.
+ */
+const LONG_ENOUGH_TO_FAIL = 500;
+
+function didItDieAtOnce(child) {
+  return new Promise((answer) => {
+    let done = false;
+    const settled = (why) => { if (!done) { done = true; answer(why); } };
+
+    child.on('error', () => settled('would not start'));
+    child.on('exit', (code) => settled(code ? `stopped straight away (${code})` : null));
+    setTimeout(() => settled(null), LONG_ENOUGH_TO_FAIL).unref?.();
+  });
 }
 
 /**
@@ -624,6 +693,9 @@ export async function signIn({ tool, dir, terminal = null, method = null }) {
 
   return {
     ok: true,
+    // Said out loud so the page knows there is a window with something in it
+    // that may need carrying out — see carryTheLink in the page.
+    inATerminal: !started.quiet,
     sentence: chosen
       ? `Signing in to ${tool.name} with ${chosen.name}.`
       : `Signing in to ${tool.name}.`,

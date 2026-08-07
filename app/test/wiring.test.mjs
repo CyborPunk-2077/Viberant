@@ -106,7 +106,11 @@ describe('the page defines everything its way in depends on', () => {
     'function showGate(',
     'function hideGate(',
     'async function signInToGitHub(',
-    'async function withGoogle(',
+    // Was `withGoogle`, which offered the apps that sign in with Google rather
+    // than signing you in to anything. Google now signs you in to Viberant
+    // itself, which is what the button always claimed.
+    'async function signInToGoogle(',
+    'function carryTheLink(',
     'function openPanel(',
     'async function openWhoPanel(',
     'function paintNews(',

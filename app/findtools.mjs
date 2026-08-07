@@ -1,10 +1,15 @@
 /**
- * Making sure the manager can find the commands it depends on.
+ * Getting this process's own surroundings right, before it starts anything.
  *
- * A program started from the Start menu does not inherit the PATH your terminal
- * has. It gets the one Windows hands to the desktop, which is set at sign-in and
- * misses anything installed since — and misses per-user npm folders more often
- * than not.
+ * Two faults live here, and they are the same fault twice: the manager inherited
+ * something from however it was launched, and it was not fit to use as it stood.
+ * Once it was too narrow to find things with. Once it was too wide to pass on.
+ * Both were invisible from a terminal, which is where all the testing happened.
+ *
+ * **Too narrow — the PATH.** A program started from the Start menu does not
+ * inherit the PATH your terminal has. It gets the one Windows hands to the
+ * desktop, which is set at sign-in and misses anything installed since — and
+ * misses per-user npm folders more often than not.
  *
  * The result is the worst kind of failure: `gh` is plainly installed, works
  * everywhere else, and this app says it is not there. Or worse, says nothing,
@@ -14,6 +19,9 @@
  * So before anything else runs, the places these things actually install into
  * are added to this process's PATH. It affects nothing outside this process and
  * nothing on the computer.
+ *
+ * **Too wide — the marks our own window left.** Explained where it is cleared,
+ * below, because it takes a paragraph and deserves one.
  */
 
 import { existsSync } from 'node:fs';
@@ -71,4 +79,44 @@ export function widenPath() {
     process.env.PATH = `${process.env.PATH ?? ''}${delimiter}${added.join(delimiter)}`;
   }
   return added;
+}
+
+/**
+ * Marks left on this process by the window it was started from, which must not
+ * be passed on to anything the manager starts.
+ *
+ * This is the whole of a fault that took a long time to find, and it is worth
+ * writing down properly because nothing about it looks like what it is.
+ *
+ * When Viberant runs as a window of its own, the window starts the manager with
+ * one instruction in its surroundings: *be plain Node, not a window*. That is
+ * how the manager runs on a computer with no Node installed, and it is correct.
+ * The instruction is read once, at the instant that process starts, and after
+ * that it means nothing — except that it is still sitting there, and everything
+ * the manager starts inherits it.
+ *
+ * Several of the apps in this list are built the same way underneath. Handed
+ * that instruction, they obediently do not put a window up. From where you are
+ * sitting: you press Open, and nothing happens. No error, no window, nothing —
+ * and only when Viberant is run from its own window, never from a terminal,
+ * which is why it survived being tested.
+ *
+ * Cleared here, once, before anything is started. It has already done its work.
+ */
+const NOT_OURS_TO_PASS_ON = [
+  'ELECTRON_RUN_AS_NODE',
+  'ELECTRON_NO_ATTACH_CONSOLE',
+  'ELECTRON_NO_ASAR',
+  'ELECTRON_FORCE_IS_PACKAGED',
+  'ELECTRON_DEFAULT_ERROR_MODE',
+];
+
+export function stopPassingOnOurOwnSurroundings() {
+  const cleared = [];
+  for (const name of NOT_OURS_TO_PASS_ON) {
+    if (process.env[name] === undefined) continue;
+    delete process.env[name];
+    cleared.push(name);
+  }
+  return cleared;
 }

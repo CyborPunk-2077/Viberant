@@ -51,8 +51,7 @@
   --shadow-lift: 0 2px 8px rgba(0, 0, 0, .55), 0 24px 56px -24px rgba(0, 0, 0, .9);
 
   --radius: 12px;
-  --bar: 52px;
-  --hold: 68rem;
+  --hold: 66rem;
 }
 
 :root[data-theme="light"] {
@@ -139,142 +138,36 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--quiet); background-clip: content-box; }
 
-/* The one light that moves. Depth, not a cursor. */
-#sheen {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1200ms ease;
-  background:
-    radial-gradient(38rem 38rem at var(--px, 50%) var(--py, 35%), var(--glow), transparent 60%),
-    radial-gradient(22rem 22rem at calc(var(--px, 50%) + 12rem) calc(var(--py, 35%) + 8rem),
-      color-mix(in srgb, var(--vibe-b) 16%, transparent), transparent 58%);
-}
-#sheen.up { opacity: 1; }
-@media (prefers-reduced-motion: reduce) { #sheen { display: none; } }
-
 /* ========================================================================= */
-/* The frame: a bar across the top, content beneath it                       */
+/* The frame: a rail down the side, content beside it                        */
+/*                                                                           */
+/* There used to be a bar across the top, and a hundred lines in here still  */
+/* described it long after the page stopped drawing one. A rule that matches */
+/* nothing is worse than no rule: it reads as the truth to whoever comes     */
+/* next. The rail's own block, further down, is the only description now.    */
 /* ========================================================================= */
 
 #frame {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-rows: var(--bar) minmax(0, 1fr);
-  grid-template-columns: minmax(0, 1fr);
   height: 100%;
   opacity: 0;
   transition: opacity 320ms ease;
 }
 #frame.up { opacity: 1; }
 
-.topnav {
-  display: flex;
-  flex-direction: row;
-  align-items: stretch;
-  gap: .1rem;
-  min-width: 0;
-  padding: 0 1rem;
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--deep) 82%, var(--vibe-a) 6%),
-    var(--deep));
-  border-bottom: 1px solid var(--line);
-  position: relative;
-  z-index: 30;
-}
-.topnav::after {
-  content: "";
-  position: absolute;
-  left: 0; right: 0; bottom: -1px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent,
-    color-mix(in srgb, var(--vibe-a) 45%, transparent),
-    color-mix(in srgb, var(--vibe-b) 45%, transparent), transparent);
-  opacity: .55;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-  gap: .5rem;
-  padding-right: 1.5rem;
-  margin-right: .35rem;
-  font-weight: 700;
-  font-size: .95rem;
-  letter-spacing: .06em;
-  flex: none;
-}
 .logo svg { display: block; filter: drop-shadow(0 0 8px color-mix(in srgb, var(--vibe-a) 45%, transparent)); }
-.logo .word {
-  background: linear-gradient(100deg, var(--vibe-a), var(--vibe-b));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.topnav .tab {
-  font: inherit;
-  font-size: .78rem;
-  font-weight: 600;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-  color: var(--quiet);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  padding: 0 .95rem;
-  cursor: pointer;
-  position: relative;
-  white-space: nowrap;
-  transition: color 140ms ease;
-}
-.topnav .tab::after {
-  content: "";
-  position: absolute;
-  left: .7rem; right: .7rem; bottom: 0;
-  height: 2px;
-  border-radius: 2px 2px 0 0;
-  background: linear-gradient(90deg, var(--vibe-a), var(--vibe-b));
-  transform: scaleX(0);
-  transition: transform 180ms cubic-bezier(.22, 1, .36, 1);
-}
-.topnav .tab:hover { color: var(--ink); background: transparent; }
-.topnav .tab:hover::after { transform: scaleX(.5); }
-.topnav .tab.on { color: var(--ink); }
-.topnav .tab.on::after { transform: scaleX(1); }
-
-.topnav .spacer { flex: 1 1 auto; min-width: .5rem; }
-
-.topnav .icon {
-  align-self: center;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--quiet);
-  padding: .32rem .5rem;
-  font-size: .95rem;
-  line-height: 1;
-  border-radius: 8px;
-  flex: none;
-}
-.topnav .icon:hover { color: var(--ink); background: var(--hover); border-color: var(--line); }
-.topnav .icon.on { color: var(--vibe-b); }
 
 main {
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 2.2rem 2rem 6rem;
+  padding: 2.1rem 2.2rem 5rem;
   min-width: 0;
 }
 .hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
 
 @media (max-width: 62rem) {
-  .topnav { padding: 0 .6rem; overflow-x: auto; }
-  .topnav .tab { padding: 0 .55rem; font-size: .7rem; letter-spacing: .05em; }
-  .logo { padding-right: .8rem; }
-  .logo .word { display: none; }
   main { padding: 1.6rem 1.1rem 5rem; }
 }
 
@@ -1259,9 +1152,6 @@ select { cursor: pointer; }
 .row:has(.panel:not([hidden])) { z-index: 70; }
 .tile, .slab, .row { position: relative; }
 
-/* The bar's own menu sits above the page it hangs over. */
-.topnav .drop { z-index: 80; }
-
 /*
  * Long prose in a sign-in row must wrap inside the row.
  *
@@ -1364,12 +1254,6 @@ h1, h2, .sub, .fact, .note, .did, .what, .why, .name, .title,
 .setting { gap: 1.4rem; flex-wrap: wrap; }
 .setting .about { flex: 1 1 18rem; }
 
-/* The bar sits on the page rather than glowing off it. */
-.topnav {
-  background: color-mix(in srgb, var(--deep) 92%, var(--vibe-a) 3%);
-  box-shadow: none;
-}
-.topnav::after { opacity: .3; }
 .logo svg { filter: none; }
 
 button.go { box-shadow: none; }
@@ -1434,9 +1318,9 @@ button.go:hover:not(:disabled) { box-shadow: 0 0 18px -8px var(--glow); }
 /* =========================================================================
  * A rail down the side
  *
- * The bar across the top is gone. Places live in a narrow column on the left
- * where they cost no vertical room, the content gets the full height, and the
- * account sits at the bottom of the rail rather than floating in a corner.
+ * Places live in a narrow column on the left where they cost no vertical room,
+ * the content gets the full height, and the account sits at the bottom of the
+ * rail rather than floating in a corner.
  * ========================================================================= */
 
 #frame {
@@ -1528,9 +1412,6 @@ nav {
   background: linear-gradient(135deg, var(--vibe-a), var(--vibe-b));
 }
 .rail .panel { left: 0; right: auto; bottom: calc(100% + 6px); top: auto; width: max(17rem, 100%); }
-
-main { padding: 2.1rem 2.2rem 5rem; }
-.hold { max-width: 66rem; }
 
 @media (max-width: 62rem) {
   #frame { grid-template-columns: 60px minmax(0, 1fr); }

@@ -161,7 +161,17 @@ const GOOGLE_MARK = `
   </svg>`;
 
 const at = { tab: 'projects', inside: false };
-let me = { machine: null, machineName: '', github: null, workspace: {}, settings: {}, current: null };
+let me = { machine: null, machineName: '', github: null, google: null, workspace: {}, settings: {}, current: null };
+
+/**
+ * The name to put in the corner, and whether there is one at all.
+ *
+ * Two different accounts can be signed in and they mean different things:
+ * GitHub is where a second copy of your work goes, Google is only a name. The
+ * corner shows whichever you have, GitHub first, because that is the one the
+ * rest of the app leans on.
+ */
+const signedInAs = () => me.github ?? me.google?.email ?? me.google?.name ?? null;
 
 /** Choices made but not yet acted on. */
 const chosen = { account: {}, folder: {} };
@@ -195,34 +205,50 @@ async function openWhoPanel() {
   const g = await get('/github');
   const signedIn = (g.accounts ?? []).length > 0;
 
+  // Two services, said apart, because they are not the same offer. GitHub is
+  // where a second copy of your work goes. Google is a name and nothing else.
+  // Rolling them into one list made both sound like the same half-promise.
+  const mark = (svg) => `<span style="display:grid;place-items:center;width:1.1rem">${svg}</span>`;
+
   panel.innerHTML = `
-    <div class="head">${signedIn ? 'Accounts on this computer' : 'Not signed in'}</div>
+    <div class="head">GitHub</div>
     ${signedIn ? g.accounts.map((a) => `
       <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
         <span class="dot ${a.active ? 'live' : 'off'}"></span>
         <span class="grow"><b>${esc(a.name)}</b><br>
           <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
       </button>`).join('')
-    : `<div class="pick"><span class="sub">Your work stays on this computer until you are.
-         Everything here still works without it.</span></div>`}
+    : `<div class="pick"><span class="sub">Not signed in. Your work stays on this
+         computer until you are, and everything here still works without it.</span></div>`}
 
-    <hr>
     <button class="pick" id="gh-add">
-      <span style="display:grid;place-items:center;width:1.1rem">${GITHUB_MARK}</span>
+      ${mark(GITHUB_MARK)}
       <span class="grow">${signedIn ? 'Sign in to another account' : 'Sign in with GitHub'}
         <span class="sub">Opens your browser with a code.</span></span></button>
 
-    <button class="pick" id="gh-google">
-      <span style="display:grid;place-items:center;width:1.1rem">${GOOGLE_MARK}</span>
-      <span class="grow">Sign in with Google
-        <span class="sub">For Gemini, Antigravity and OpenCode.</span></span></button>
-
-    <button class="pick" id="gh-name"><span>✎</span>
-      <span class="grow">Your name on saved work</span></button>
-
     ${g.active ? `<button class="pick" id="gh-out"><span>↷</span>
       <span class="grow">Sign ${esc(g.active)} out
-        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}`;
+        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}
+
+    <div class="head">Google</div>
+    ${me.google ? `
+      <div class="pick on">
+        <span class="dot live"></span>
+        <span class="grow"><b>${esc(me.google.email ?? me.google.name ?? 'signed in')}</b><br>
+          <span class="sub">a name on this computer, nothing more</span></span>
+      </div>
+      <button class="pick" id="google-out"><span>↷</span>
+        <span class="grow">Sign out of Google
+          <span class="sub">On this computer only.</span></span></button>` : `
+      <button class="pick" id="gh-google">
+        ${mark(GOOGLE_MARK)}
+        <span class="grow">Sign in with Google
+          <span class="sub">Puts your name on this computer. Not where work is kept.</span></span></button>`}
+
+    <hr>
+    <button class="pick" id="gh-name"><span>✎</span>
+      <span class="grow">Your name on saved work
+        <span class="sub">${esc(g.identity?.name || 'not set yet')}</span></span></button>`;
 
   for (const b of panel.querySelectorAll('[data-gh-use]')) {
     b.onclick = async () => {
@@ -234,7 +260,13 @@ async function openWhoPanel() {
   }
 
   $('#gh-add').onclick = () => { closePanels(); signInToGitHub(); };
-  $('#gh-google').onclick = () => { closePanels(); withGoogle(); };
+  $('#gh-google')?.addEventListener('click', () => { closePanels(); signInToGoogle(); });
+  $('#google-out')?.addEventListener('click', async () => {
+    closePanels();
+    say(await post('/google/signout'));
+    await refreshMe();
+    draw();
+  });
   $('#gh-name').onclick = () => { closePanels(); identitySheet(g); };
 
   $('#gh-out')?.addEventListener('click', async () => {
@@ -299,10 +331,10 @@ function drawNav() {
           <span class="label">Feedback</span>
         </button>`).join('')}
       <div class="drop">
-        <button class="who" id="who" title="${esc(me.github ?? 'Not signed in')}">
-          <span class="face">${me.github ? esc(me.github.slice(0, 1).toUpperCase()) : '?'}</span>
+        <button class="who" id="who" title="${esc(signedInAs() ?? 'Not signed in')}">
+          <span class="face">${signedInAs() ? esc(signedInAs().slice(0, 1).toUpperCase()) : '?'}</span>
           <span class="grow">
-            <span class="name">${esc(me.github ?? 'Not signed in')}</span>
+            <span class="name">${esc(signedInAs() ?? 'Not signed in')}</span>
             <span class="what">${esc(me.machineName || 'this computer')}</span>
           </span>
         </button>
@@ -1309,11 +1341,34 @@ async function firstTimeSheet() {
   const d = await get('/publish/first');
   if (d.ok === false) { say(d); return draw(); }
 
+  // Said here rather than after the form. Being signed out cannot succeed, and
+  // the failure it produces from the far end is indistinguishable from a name
+  // already taken — which is how somebody was told to pick another name for a
+  // project that did not exist, over and over, with no way out of it.
+  if (!d.who) {
+    return sheet({
+      title: `Put ${d.name} on GitHub`,
+      narrow: true,
+      body: `
+        <p class="sub">This needs you signed in to GitHub first. There is nowhere for
+          a copy of your work to go until there is an account for it to go to.</p>
+        <p class="sub">Everything on this computer carries on working without it —
+          your work is saved here either way.</p>`,
+      foot: `<button class="quiet" id="fp-later">Never mind</button>
+             <button class="go" id="fp-in">Sign in with GitHub</button>`,
+      onOpen: () => {
+        $('#fp-later').onclick = () => { closeLayer(); draw(); };
+        $('#fp-in').onclick = () => { closeLayer(); signInToGitHub(); };
+      },
+    });
+  }
+
   sheet({
     title: `Put ${d.name} on GitHub`,
     body: `
       <p class="sub">You will be asked one thing. Everything a project on GitHub
-        usually has, this works out from the project itself.</p>
+        usually has, this works out from the project itself. It will be made on
+        your account, ${esc(d.who)}.</p>
 
       <label class="field">What should it be called on GitHub?</label>
       <input id="fp-name" style="width:100%;margin-bottom:1rem" value="${esc(d.suggested)}">
@@ -1603,8 +1658,10 @@ function wireAppCards(t, p) {
       e.stopPropagation();
       closePanels();
       const [tool, method] = b.dataset.way.split('|');
-      say(await post('/signin/tool', { tool, method, dir: whereFor(tool, p) }));
-      draw();
+      const r = await post('/signin/tool', { tool, method, dir: whereFor(tool, p) });
+      say(r);
+      await draw();
+      if (r.ok && r.inATerminal) carryTheLink(t.tools.find((x) => x.id === tool) ?? { name: tool });
     };
   }
 
@@ -1662,15 +1719,6 @@ function wireAppCards(t, p) {
     };
   }
 
-  for (const b of document.querySelectorAll('[data-signin]')) {
-    b.onclick = async (e) => {
-      e.stopPropagation();
-      closePanels();
-      say(await post('/signin/tool', { tool: b.dataset.signin, dir: whereFor(b.dataset.signin, p) }));
-      draw();
-    };
-  }
-
   for (const b of document.querySelectorAll('[data-install]')) {
     b.onclick = async () => {
       b.classList.add('working');
@@ -1682,6 +1730,68 @@ function wireAppCards(t, p) {
   for (const b of document.querySelectorAll('[data-getpage]')) {
     b.onclick = () => post('/open/page', { at: b.dataset.getpage });
   }
+}
+
+/**
+ * Carrying the link out of the window it was printed in.
+ *
+ * These apps run their own sign-in and most of them open your browser for you.
+ * Some do not: they print an address into the terminal and wait, which leaves
+ * you looking at eighty characters of nonsense with no way forward that does not
+ * involve selecting text in a black window. OpenCode does exactly this.
+ *
+ * We cannot read what that window printed — it is not ours to read, and taking
+ * its output away from it would break the sign-in it is in the middle of. What
+ * we can do is take the line off your hands: paste it here and the browser opens
+ * at it. One press instead of a fight with a mouse.
+ *
+ * Offered every time rather than only when needed, because the alternative is
+ * guessing which apps do this, and being wrong about it is exactly the failure
+ * this is here to fix.
+ */
+function carryTheLink(app) {
+  sheet({
+    title: `Signing in to ${app.name ?? 'this app'}`,
+    narrow: true,
+    body: `
+      <p class="sub">Its own sign-in is running in the window that just opened. Most
+        of them open your browser by themselves — if yours did, you are done here
+        and can close this.</p>
+      <p class="sub">If instead it printed a long address and is waiting, copy that
+        line and put it below. Nothing about it is kept.</p>
+      <label class="field">The address it printed</label>
+      <input id="link-at" style="width:100%" placeholder="https://…" spellcheck="false">
+      <div class="said" id="link-said" hidden></div>`,
+    foot: `<button class="quiet" id="link-close">Close</button>
+      <button class="go" id="link-go">Open it in my browser</button>`,
+    onOpen: () => {
+      const box = $('#link-at');
+      box.focus();
+
+      const open = async () => {
+        // Pasting a whole terminal line is the normal case, so the address is
+        // picked out of whatever came with it rather than being demanded clean.
+        const found = String(box.value).match(/https:\/\/\S+/);
+        const trouble = $('#link-said');
+        if (!found) {
+          trouble.hidden = false;
+          trouble.className = 'said bad';
+          trouble.innerHTML = '<b>There is no address in that.</b><span>It starts with https:// and is usually the longest line in the window.</span>';
+          return;
+        }
+        const r = await post('/open/page', { at: found[0] });
+        trouble.hidden = false;
+        trouble.className = r.ok ? 'said good' : 'said bad';
+        trouble.innerHTML = r.ok
+          ? '<b>Your browser is opening at it.</b><span>Finish there and the window behind this one carries on by itself.</span>'
+          : `<b>${esc(r.sentence)}</b><span>${esc(r.action ?? '')}</span>`;
+      };
+
+      $('#link-go').onclick = open;
+      box.onkeydown = (e) => { if (e.key === 'Enter') open(); };
+      $('#link-close').onclick = () => { closeLayer(); draw(); };
+    },
+  });
 }
 
 /**
@@ -2366,9 +2476,21 @@ function control(s, terminals) {
     return `<button class="small" data-folder="${esc(s.id)}" data-title="${esc(s.name)}"
       data-value="${esc(s.value ?? '')}">${esc(tail(s.value) || 'Choose…')}</button>`;
   }
+  if (s.kind === 'secret') {
+    // Never carries the value, in or out. The page is only ever told whether
+    // there is one, and it only ever sends a new one.
+    return `<button class="small" data-text="${esc(s.id)}" data-title="${esc(s.name)}" data-value="">
+      ${s.value ? 'Set — replace it' : 'Set…'}</button>`;
+  }
   return `<button class="small" data-text="${esc(s.id)}" data-title="${esc(s.name)}"
-    data-value="${esc(s.value ?? '')}">${esc(s.value || 'Set…')}</button>`;
+    data-value="${esc(s.value ?? '')}">${esc(shortened(s.value) || 'Set…')}</button>`;
 }
+
+/** Long enough to recognise, short enough not to push the row off the edge. */
+const shortened = (value) => {
+  const s = String(value ?? '');
+  return s.length > 34 ? `${s.slice(0, 16)}…${s.slice(-12)}` : s;
+};
 
 // ---------------------------------------------------------------------------
 // Telling us what is wrong
@@ -2644,7 +2766,7 @@ function showGate({ trouble = null } = {}) {
           <span class="mark">${GOOGLE_MARK}</span>
           <span class="grow">
             <b>Continue with Google</b>
-            <span>Signs you in to Gemini, Antigravity and OpenCode.</span>
+            <span>Puts your Google name on this computer.</span>
           </span>
         </button>
       </div>
@@ -2655,7 +2777,7 @@ function showGate({ trouble = null } = {}) {
     </div>`;
 
   $('#in-github').onclick = () => signInToGitHub({ inGate: true });
-  $('#in-google').onclick = () => withGoogle({ inGate: true });
+  $('#in-google').onclick = () => signInToGoogle({ inGate: true });
   $('#in-later').onclick = async () => {
     // Closing it must mean closed. It used to come back every launch, which is
     // the app overruling a decision you had already made.
@@ -2711,24 +2833,26 @@ async function signInToGitHub({ inGate = false } = {}) {
     else if (inGate) hideGate();
   };
 
-  const paint = (code) => {
+  const paint = (code, where = 'https://github.com/login/device') => {
     sheet({
       title: 'Signing in to GitHub',
       narrow: true,
       body: `
-        <p class="sub">Your browser is opening at github.com/login/device.
-          Put this code in and this page will notice by itself.</p>
+        <p class="sub">${code
+    ? 'Your browser is opening at the page below. Put this code in and this page will notice by itself.'
+    : 'Asking GitHub for a code.'}</p>
         <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
-        <div class="menu">
-          <button class="opt" id="in-again">
-            <span class="glyph">${GITHUB_MARK}</span>
-            <span><span class="what">Open the page again</span><br>
-              <span class="why">github.com/login/device</span></span>
-          </button>
-        </div>`,
+        ${code ? `
+          <div class="menu">
+            <button class="opt" id="in-again">
+              <span class="glyph">${GITHUB_MARK}</span>
+              <span><span class="what">Open the page again</span><br>
+                <span class="why">${esc(String(where).replace(/^https:\/\//, ''))}</span></span>
+            </button>
+          </div>` : ''}`,
       foot: '<button class="quiet" id="in-cancel">Never mind</button>',
       onOpen: () => {
-        $('#in-again').onclick = () => post('/open/page', { at: 'https://github.com/login/device' });
+        $('#in-again')?.addEventListener('click', () => post('/open/page', { at: where }));
         $('#in-cancel').onclick = async () => {
           await stop({ giveUp: true, backToWelcome: true });
           if (!inGate) draw();
@@ -2742,7 +2866,9 @@ async function signInToGitHub({ inGate = false } = {}) {
   watching = setInterval(async () => {
     const r = await get('/github/signin');
 
-    if (r.signin?.code && $('#layer .code')?.textContent.trim() !== r.signin.code) paint(r.signin.code);
+    if (r.signin?.code && $('#layer .code')?.textContent.trim() !== r.signin.code) {
+      paint(r.signin.code, r.signin.at);
+    }
 
     // Done means the sign-in itself finished, or the account actually changed.
     // Not merely "somebody is signed in", which was true before we started.
@@ -2775,51 +2901,117 @@ async function signInToGitHub({ inGate = false } = {}) {
 }
 
 /**
- * Signing in with Google, from the welcome.
+ * Signing in to Viberant itself with Google.
  *
- * Google signs you in to apps, not to Viberant — so rather than saying that and
- * leaving you somewhere, this starts the real thing: the apps on this computer
- * that sign in with Google, each with a button that runs its own flow and puts
- * Google's account picker in front of you.
+ * If no Google application has been registered yet, this says so and shows what
+ * to do — because a Google sign-in cannot exist without one, and that is true of
+ * every Google button anywhere rather than a shortcoming of this app.
  */
-async function withGoogle({ inGate = false } = {}) {
-  const { tools } = await get('/tools');
-  const canGoogle = tools.filter((x) => x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
-  const couldGoogle = tools.filter((x) => !x.here && (x.signIns ?? []).some((w) => w.id === 'google'));
+async function signInToGoogle({ inGate = false } = {}) {
+  // Changing your mind puts you back where you were, not into the app. The same
+  // rule the GitHub way in follows, for the same reason.
+  const backWhereYouWere = () => { if (inGate) showGate(); else draw(); };
 
-  sheet({
-    title: 'Sign in with Google',
+  const started = await post('/google/signin');
+
+  if (started.needsSetup) {
+    return sheet({
+      title: 'Sign in with Google',
+      narrow: true,
+      body: `
+        <p class="sub">A Google sign-in has to be backed by an application registered
+          with Google. Every Google button you have ever pressed is — there is no
+          anonymous way in, by design. Making one is free and takes about five
+          minutes, and it is asked once.</p>
+        <div class="menu">
+          <button class="opt" id="g-console">
+            <span class="glyph">${GOOGLE_MARK}</span>
+            <span><span class="what">Open the Google Cloud console</span><br>
+              <span class="why">Credentials → Create credentials → OAuth client ID → TV and Limited Input.</span></span>
+          </button>
+          <button class="opt" id="g-settings">
+            <span class="glyph">⚙</span>
+            <span><span class="what">Paste the two values into Settings</span><br>
+              <span class="why">Client ID and client secret. They stay on this computer.</span></span>
+          </button>
+        </div>
+        <p class="sub" style="margin-top:1rem">Everything else here works without it —
+          this is only for putting your Google name on this computer.</p>`,
+      foot: '<button class="quiet" id="g-close">Close</button>',
+      onOpen: () => {
+        $('#g-console').onclick = () => post('/open/page', { at: started.howToRegister });
+        $('#g-settings').onclick = () => { closeLayer(); hideGate(); go('settings'); };
+        $('#g-close').onclick = () => { closeLayer(); backWhereYouWere(); };
+      },
+    });
+  }
+
+  if (started.ok === false) {
+    if (inGate) return showGate({ trouble: started });
+    say(started);
+    return draw();
+  }
+
+  let watching = null;
+  const stop = () => { clearInterval(watching); closeLayer(); };
+
+  const paint = (code, where) => sheet({
+    title: 'Signing in to Google',
     narrow: true,
     body: `
-      <p class="sub">Google signs you in to the apps that use it. Viberant itself has no
-        account to sign in to — everything it does happens on this computer or through
-        your own GitHub.</p>
-
-      ${canGoogle.length ? `
-        <div class="head" style="margin-bottom:.5rem">On this computer</div>
+      <p class="sub">${code
+    ? 'Your browser is opening at the page below. Put this code in and pick your account.'
+    : 'Asking Google for a code.'}</p>
+      <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
+      ${code ? `
         <div class="menu">
-          ${canGoogle.map((x) => `
-            <button class="opt" data-google="${esc(x.id)}">
-              <span class="glyph">${GOOGLE_MARK}</span>
-              <span><span class="what">${esc(x.name)}</span><br>
-                <span class="why">${esc((x.signIns.find((w) => w.id === 'google') ?? {}).then ?? '')}</span></span>
-            </button>`).join('')}
-        </div>` : `
-        <div class="empty"><b>None of the apps that use Google are installed here.</b>
-          ${couldGoogle.length ? `Install ${esc(couldGoogle.map((x) => x.name).join(' or '))} and this fills in.` : ''}</div>`}`,
-    foot: '<button class="quiet" id="g-no">Never mind</button>',
-    onOpen: (body) => {
-      $('#g-no').onclick = () => { closeLayer(); if (inGate) showGate(); else draw(); };
-      for (const b of body.querySelectorAll('[data-google]')) {
-        b.onclick = async () => {
-          closeLayer();
-          hideGate();
-          say(await post('/signin/tool', { tool: b.dataset.google, method: 'google' }));
-          go('apps');
-        };
-      }
+          <button class="opt" id="g-again">
+            <span class="glyph">${GOOGLE_MARK}</span>
+            <span><span class="what">Open the page again</span><br>
+              <span class="why">${esc(String(where ?? '').replace(/^https:\/\//, ''))}</span></span>
+          </button>
+        </div>` : ''}`,
+    foot: '<button class="quiet" id="g-cancel">Never mind</button>',
+    onOpen: () => {
+      $('#g-again')?.addEventListener('click', () => post('/open/page', { at: where }));
+      $('#g-cancel').onclick = () => { stop(); backWhereYouWere(); };
     },
   });
+
+  paint(null, null);
+
+  watching = setInterval(async () => {
+    const r = await get('/google/signin');
+    if (!r.signin) return;
+
+    const code = r.signin.code;
+    if (code && $('#layer .code')?.textContent.trim() !== code) {
+      paint(code, r.signin.at);
+      post('/open/page', { at: r.signin.at });
+    }
+
+    // Done means this attempt finished, not merely that somebody is signed in —
+    // which was already true if you came here to change accounts.
+    if (r.signin.running) return;
+
+    stop();
+    await refreshMe();
+
+    // A failure never closes the way in. Closing it and putting the reason
+    // behind it is indistinguishable, from where you are sitting, from the
+    // button having done nothing at all.
+    if (r.signin.ok !== true) {
+      if (inGate) return showGate({ trouble: r.signin });
+      say(r.signin);
+      return draw();
+    }
+
+    if (inGate) hideGate();
+    await post('/settings', { id: 'welcomed', value: true });
+    await refreshMe();
+    say(r.signin);
+    draw();
+  }, 1500);
 }
 
 const start = async () => {
@@ -2835,9 +3027,10 @@ const start = async () => {
     $('#opening')?.classList.add('going');
     $('#frame').classList.add('up');
     setTimeout(() => $('#opening')?.remove(), 500);
-    // Asked once, on a computer that has never signed in. After that the corner
-    // is where you go, and nothing stands in front of the app again.
-    if (!me.github && !me.settings?.welcomed) showGate();
+    // Asked once, on a computer that has never signed in to anything. After
+    // that the corner is where you go, and nothing stands in front of the app
+    // again.
+    if (!signedInAs() && !me.settings?.welcomed) showGate();
     watchTheOthers();
   }, skip ? 120 : 1600);
 };

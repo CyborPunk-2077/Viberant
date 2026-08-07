@@ -2,9 +2,15 @@
 
 *What is done and what is left, in plain language. Updated every session.*
 
-**Last updated:** 6 August 2026
-**Tests:** 246 passing on Windows — 107 in the core, 139 in the app
+**Last updated:** 7 August 2026
+**Tests:** 249 passing on Windows — 107 in the core, 142 in the app
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
+
+> **Read this first if you are running the installed copy.** Everything below was
+> fixed in the source. The installer in `dist/` still has the old code, and the
+> worst of these faults *only happens in the installed copy* — so it will keep
+> happening until it is built again: `npm run build`. Until then, `start.bat`
+> or `node app/server.mjs` has the fixes.
 
 ---
 
@@ -30,6 +36,10 @@ A bar across the top with the mark on it, five places on it, and your GitHub acc
 
 **Signing in runs the app's own sign-in.** Pressing Google on Gemini runs Gemini, which opens Google's real account picker. Pressing Anthropic on Claude Code runs its own sign-in, which opens Anthropic's. The manager starts the flow and never tries to be it. Only real accounts are offered; a key sits behind one line labelled as what it is, for the tools where a key is genuinely how they work.
 
+**And when one of them prints an address instead of opening it, you can hand it over.** OpenCode does exactly this: it puts eighty characters into a black window and waits. The manager cannot read that window — taking its output away would break the sign-in it is in the middle of — so instead it offers a box. Paste the line, whole, and your browser opens at the address in it. One press instead of a fight with a mouse.
+
+**Signing in to Viberant itself, with Google or GitHub.** GitHub is the one everything leans on: it is where a second copy of your work goes and how your computers find each other. Google is a name on this computer and the button says so rather than implying more. Google needs an application of your own registered with Google — every Google button anywhere is backed by one, there is no anonymous way in — so it is asked for once, in Settings, and the button says exactly that until it is there. The client secret is never handed to the page.
+
 **Accounts, where you use them.** No separate accounts page. Each app's card has its own account control: the services it signs in with along the top, the accounts kept on this computer below. Pick one, press Open, and it opens as that account. The old promise still holds underneath — nothing is replaced without being kept first, and nothing is swapped underneath a running app.
 
 **Terminals, in their own place.** Command Prompt, Windows PowerShell, PowerShell 7, Windows Terminal, Git Bash and WSL. A test fails if a terminal ever appears among the AI apps.
@@ -54,7 +64,57 @@ A bar across the top with the mark on it, five places on it, and your GitHub acc
 
 ---
 
-## What was found by pressing the buttons
+## What was found by pressing the buttons, this time
+
+Six faults, found by driving the real app rather than by reading it. Four of them
+had the same root and they are the reason it felt like the whole thing had broken.
+
+**Pressing Open on Antigravity did nothing, and it was never about Antigravity.**
+Running Viberant as a window of its own starts the manager with one instruction
+in its surroundings: *be plain Node, not a window.* That is correct — it is how
+this runs on a computer with no Node. It is read once and then means nothing,
+except that it was still sitting there and **every app the manager started
+inherited it.** Antigravity, VS Code, Cursor and Windsurf are all built the same
+way underneath; told not to be a window, they were not one. No window, no error,
+nothing to read. And it **only ever happened in the installed copy** — never when
+the server was started from a terminal, which is every way it had been checked.
+Reproduced, fixed, and now held by a test that starts the server with exactly
+that mark set. Verified afterwards through the real window: Antigravity and VS
+Code both open. Full account in D-76.
+
+**One app that would not open took the whole manager down with it.** Starting
+something in the background and not listening for the child saying it failed is
+not a thrown error and no `try` catches it — it ends the process. Five places did
+that. What it looks like from the outside is not one broken button; it is *every*
+button breaking at once, because the window stays up and everything you press
+afterwards says the manager is not answering. Each of the five now listens, and
+nothing at all is allowed to end this process. D-77.
+
+**A launch said "it is starting" without looking.** It now waits half a second
+for the command to fall over and says so if it does. That is how the Antigravity
+fault was finally caught rather than reported as a success.
+
+**Signing in to GitHub had stopped opening your browser, and said it was opening
+one anyway.** Older versions of the helper stopped and waited for a keypress
+before opening a browser, and this app was that keypress. Newer ones just print
+the address and carry on. So nothing opened, while the page claimed it was —
+a sentence that was true when written and quietly became a lie. It now watches
+for the address rather than for the question. D-79.
+
+**"That name may already be taken" was said to somebody who was not signed in.**
+The two produce the same refusal from GitHub's end, and the app guessed the wrong
+one — then said it again for every new name, a loop with no way out. It now asks
+whether you are signed in *before* offering the form at all, and reads what came
+back instead of assuming. D-80.
+
+**The AI apps page took 1,290 ms to appear, every single time.** It asked the
+computer about twenty things, one after another. Asked at once and remembered for
+eight seconds: **4 ms.** Terminals 525 → 1 ms, the account in the corner 375 → 37 ms.
+D-78.
+
+---
+
+## What was found by pressing the buttons, before
 
 Three real faults, all of which would have hit you first:
 
@@ -67,6 +127,17 @@ Three real faults, all of which would have hit you first:
 ---
 
 ## What is left
+
+**The installer has to be built again.** `npm run build`. The worst fault fixed
+this session only happens in the installed copy, so nothing above reaches you
+until it is rebuilt.
+
+**Google sign-in has never completed against a real account.** Everything up to
+the account picker is verified: refusing plainly when no application is
+registered, asking Google for a code, and reporting Google's refusal honestly
+when the two values are wrong. What has not happened is a real client ID and a
+real account picker, because that needs an application registered in a Google
+account and only you can make one.
 
 **The other device.** The code is now on GitHub and the installer is built. Everything on this computer is verified — the workspace is joined, the key is in place, this machine is findable, offering and taking a folder are proved end to end against the real network code. What has not happened is a **second** computer. That is the next thing to do and it needs the installer, not more code.
 
@@ -99,6 +170,12 @@ Three real faults, all of which would have hit you first:
 **A convenience that infers intent from the shape of its arguments will eventually infer it wrongly.** One function decided whether it was asking or instructing by whether you passed it anything, so every button with nothing to say asked a question where it meant to give an order — and did nothing, silently. Now two functions, and a test that reads the page and the server and checks every address exists by the verb the page uses.
 
 **The same Windows trap has now been hit three times in three files:** a folder with a space in its name, handed to a shell, arrives as half a path. Launching, then the build runner, then the parcel of arguments to a release. All three fixed, all three commented.
+
+**What the manager inherits from how it was launched is not automatically fit to pass on, and it has now gone wrong in both directions.** Once too narrow — the PATH a desktop process gets, which made an installed `gh` invisible (D-72). Once too wide — the instruction not to be a window, passed on to apps that took it seriously (D-76). Both were invisible from a terminal, which is where all the testing happened.
+
+**Twenty questions asked one after another cost 1,290 ms; asked at once and remembered for eight seconds they cost 4.** The AI apps page. Nothing installs itself in the gap between two questions half a second apart, and the two events that could make the answer wrong — installing something, changing account — clear it explicitly.
+
+**A rule written against another program's exact words has an expiry date on it, and nothing tells you when it passes.** The GitHub sign-in watched for "Press Enter to open", which that program stopped printing. Watching for the thing actually needed — an address — survives the wording changing.
 
 ---
 

@@ -42,16 +42,50 @@ import * as signin from './signin.mjs';
 import * as feedback from './feedback.mjs';
 import * as fingerprint from './fingerprint.mjs';
 import * as live from './live.mjs';
-import { widenPath } from './findtools.mjs';
+import * as google from './google.mjs';
+import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
 // Start menu does not inherit the PATH a terminal has, which is how `gh` came
 // to be "not installed" on a computer that plainly has it.
 const foundOnPath = widenPath();
 
+// And before anything is started. Running inside our own window left a mark on
+// this process that told every app we start not to put a window up — see
+// findtools.mjs, which explains it properly.
+const noLongerPassedOn = stopPassingOnOurOwnSurroundings();
+
 const here = dirname(fileURLToPath(import.meta.url));
 const VERSION = '0.1.0';
 const HOUSE = projects.HOUSE;
+
+/**
+ * Nothing that goes wrong is allowed to end the manager.
+ *
+ * This is not tidiness. A manager that stops is indistinguishable, from where
+ * you are sitting, from every button in the app breaking at once: the window
+ * stays up, the page still draws, and everything you press says the manager is
+ * not answering. That is the shape of the fault that was reported — one app
+ * that would not open, and afterwards nothing worked.
+ *
+ * The particular way it happened is worth naming, because it is easy to write
+ * again: starting something in the background and not listening for the child
+ * saying it could not be started. That is not a thrown error and no `try` will
+ * catch it; it ends the process. Every one of those now has somebody listening,
+ * and this is here in case one is ever missed.
+ */
+function keepGoing(what, trouble) {
+  console.error(`  ${what}: ${trouble?.stack ?? trouble}`);
+}
+process.on('uncaughtException', (e) => keepGoing('something went wrong and was survived', e));
+process.on('unhandledRejection', (e) => keepGoing('something was left unanswered', e));
+
+/** Start something in the background and stop holding on to it. */
+function letGoOf(child) {
+  child.on('error', () => {});
+  child.unref();
+  return child;
+}
 
 // ---------------------------------------------------------------------------
 // This computer
@@ -221,19 +255,22 @@ const routes = {
   // -- who and where ------------------------------------------------------
 
   async 'GET /me'() {
-    const [account, identity, ws, now] = await Promise.all([
-      github.who(), github.identity(), workspace.state(), settings.all(),
+    const [account, identity, ws, now, googleAccount, haveGh] = await Promise.all([
+      github.who(), github.identity(), workspace.state(), settings.allSafely(),
+      google.who(), github.haveGitHubTool(),
     ]);
     return {
       machine,
       machineName: now.machineName,
       host: hostname(),
       github: account,
+      google: googleAccount,
       identity,
       workspace: ws,
       settings: now,
-      haveGitHubTool: await github.haveGitHubTool(),
+      haveGitHubTool: haveGh,
       lookedIn: foundOnPath,
+      noLongerPassedOn,
       sharingHere: lan.isOn(),
       current: current?.dir ?? null,
       currentName: current?.name ?? null,
@@ -268,7 +305,7 @@ const routes = {
 
   async 'POST /settings/openRecord'() {
     const opener = process.platform === 'win32' ? ['explorer', [HOUSE]] : ['xdg-open', [HOUSE]];
-    try { spawn(opener[0], opener[1], { detached: true, stdio: 'ignore' }).unref(); } catch { /* nothing to say */ }
+    try { letGoOf(spawn(opener[0], opener[1], { detached: true, stdio: 'ignore' })); } catch { /* nothing to say */ }
     return { ok: true, sentence: 'The folder with everything in it is open.' };
   },
 
@@ -372,14 +409,19 @@ const routes = {
   // -- AI apps ------------------------------------------------------------
 
   async 'GET /tools'() {
-    const found = await tools.installed();
-    const out = [];
-    for (const t of found) {
-      const full = tools.find(t.id);
-      const accounts = t.config ? await profiles.list(full) : { profiles: [], active: null, signedIn: false };
-      out.push({ ...t, ...accounts });
-    }
-    return { tools: out, terminals: await terminals.installed(), preferred: await settings.get('terminal') };
+    // This page used to take well over a second to appear, every time, because
+    // every question it asks was asked after the one before it had answered.
+    // None of them depend on each other.
+    const [found, terminalsHere, preferred] = await Promise.all([
+      tools.installed(), terminals.installed(), settings.get('terminal'),
+    ]);
+    const out = await Promise.all(found.map(async (t) => ({
+      ...t,
+      ...(t.config
+        ? await profiles.list(tools.find(t.id))
+        : { profiles: [], active: null, signedIn: false }),
+    })));
+    return { tools: out, terminals: terminalsHere, preferred };
   },
 
   async 'POST /launch'({ body }) {
@@ -463,6 +505,9 @@ const routes = {
             : 'This needs Python on the computer. The lines below say what it did not like.',
         });
       }
+      // What is on this computer is remembered for a few seconds, and a thing
+      // you have just installed must not have to wait for that to lapse.
+      tools.forgetWhatIsHere();
       return jobs.end(job, {
         ok: true,
         sentence: `${tool.name} is installed.`,
@@ -519,16 +564,41 @@ const routes = {
     }
     // The attempt's own ok is null while it runs; it must not overwrite the
     // fact that starting it worked.
+    github.forgetWho();
     return { ...signin.begin(), ok: true, started: true };
   },
 
   async 'GET /github/signin'() {
-    return { ok: true, signin: signin.state(), github: await github.who() };
+    // Asked afresh every time. This is the one place where a few seconds of a
+    // remembered answer would be the difference between noticing you signed in
+    // and appearing not to.
+    return { ok: true, signin: signin.state(), github: await github.who({ fresh: true }) };
   },
 
   async 'POST /github/signin/stop'() {
     signin.forget();
     return { ok: true };
+  },
+
+  async 'POST /google/signin'() {
+    const now = await settings.all();
+    const begun = google.begin({ clientId: now.googleClientId, clientSecret: now.googleClientSecret });
+    return {
+      ...begun,
+      // The attempt's own ok is null while it runs; it must not overwrite the
+      // fact that starting it worked. Same as the GitHub way in above.
+      ok: begun.needsSetup ? false : true,
+      started: !begun.needsSetup,
+      howToRegister: google.HOW_TO_REGISTER,
+    };
+  },
+
+  async 'GET /google/signin'() {
+    return { ok: true, signin: google.state(), google: await google.who() };
+  },
+
+  async 'POST /google/signout'() {
+    return google.signOut();
   },
 
   async 'POST /open/page'({ body }) {
@@ -894,7 +964,20 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
       : 'Everything so far');
     if (!saved.ok) return jobs.end(job, saved);
 
-    jobs.step(job, `Making ${name} on GitHub, visible to ${visibility === 'public' ? 'anybody' : 'only you'}.`);
+    // Ask first, rather than guess afterwards. Not being signed in and a name
+    // already taken produce the same failure from the outside, and telling
+    // somebody to pick another name when the real answer is "sign in" sends
+    // them round a loop that cannot end.
+    const who = await github.who();
+    if (!who) {
+      return jobs.end(job, {
+        ok: false,
+        sentence: 'You are not signed in to GitHub, so nothing could be made there.',
+        action: 'Sign in from the account menu at the bottom of the rail, then try again. Your work is saved here either way.',
+      });
+    }
+
+    jobs.step(job, `Making ${name} on GitHub as ${who}, visible to ${visibility === 'public' ? 'anybody' : 'only you'}.`);
     const out = await jobs.runInto(job, {
       file: 'gh',
       args: ['repo', 'create', name, visibility === 'public' ? '--public' : '--private',
@@ -902,10 +985,21 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
       cwd: dir,
     });
     if (!out.ok) {
+      const said = job.lines.join(' ');
+      const notSignedIn = /gh auth login|GH_TOKEN|authentication/i.test(said);
+      const taken = /already exists|name already/i.test(said);
       return jobs.end(job, {
         ok: false,
-        sentence: `${name} could not be made on GitHub.`,
-        action: 'A project of that name may already be on your account. Try another name.',
+        sentence: notSignedIn
+          ? 'You are not signed in to GitHub, so nothing could be made there.'
+          : taken
+            ? `You already have a project called ${name} on GitHub.`
+            : `${name} could not be made on GitHub.`,
+        action: notSignedIn
+          ? 'Sign in from the account menu, then try again. Your work is saved here either way.'
+          : taken
+            ? 'Pick another name.'
+            : 'The lines below say what GitHub objected to.',
       });
     }
 
@@ -1024,7 +1118,7 @@ function showInBrowser(address) {
       ? ['open', [address]]
       : ['xdg-open', [address]];
   try {
-    spawn(file, args, { detached: true, stdio: 'ignore' }).unref();
+    letGoOf(spawn(file, args, { detached: true, stdio: 'ignore' }));
   } catch {
     // Not being able to open a browser is not a reason to stop; the address is
     // on the line above and it still works.

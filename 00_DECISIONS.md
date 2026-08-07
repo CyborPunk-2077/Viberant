@@ -816,6 +816,94 @@ It changes nothing outside this process and nothing on the computer.
 
 ---
 
+### D-76 `[LOCKED]` — The manager does not pass its own surroundings on to the apps it starts
+
+**Decision.** Before anything is started, the manager clears the marks its own window left on this process — chiefly the one that says *be plain Node, not a window*. Every app it starts is handed a clean version of that.
+
+**Why.** This is the whole of "Antigravity does not open any more", and nothing about it looked like what it was.
+
+Running Viberant as a window of its own means the window starts the manager with one instruction in its surroundings: be plain Node rather than a window. That is correct, and it is how the manager runs on a computer with no Node installed. The instruction is read once, at the instant that process starts, and afterwards it means nothing — except that it is still sitting there, and **everything the manager starts inherits it.**
+
+Several of the apps in the list are built the same way underneath: Antigravity, VS Code, Cursor, Windsurf. Handed that instruction, they obediently do not put a window up. You press Open and nothing appears. No window, no error, nothing to read.
+
+The reason it survived being tested: **it only happens when Viberant is run from its own window, and never when the server is started from a terminal.** Every check that had been made was made the second way. Now reproduced, fixed, and held by a test that starts the server with exactly that mark set and reads what the app was handed.
+
+**What else was considered.** Filtering the environment at each `spawn` — rejected as five places to remember instead of one, which is four opportunities to forget. Clearing it once, at startup, is the version that cannot be got wrong later.
+
+**The general form, which is the part worth keeping:** anything the manager inherits from *how it was launched* is not automatically fit to pass on. This is the second fault of that exact shape — D-72 was the first, where the PATH it inherited was too narrow. One of them was too narrow and one was too wide. Both were invisible from a terminal.
+
+---
+
+### D-77 `[LOCKED]` — Nothing that goes wrong may end the manager, and a launch is checked rather than assumed
+
+**Decision.** Two things, because they were one fault.
+
+Every background start has somebody listening for it failing. A start is also given half a second to fall over, and if it does, the answer is `ok: false` with a plain sentence — rather than "it is starting", said because nobody looked.
+
+**Why.** Starting something in the background and not listening for the child saying it could not be started is **not a thrown error and no `try` will catch it.** It ends the process. There were five such places.
+
+What that looks like from the outside is not "one app failed". It is *every button in the app breaking at once*: the window stays up, the page still draws, and everything you press afterwards says the manager is not answering. That is the shape of what was reported, and it is why one broken app looked like the whole product dying.
+
+There is now also a last line of defence — nothing at all is allowed to end this process — but that is a net, not the fix. The fix is that each of the five listens.
+
+The second half follows from the first: once somebody is listening, we may as well hear the answer. A command that dies immediately is now reported as having died, which is the difference between *saying* it started and *knowing*. It costs half a second on a button that already takes several, and it is the same rule as everywhere else here — never claim something happened when it did not.
+
+---
+
+### D-78 `[DECIDED]` — What is on this computer is remembered for eight seconds
+
+**Decision.** "Where is this program?" is asked once and the answer kept for eight seconds. Installing something clears it at once. Who GitHub says you are is kept for five, and anything that changes the answer — switching, signing out, signing in — clears it on the way past.
+
+**Why.** Measured. The AI apps page asked the computer about twenty separate things, one after another, before it could draw anything: **1,290 ms, every single visit, and again after every press.** Asked all at once and remembered for a moment, the same page is **4 ms.** Terminals went from 525 ms to 1 ms; the account in the corner from 375 ms to 37 ms.
+
+Nothing installs itself in the gap between two questions asked half a second apart, so the answer cannot go stale in a way anybody could see — and the two cases where it could have, installing something and changing account, both clear it explicitly.
+
+This is the acceptable half of D-63. Speed here is bought with **staleness about the computer**, measured in seconds and invalidated by every event that could matter. It is never bought with being wrong about somebody's work, which remains forbidden.
+
+---
+
+### D-79 `[DECIDED]` — A sign-in watches for the address, not for the question it used to ask
+
+**Decision.** The GitHub sign-in opens your browser as soon as it has a code, and finds the address in whatever the helper prints rather than waiting to be asked.
+
+**Why.** It had stopped opening the browser at all, and said it was opening one anyway.
+
+Older versions of the helper stopped and waited for a keypress before opening a browser, and this app was that keypress. Newer ones do not stop: they print `Open this URL to continue in your web browser: …` and carry on. Watching only for the keypress meant the browser never opened, while the page cheerfully claimed it was opening — a sentence that was true when it was written and silently became a lie.
+
+**The general form:** a rule written against another program's exact words is a rule with an expiry date on it, and nothing tells you when it passes. Watching for the *thing you need* — an address — survives the wording changing.
+
+---
+
+### D-80 `[DECIDED]` — A dead end says which dead end it is, before you fill in the form
+
+**Decision.** Putting a project on GitHub asks whether you are signed in before it asks you anything else, and says so plainly if you are not. The failure afterwards no longer guesses.
+
+**Why.** Not being signed in and a name already taken produce the *same* refusal from the far end. The app read that refusal as the second one and told somebody to pick another name for a project that did not exist — and would have said it again for every name they tried. A loop with no way out of it, built entirely out of one confident guess.
+
+Two changes, in this order of importance: ask first, so the form is never offered when it cannot succeed; and when it does fail, read what came back rather than assuming.
+
+---
+
+### D-81 `[DECIDED]` — A secret is never handed to the page
+
+**Decision.** The page is told *whether* a secret is set, never what it is. The Google client secret goes from the settings file to Google and nowhere else.
+
+**Why.** Its own description says it stays on this computer. Sending it to the page in every settings reply would have made that sentence false — and the page has no use for it, because all it ever draws is "Set…" or "Set — replace it".
+
+---
+
+### D-82 `[DECIDED]` — Google signs you in to Viberant, and says what that is worth
+
+**Decision.** The Google button signs you in to Viberant itself, by the device flow, using a Google application you register once. It does not sign you in to the AI apps; their own cards already do that (D-58, D-59).
+
+**Why.** It was asked for repeatedly, and what was there instead offered a list of apps that use Google — which is not what a button saying "Continue with Google" claims to do.
+
+The one hard fact, stated plainly because it is the reason this took so long: **a Google sign-in cannot exist without an application registered with Google.** Every Google button anywhere is backed by one. There is no anonymous way in, by design. So the flow is built and working, and the two values it needs are asked for once in Settings, with the button saying exactly that until they are there.
+
+**What signing in with Google actually gets you, said honestly on the button itself:** your name on this computer. It is not where a second copy of your work goes — that is what GitHub is for, and conflating them would be the more attractive lie.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

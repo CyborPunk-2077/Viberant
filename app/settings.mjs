@@ -83,6 +83,27 @@ export const KNOWN = [
     fallback: () => false,
   },
   {
+    id: 'googleClientId',
+    name: 'Google sign-in: client ID',
+    why: 'A Google sign-in cannot exist without an application registered with Google — that is true of every Google button anywhere. Make one at console.cloud.google.com (type: TV and Limited Input) and paste its ID here.',
+    kind: 'text',
+    // Empty is a real answer here: it means "no Google application yet", which
+    // is what every computer starts as. Google's own are about seventy
+    // characters, so the ordinary limit would cut one in half.
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
+    id: 'googleClientSecret',
+    name: 'Google sign-in: client secret',
+    why: 'The second half of the same thing. It stays on this computer, in the settings file, and goes nowhere but Google.',
+    kind: 'secret',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
     id: 'grains',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
@@ -142,14 +163,29 @@ export async function get(id) {
   return (await all())[id];
 }
 
+/**
+ * Everything, with anything a page has no business seeing left out.
+ *
+ * A secret's whole claim is that it stays here. Handing it to the page would
+ * make that sentence false, and the page has no use for it — all it ever needs
+ * to know is whether one has been set.
+ */
+export async function allSafely() {
+  const now = await all();
+  for (const s of KNOWN) if (s.kind === 'secret') now[s.id] = now[s.id] ? true : false;
+  return now;
+}
+
 /** The list the settings page draws itself from. */
 export async function described() {
-  const now = await all();
+  const now = await allSafely();
   return KNOWN.filter((s) => s.kind !== 'hidden').map((s) => ({
     id: s.id, name: s.name, why: s.why, kind: s.kind,
     choices: s.choices ?? null,
     value: now[s.id],
-    isDefault: JSON.stringify(now[s.id]) === JSON.stringify(s.fallback()),
+    isDefault: s.kind === 'secret'
+      ? now[s.id] === false
+      : JSON.stringify(now[s.id]) === JSON.stringify(s.fallback()),
   }));
 }
 
@@ -162,11 +198,13 @@ export async function set(id, value) {
 
   let clean = value;
   if (known.kind === 'yesNo' || known.kind === 'hidden') clean = !!value;
-  if (known.kind === 'text') clean = String(value ?? '').trim().slice(0, 60);
+  if (known.kind === 'text' || known.kind === 'secret') {
+    clean = String(value ?? '').trim().slice(0, known.longest ?? 60);
+  }
   if (known.kind === 'choice' && !known.choices.some((c) => c.id === value)) {
     return { ok: false, sentence: 'That is not one of the choices.', action: 'Pick one from the list.' };
   }
-  if (known.kind === 'text' && !clean) {
+  if (known.kind === 'text' && !known.optional && !clean) {
     return { ok: false, sentence: `${known.name} cannot be empty.`, action: 'Type something.' };
   }
 

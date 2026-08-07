@@ -143,9 +143,25 @@ const UNIX_TERMINALS = [
 
 export const ALL = WINDOWS ? WINDOWS_TERMINALS : UNIX_TERMINALS;
 
+/**
+ * Which of these are here, remembered for a moment.
+ *
+ * Six terminals, each one a whole process to ask about, on a page that redraws
+ * after every press. Terminals do not come and go while you are looking at
+ * them, so the answer is kept for a few seconds. Same reasoning, and the same
+ * few seconds, as tools.mjs.
+ */
+const REMEMBER_FOR = 8000;
+const seen = new Map();
+
 async function onPath(bin) {
   if (!bin) return false;
-  try { await run(WINDOWS ? 'where' : 'which', [bin]); return true; } catch { return false; }
+  const had = seen.get(bin);
+  if (had && Date.now() - had.at < REMEMBER_FOR) return had.yes;
+  let yes = false;
+  try { await run(WINDOWS ? 'where' : 'which', [bin]); yes = true; } catch { yes = false; }
+  seen.set(bin, { at: Date.now(), yes });
+  return yes;
 }
 
 /** Where this terminal is on this computer, or nothing. */
@@ -157,12 +173,10 @@ async function locate(t) {
 
 /** Every terminal on this computer. */
 export async function installed() {
-  const out = [];
-  for (const t of ALL) {
-    const exe = await locate(t);
-    if (exe) out.push({ id: t.id, name: t.name, blurb: t.blurb, here: true });
-  }
-  return out;
+  const each = await Promise.all(ALL.map(async (t) => (await locate(t)
+    ? { id: t.id, name: t.name, blurb: t.blurb, here: true }
+    : null)));
+  return each.filter(Boolean);
 }
 
 export function find(id) {
@@ -200,6 +214,9 @@ export async function openTerminal({ dir, command = null, which = null } = {}) {
         // never split in half.
         shell: WINDOWS && !started.raw,
       });
+      // Nobody listening to this is how one terminal that would not open took
+      // the whole manager down with it. See didItDieAtOnce in tools.mjs.
+      child.on('error', () => {});
       child.unref();
       return { ok: true, opened: t.id, at: dir };
     } catch { /* try the next one rather than give up on the errand */ }
@@ -221,6 +238,7 @@ export async function openTerminal({ dir, command = null, which = null } = {}) {
       const child = spawn(WINDOWS ? 'cmd' : 'bash', WINDOWS ? ['/c', command] : ['-lc', command], {
         cwd: dir, detached: true, stdio: 'ignore',
       });
+      child.on('error', () => {});
       child.unref();
       return { ok: true, opened: 'none', at: dir, quiet: true };
     } catch { /* fall through to the honest refusal */ }

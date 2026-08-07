@@ -105,6 +105,12 @@ const SURFACES = [
   'jobs.mjs',
   'workspace.mjs',
   'server.mjs',
+  // These three were missing from the audit for as long as it has existed, and
+  // every one of them writes sentences a person reads: what a setting claims to
+  // do, what a sign-in is waiting for, what went wrong on the way in.
+  'settings.mjs',
+  'signin.mjs',
+  'google.mjs',
 ];
 
 describe('nothing a person reads is borrowed from somewhere else', () => {

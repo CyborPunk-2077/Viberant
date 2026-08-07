@@ -34,9 +34,21 @@ const gh = (args, opts = {}) => run('gh', args, { maxBuffer: 32 * 1024 * 1024, .
 
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
-/** Is the GitHub command on this computer at all? */
+/**
+ * Is the GitHub command on this computer at all?
+ *
+ * Asked by nearly everything in this file, and every ask costs a whole process.
+ * Once it has been found it stays found; a "no" is only kept for a moment, so
+ * installing it and coming straight back works without restarting anything.
+ */
+let toolIsHere = null;
+
 export async function haveGitHubTool() {
-  return !!(await quiet(() => run(WINDOWS ? 'where' : 'which', ['gh'])));
+  if (toolIsHere?.yes) return true;
+  if (toolIsHere && Date.now() - toolIsHere.at < 3000) return false;
+  const yes = !!(await quiet(() => run(WINDOWS ? 'where' : 'which', ['gh'])));
+  toolIsHere = { at: Date.now(), yes };
+  return yes;
 }
 
 const notSetUp = {
@@ -55,10 +67,28 @@ const notSignedIn = {
 // Who you are
 // ---------------------------------------------------------------------------
 
-/** Who GitHub thinks you are, or nothing. */
-export async function who() {
+/**
+ * Who GitHub thinks you are, or nothing.
+ *
+ * This asks GitHub, over the network, and takes about a third of a second. The
+ * page asks it on every draw, so the answer is kept for a few seconds — long
+ * enough to stop it being the slowest thing on screen, short enough that it is
+ * never what anybody is looking at when it is wrong. Anything that changes the
+ * answer forgets it on the way past, so a switch or a sign-out shows at once.
+ */
+const WORTH_KEEPING_FOR = 5000;
+let lastKnown = null;
+
+export function forgetWho() {
+  lastKnown = null;
+}
+
+export async function who({ fresh = false } = {}) {
+  if (!fresh && lastKnown && Date.now() - lastKnown.at < WORTH_KEEPING_FOR) return lastKnown.name;
   const out = await quiet(() => gh(['api', 'user', '--jq', '.login']));
-  return out ? out.stdout.trim() || null : null;
+  const name = out ? out.stdout.trim() || null : null;
+  lastKnown = { at: Date.now(), name };
+  return name;
 }
 
 /**
@@ -70,10 +100,10 @@ export async function who() {
 export async function accounts() {
   if (!(await haveGitHubTool())) return { here: false, accounts: [], active: null };
 
-  const status = await quiet(() => gh(['auth', 'status']));
+  // Two questions that do not depend on each other, so they are asked at once.
+  const [status, active] = await Promise.all([quiet(() => gh(['auth', 'status'])), who()]);
   const text = status ? `${status.stdout}\n${status.stderr ?? ''}` : '';
   const names = [...text.matchAll(/account (\S+)/g)].map((m) => m[1]);
-  const active = await who();
 
   const list = [...new Set(names)].map((name) => ({ name, active: name === active }));
   if (active && !list.some((a) => a.name === active)) list.unshift({ name: active, active: true });
@@ -84,6 +114,7 @@ export async function accounts() {
 export async function switchTo(name) {
   if (!(await haveGitHubTool())) return notSetUp;
   const done = await quiet(() => gh(['auth', 'switch', '--user', name]));
+  forgetWho();
   if (!done) {
     return {
       ok: false,
@@ -98,6 +129,7 @@ export async function switchTo(name) {
 export async function signOut(name) {
   if (!(await haveGitHubTool())) return notSetUp;
   const done = await quiet(() => gh(['auth', 'logout', '--user', name]));
+  forgetWho();
   if (!done) {
     return { ok: false, sentence: `${name} could not be signed out.`, action: 'Try again in a moment.' };
   }
