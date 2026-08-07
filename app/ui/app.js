@@ -512,10 +512,22 @@ function shedGrains() {
 
 const SCREENS = {};
 
+/**
+ * The places whose contents are read down rather than across.
+ *
+ * Everything else is rows — a name, its facts, and what you can do about it —
+ * and rows want the width of the monitor. These are sentences and controls, and
+ * a line of prose the width of a 1920 screen is one nobody's eye can track back
+ * from. It is the same page either way; only how far it is allowed to spread
+ * changes.
+ */
+const READING = new Set(['settings', 'feedback']);
+
 async function go(tab, { keepSaid = false } = {}) {
   at.tab = tab;
   if (!keepSaid) said = null;
   closePanels();
+  view.classList.toggle('reading', READING.has(tab));
   drawNav();
   await draw();
 }
@@ -887,12 +899,34 @@ async function draw({ quietly = false } = {}) {
   }
 
   const before = view.innerHTML;
+
+  // Where you were, and what you were on, captured before anything is replaced.
+  //
+  // Rebuilding the page empties the one thing that scrolls, which collapses its
+  // height, which makes the browser clamp how far down it is to zero. Then the
+  // new page arrives and you are at the top. Nothing in here called `scrollTo`;
+  // losing your place was a side effect of replacing the contents, and it
+  // happened every time anything on screen changed at all — another computer
+  // appearing, a transfer counting up, or just "3 min ago" becoming "4 min ago".
+  const room = view.closest('main') ?? document.scrollingElement;
+  const wasAt = room?.scrollTop ?? 0;
+  const hadFocus = document.activeElement;
+  const focusedId = hadFocus && hadFocus !== document.body ? hadFocus.id : null;
+
   await SCREENS[at.tab]?.();
   const after = view.innerHTML;
 
   // Nothing moved. Put the page back exactly as it was, so a scroll position
   // and a half-open menu survive a poll that had nothing to report.
   if (after === before) return;
+
+  if (room && room.scrollTop !== wasAt) {
+    // Clamped by the browser to whatever the new page allows, which is the
+    // right answer when the page genuinely got shorter.
+    room.scrollTop = wasAt;
+  }
+  if (focusedId) $(`#${focusedId}`)?.focus?.();
+
   lastDrawn = after;
   paintNews();
 }
@@ -1914,7 +1948,8 @@ SCREENS.apps = async () => {
 
   wireWhereBar();
   wireAppCards(t, p);
-  if (watching) paintJob();
+  // Redraw the errand once, without starting a second loop watching it.
+  if (watching) paintJob({ again: !jobTimer });
 };
 
 /**
@@ -2438,41 +2473,136 @@ SCREENS.ship = async () => {
     if (r.ok) watchJob(r.job); else { say(r); draw(); }
   };
 
-  if (watching) paintJob();
+  // Redraw the errand once, without starting a second loop watching it.
+  if (watching) paintJob({ again: !jobTimer });
 };
 
+/**
+ * Watching a long errand, with exactly one loop doing the watching.
+ *
+ * This is where three separate complaints all came from — the app refreshing by
+ * itself, flashing while something was deploying or being offered, and losing
+ * your place when you had scrolled down. One cause, and it multiplies.
+ *
+ * Every screen that can show an errand ended with `if (watching) paintJob()`,
+ * and `paintJob` ended by asking for itself again in a second. Nothing stopped
+ * the loop that was already running. So each redraw *added* a loop: deploy
+ * something, change tabs twice, and four independent pollers are now replacing
+ * the same piece of the page every second, each on its own beat. That is what
+ * the flashing was. It is also why it got worse the longer you used it.
+ *
+ * Now: one timer, held here, cancelled before another is ever set. Starting a
+ * watch twice is starting it once.
+ */
+let jobTimer = null;
+let jobShown = null;
+
+function stopWatchingJob() {
+  clearTimeout(jobTimer);
+  jobTimer = null;
+}
+
 async function watchJob(id) {
+  stopWatchingJob();
   watching = id;
+  jobShown = null;
   await paintJob();
 }
 
-async function paintJob() {
+/**
+ * Draw the errand, changing only what changed.
+ *
+ * The whole panel used to be rebuilt every second, which threw away the open or
+ * closed state of what it printed, threw away where you had scrolled inside it,
+ * and — because it is inside the page's one scroll container — could move the
+ * page under you. Lines are appended now, and the rest is written only when its
+ * text is actually different.
+ */
+async function paintJob({ again = true } = {}) {
   const box = $('#job');
   if (!box || !watching) return;
+
   const j = await get(`/job?id=${encodeURIComponent(watching)}`);
-  if (j.ok === false && !j.lines) { watching = null; return; }
+  if (j.ok === false && !j.lines) { watching = null; stopWatchingJob(); return; }
 
-  box.innerHTML = `
-    <h2>${esc(j.what)}</h2>
-    <div class="card">
-      <div class="bar" style="margin-bottom:.7rem">
-        ${j.running ? '<span class="spin"></span>' : `<span class="dot ${j.ok ? 'live' : 'trouble'}"></span>`}
-        <b>${esc(j.running ? 'Working on it. This can take a few minutes.' : j.sentence ?? '')}</b>
-        <span style="flex:1"></span>
-        ${j.running ? '' : '<button class="quiet small" id="job-close">clear</button>'}
-      </div>
-      ${j.action && !j.running ? `<p class="note" style="color:var(--quiet);margin:0 0 .7rem">${esc(j.action)}</p>` : ''}
-      <ul class="steps">${j.steps.map((s) => `<li><span class="tick">✓</span> ${esc(s.sentence)}</li>`).join('')}</ul>
-      <details ${j.ok === false ? 'open' : ''}>
-        <summary style="cursor:pointer;color:var(--quiet);font-size:.85rem">What it printed</summary>
-        <div class="log" style="margin-top:.5rem">${esc(j.lines.join('\n'))}</div>
-      </details>
-    </div>`;
+  // Built once. Everything after this is an edit, not a replacement.
+  if (jobShown !== watching) {
+    jobShown = watching;
+    box.innerHTML = `
+      <h2>${esc(j.what)}</h2>
+      <div class="card">
+        <div class="bar" style="margin-bottom:.7rem">
+          <span id="job-mark"></span>
+          <b id="job-says"></b>
+          <span style="flex:1"></span>
+          <span id="job-clear"></span>
+        </div>
+        <p class="note" id="job-does" style="color:var(--quiet);margin:0 0 .7rem;display:none"></p>
+        <ul class="steps" id="job-steps"></ul>
+        <details id="job-more">
+          <summary style="cursor:pointer;color:var(--quiet);font-size:var(--t-sub)">What it printed</summary>
+          <div class="log" id="job-log" style="margin-top:.5rem"></div>
+        </details>
+      </div>`;
+  }
 
-  $('#job-close')?.addEventListener('click', () => { watching = null; draw(); });
+  const set = (id, html) => {
+    const el = $(`#${id}`);
+    if (el && el.innerHTML !== html) el.innerHTML = html;
+  };
 
-  if (j.running) setTimeout(paintJob, 1000);
-  else setTimeout(() => { if (!layer.innerHTML) draw(); }, 600);
+  set('job-mark', j.running
+    ? '<span class="spin"></span>'
+    : `<span class="dot ${j.ok ? 'live' : 'trouble'}"></span>`);
+  set('job-says', esc(j.running ? 'Working on it. This can take a few minutes.' : j.sentence ?? ''));
+  set('job-clear', j.running ? '' : '<button class="quiet small" id="job-close">clear</button>');
+  set('job-steps', j.steps.map((s) => `<li><span class="tick">✓</span> ${esc(s.sentence)}</li>`).join(''));
+
+  const does = $('#job-does');
+  if (does) {
+    const words = j.action && !j.running ? esc(j.action) : '';
+    if (does.innerHTML !== words) does.innerHTML = words;
+    does.style.display = words ? '' : 'none';
+  }
+
+  // Appended rather than rewritten, and only the lines that are new. A log that
+  // is thrown away and rebuilt per line cannot be read while it is running.
+  const log = $('#job-log');
+  if (log) {
+    const had = Number(log.dataset.lines ?? 0);
+    if (j.lines.length < had) { log.textContent = ''; log.dataset.lines = '0'; }
+    const fresh = j.lines.slice(Number(log.dataset.lines ?? 0));
+    if (fresh.length) {
+      const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+      log.append(document.createTextNode(`${fresh.join('\n')}\n`));
+      log.dataset.lines = String(j.lines.length);
+      // Follows along only if you were already at the bottom. Scrolling back to
+      // read something is a decision, and it is not ours to undo every second.
+      if (nearBottom) log.scrollTop = log.scrollHeight;
+    }
+  }
+
+  const more = $('#job-more');
+  if (more && j.ok === false && !more.dataset.opened) { more.open = true; more.dataset.opened = '1'; }
+
+  $('#job-close')?.addEventListener('click', () => {
+    watching = null;
+    stopWatchingJob();
+    box.innerHTML = '';
+    jobShown = null;
+  });
+
+  stopWatchingJob();
+  if (!again) return;
+
+  if (j.running) {
+    jobTimer = setTimeout(paintJob, 1000);
+  } else {
+    // Finished. The page is told once, quietly, so what changed underneath the
+    // errand appears — and never with a full redraw, which is what made the
+    // whole application blink at the end of every deploy.
+    jobTimer = setTimeout(() => { if (!layer.innerHTML) draw({ quietly: true }); }, 600);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -2719,7 +2849,8 @@ SCREENS.workspace = async () => {
     };
   }
 
-  if (watching) paintJob();
+  // Redraw the errand once, without starting a second loop watching it.
+  if (watching) paintJob({ again: !jobTimer });
   workspaceTimer = setTimeout(() => {
     if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw({ quietly: true });
   }, 20000);

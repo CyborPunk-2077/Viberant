@@ -115,7 +115,21 @@
   /* -- measurements ------------------------------------------------------- */
   --rail:  236px;
   --top:   48px;
-  --hold:  68rem;
+  /*
+   * Two widths, because there are two kinds of screen here and one number
+   * cannot serve both.
+   *
+   * Rows of machines, projects and transfers are read across: a name on the
+   * left, its facts in the middle, what you can do on the right. Those want the
+   * monitor. Sentences are read down, and a line of prose 1,600 pixels wide is
+   * a line nobody's eye can track back from — those want a column.
+   *
+   * There was one number, 68rem, and it was the column. On a 1920 screen that
+   * left a third of the workspace empty while the rows it contained were
+   * squeezing their own contents.
+   */
+  --hold: 96rem;      /* rows and tables: use the desk */
+  --hold-read: 58rem; /* sentences and settings: use an arm's length */
   --tap:   32px;   /* the height of a compact control */
   --tap-l: 36px;   /* and of a primary one            */
 }
@@ -291,6 +305,16 @@ main {
   min-width: 0;
 }
 .hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
+.hold.reading { max-width: var(--hold-read); }
+
+/*
+ * A sentence keeps its column even on a screen that is using its full width,
+ * because the two rules are about different things: how much of the desk the
+ * information may spread across, and how far a line of text may run before it
+ * becomes hard to read. A page of rows can want the first and still want the
+ * second for the paragraph at the top of it.
+ */
+.hold > .sub, .hold > p { max-width: var(--hold-read); }
 
 /* ------------------------------------------------------------------------- */
 /* The rail                                                                   */
