@@ -112,6 +112,70 @@ export async function look(at, { hidden = false } = {}) {
 }
 
 /**
+ * The file chooser this computer already has.
+ *
+ * The same argument as the folder one below: Windows has a good one, people
+ * know it, and the alternative is a list of every file on a disk rendered by
+ * us. It is given the window in front as its owner for the same reason — a
+ * dialog that opens behind what you asked it from did not open.
+ *
+ * Deliberately one file. Offering several at once is a different errand with a
+ * different question attached ("as one thing, or as several?"), and guessing
+ * which somebody meant is how a transfer arrives in a shape nobody asked for.
+ */
+export async function chooseFile({ startAt = null } = {}) {
+  if (!WINDOWS) {
+    return {
+      ok: false,
+      sentence: 'This computer has no file chooser the manager can open.',
+      action: 'Offer the folder the file is in instead.',
+    };
+  }
+
+  const start = startAt ? String(startAt).replace(/'/g, "''") : '';
+  const script = `
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -Namespace Native -Name Win -MemberDefinition '
+      [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
+    $owner = New-Object System.Windows.Forms.NativeWindow
+    $owner.AssignHandle([Native.Win]::GetForegroundWindow())
+    $box = New-Object System.Windows.Forms.OpenFileDialog
+    $box.Title = 'Choose a file to offer'
+    $box.Filter = 'Any file (*.*)|*.*'
+    $box.Multiselect = $false
+    ${start ? `$box.InitialDirectory = '${start}'` : ''}
+    if ($box.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+      Write-Output $box.FileName
+    }
+    $owner.ReleaseHandle()
+  `;
+
+  try {
+    const { stdout } = await run(
+      'powershell',
+      ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command', script],
+      { windowsHide: true, timeout: 5 * 60 * 1000 },
+    );
+    const picked = stdout.trim();
+    if (!picked) return { ok: false, cancelled: true };
+    if (!existsSync(picked)) {
+      return {
+        ok: false,
+        sentence: 'That is not a file on this computer.',
+        action: 'Choose a file on one of your drives.',
+      };
+    }
+    return { ok: true, path: picked };
+  } catch {
+    return {
+      ok: false,
+      sentence: 'The file chooser would not open.',
+      action: 'Offer the folder the file is in instead.',
+    };
+  }
+}
+
+/**
  * The folder chooser this computer already has.
  *
  * Windows has a perfectly good one and people know it, so on Windows we use it

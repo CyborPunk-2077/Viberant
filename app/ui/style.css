@@ -660,6 +660,46 @@ h2:first-of-type { margin-top: 0; }
   min-width: 0;
 }
 
+/*
+ * The mark that says what kind of thing a row is.
+ *
+ * Optically centred against the first line of text rather than the whole row,
+ * because a row two lines tall would otherwise put it halfway down the second
+ * one — which reads as belonging to neither.
+ */
+.kindmark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-self: flex-start;
+  margin-top: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-button);
+  background: var(--raised);
+  color: var(--quiet);
+}
+.kindmark svg { display: block; }
+
+/* A number in a row: fixed column, aligned on its digits, never wrapping. */
+.metric {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--quiet);
+  text-align: right;
+  white-space: nowrap;
+  flex: none;
+  min-width: 4.5rem;
+}
+.metric.quiet { color: var(--faint); min-width: 4rem; }
+
+@media (max-width: 62rem) {
+  .metric.quiet { display: none; }
+}
+
 .row .name { font-weight: var(--w-mid); }
 .row .note { font-size: var(--t-sub); color: var(--quiet); overflow-wrap: anywhere; }
 .row.pick { cursor: pointer; }

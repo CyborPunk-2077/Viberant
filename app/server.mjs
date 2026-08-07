@@ -13,7 +13,7 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
-import { existsSync, watch } from 'node:fs';
+import { existsSync, statSync, watch } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, basename, extname, normalize } from 'node:path';
 import { hostname } from 'node:os';
@@ -857,11 +857,48 @@ const routes = {
   async 'POST /local/offer'({ body }) {
     const started = await localSharing();
     if (!started.ok && !started.already) return started;
-    const weighed = await parcel.weigh(body.path, { everything: !!body.everything });
-    if (weighed.files === 0) {
-      return { ok: false, sentence: 'There is nothing in that folder to send.', action: 'Choose another one.' };
+
+    // A file is one thing and is always worth sending, even an empty one.
+    // A folder with nothing in it is a different case: sending it would arrive
+    // as nothing and look like a failure.
+    const asked = existsSync(body.path) ? statSync(body.path) : null;
+    if (asked?.isDirectory()) {
+      const weighed = await parcel.weigh(body.path, { everything: !!body.everything });
+      if (weighed.files === 0 && weighed.dirs === 0) {
+        return { ok: false, sentence: 'There is nothing in that folder to send.', action: 'Choose another one.' };
+      }
     }
-    return lan.offer({ path: body.path, everything: !!body.everything, about: body.about ?? '' });
+    return lan.offer({
+      path: body.path,
+      everything: !!body.everything,
+      about: body.about ?? '',
+      kind: body.kind ?? null,
+    });
+  },
+
+  /** The file chooser this computer already has, for offering one file. */
+  async 'POST /choose/file'({ body }) {
+    return browse.chooseFile({ startAt: body?.startAt ?? null });
+  },
+
+  /**
+   * Open the folder something is in, in the file browser this computer has.
+   *
+   * Selects the thing itself rather than merely opening the folder around it,
+   * which for a folder of four thousand files is the difference between an
+   * answer and a search.
+   */
+  async 'POST /reveal'({ body }) {
+    const at = body?.path ? resolve(body.path) : null;
+    if (!at || !existsSync(at)) {
+      return { ok: false, sentence: 'That is not on this computer any more.', action: 'Refresh the list.' };
+    }
+    if (process.platform !== 'win32') {
+      return { ok: false, sentence: 'This computer has no file browser the manager can open.', action: 'Open it yourself.' };
+    }
+    // `explorer` answers 1 even when it worked, so nothing is read from it.
+    letGoOf(spawn('explorer.exe', [`/select,${at}`], { detached: true, stdio: 'ignore', windowsHide: false }));
+    return { ok: true };
   },
 
   async 'POST /local/weigh'({ body }) {

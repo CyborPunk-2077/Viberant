@@ -22,8 +22,8 @@
 import { createServer, get as httpGet } from 'node:http';
 import { createSocket } from 'node:dgram';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile, writeFile, mkdir, rm, rename } from 'node:fs/promises';
+import { existsSync, statSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
 import { networkInterfaces } from 'node:os';
 
@@ -82,22 +82,59 @@ async function keepOffers(list) {
   await writeFile(OFFERS, JSON.stringify(list, null, 2), 'utf8');
 }
 
-/** Put a folder up for your other computers to take a copy of. */
-export async function offer({ path, everything = false, about = '' }) {
+/**
+ * Put something up for your other computers to take a copy of.
+ *
+ * The register of what this computer is offering, and the only thing any other
+ * computer is ever told about. Nothing is inferred from what is on the disk,
+ * what is in the projects list, or what happens to be open — if it is not in
+ * here, it does not exist as far as the network is concerned.
+ *
+ * `kind` is written down rather than worked out later. A file, a folder and a
+ * project are three different things to the person receiving one: a file lands
+ * as itself, a folder lands as a folder, and a project lands and then becomes
+ * something you can open. Guessing which from the shape of a path is the sort
+ * of inference that is right until the day it is not.
+ */
+export async function offer({ path, everything = false, about = '', kind = null }) {
   const at = resolve(path);
   if (!existsSync(at)) {
-    return { ok: false, sentence: 'That folder is not there.', action: 'Choose another one.' };
+    return { ok: false, sentence: 'That is not there any more.', action: 'Choose something else.' };
   }
 
-  const weight = await parcel.weigh(at, { everything });
+  const asked = statSync(at);
+  const isFile = asked.isFile();
+
+  if (!isFile && !asked.isDirectory()) {
+    return {
+      ok: false,
+      sentence: 'That is not a file or a folder this computer can send.',
+      action: 'Choose a file or a folder.',
+    };
+  }
+
+  const weight = isFile
+    ? { files: 1, dirs: 0, bytes: asked.size, skipped: 0, unreadable: 0 }
+    : await parcel.weigh(at, { everything });
+
+  if (!isFile && weight.unreadable) {
+    return {
+      ok: false,
+      sentence: `${weight.unreadable} folders inside that one could not be read.`,
+      action: 'Close anything using it, then offer it again.',
+    };
+  }
+
   const list = (await offers()).filter((o) => o.path !== at);
   const one = {
     id: randomUUID(),
+    kind: kind ?? (isFile ? 'file' : 'folder'),
     name: basename(at),
     path: at,
     about: String(about ?? '').slice(0, 200),
     everything: !!everything,
     files: weight.files,
+    dirs: weight.dirs ?? 0,
     bytes: weight.bytes,
     skipped: weight.skipped,
     at: Date.now(),
@@ -108,7 +145,9 @@ export async function offer({ path, everything = false, about = '' }) {
   return {
     ok: true,
     offer: one,
-    sentence: `${one.name} is now offered to your other computers — ${one.files} files, ${parcel.inWords(one.bytes)}.`,
+    sentence: isFile
+      ? `${one.name} is now offered to your other computers — ${parcel.inWords(one.bytes)}.`
+      : `${one.name} is now offered to your other computers — ${one.files} files, ${parcel.inWords(one.bytes)}.`,
     action: 'Nothing moves until one of them asks for it.',
   };
 }
@@ -526,6 +565,25 @@ async function handle(req, res) {
   if (url.pathname === '/parcel') {
     const one = (await offers()).find((o) => o.id === url.searchParams.get('id'));
     if (!one || !existsSync(one.path)) return say(404, { ok: false });
+
+    // One file travels as a parcel of one, so both ends keep the single format
+    // they already know — and the name and every byte of it survive, which is
+    // the whole of what "offer a file" has to promise.
+    if (one.kind === 'file') {
+      const now = statSync(one.path);
+      res.writeHead(200, {
+        'content-type': 'application/octet-stream',
+        'x-viberant-files': '1',
+        'x-viberant-dirs': '0',
+        'x-viberant-bytes': String(now.size),
+        'x-viberant-name': one.name,
+        'x-viberant-kind': 'file',
+      });
+      return parcel.wrapOne(one.path)
+        .on('error', () => res.destroy())
+        .pipe(res);
+    }
+
     return handOver(one.path, { everything: one.everything, name: one.name });
   }
 
@@ -650,9 +708,33 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     });
   }
 
-  const target = join(resolve(into), name || res.headers['x-viberant-name'] || 'folder');
+  const called = name || res.headers['x-viberant-name'] || 'folder';
+  const isFile = res.headers['x-viberant-kind'] === 'file';
+
+  // A file arrives as a parcel of one, so it is unwrapped into a folder of its
+  // own and then lifted out of it. Doing it this way means the checking above —
+  // what was promised, what was sent, what landed — applies to a single file
+  // exactly as it does to a project, rather than a second path with its own
+  // arithmetic and its own chance of being wrong.
+  const target = isFile
+    ? join(resolve(into), `${called}.viberant-arriving`)
+    : join(resolve(into), called);
+
   const out = await receiveInto(res, target, { job, jobs });
   if (!out.ok) return jobs.end(job, out);
+
+  if (isFile) {
+    const landed = join(resolve(into), called);
+    await rm(landed, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    await rename(join(target, called), landed);
+    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    return jobs.end(job, {
+      ok: true,
+      at: landed,
+      sentence: `${called} is on this computer — ${parcel.inWords(out.bytes)}.`,
+      action: 'It is where you chose to put it.',
+    });
+  }
 
   return jobs.end(job, {
     ok: true,

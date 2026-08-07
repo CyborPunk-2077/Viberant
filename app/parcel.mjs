@@ -252,6 +252,48 @@ export function wrap(root, { everything = false, seen = null } = {}) {
   return out;
 }
 
+/**
+ * One file, wrapped as a parcel of one.
+ *
+ * Deliberately the same format rather than a second one. A file could be sent
+ * as its own bytes down the wire with the name in a header, and that would be
+ * simpler for about a week — until the first time a size is wrong, and there
+ * are two places to check the arithmetic instead of one. Everything a folder
+ * gets, a file gets: an opening line saying what is coming, a closing line
+ * saying what went, and a receiver that refuses to accept the difference.
+ */
+export function wrapOne(path) {
+  const out = new PassThrough();
+  const squashed = createGzip({ level: 6 });
+  squashed.pipe(out);
+
+  (async () => {
+    const at = resolve(path);
+    const size = (await stat(at)).size;
+    const named = at.split(sep).pop();
+
+    const put = (chunk) => new Promise((done, fail) => {
+      squashed.write(chunk, (e) => (e ? fail(e) : done()));
+    });
+
+    await put(`${JSON.stringify({ v: 2, totalFiles: 1, totalDirs: 0, totalBytes: size })}\n`);
+    await put(`${JSON.stringify({ path: named, size })}\n`);
+
+    let sent = 0;
+    for await (const chunk of createReadStream(at)) {
+      if (out.destroyed) return;
+      await put(chunk);
+      sent += chunk.length;
+    }
+    if (sent !== size) throw new Error(`${named} changed while it was being sent`);
+
+    await put(`${JSON.stringify({ end: true, files: 1, dirs: 0, bytes: sent })}\n`);
+    squashed.end();
+  })().catch((e) => out.destroy(e));
+
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Opening one
 // ---------------------------------------------------------------------------

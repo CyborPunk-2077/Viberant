@@ -2611,6 +2611,22 @@ async function paintJob({ again = true } = {}) {
 
 let workspaceTimer = null;
 
+/**
+ * A file, a folder and a project, told apart at a glance.
+ *
+ * Three different things happen when one of these arrives — a file lands as
+ * itself, a folder lands as a folder, a project lands and then becomes
+ * something you can open — so they are three different marks rather than three
+ * identical squares with different words beside them.
+ */
+const KIND_MARK = {
+  file: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M9 1.5H4.5A1.5 1.5 0 0 0 3 3v10a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 13 13V5.5L9 1.5Z"/><path d="M9 1.5V5a.5.5 0 0 0 .5.5H13"/></svg>',
+  folder: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M2 4.2A1.2 1.2 0 0 1 3.2 3h2.9l1.4 1.6h5.3A1.2 1.2 0 0 1 14 5.8v6A1.2 1.2 0 0 1 12.8 13H3.2A1.2 1.2 0 0 1 2 11.8V4.2Z"/></svg>',
+  project: '<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2"/><path d="M5.4 6.2 7.2 8l-1.8 1.8M8.8 9.8h2"/></svg>',
+};
+
+const KIND_WORD = { file: 'File', folder: 'Folder', project: 'Project' };
+
 SCREENS.workspace = async () => {
   clearTimeout(workspaceTimer);
   const w = await get('/workspace');
@@ -2717,44 +2733,49 @@ SCREENS.workspace = async () => {
       </div>
     </div>
 
-    <h2>Folders this computer is offering</h2>
+    <h2>What this computer is offering</h2>
     ${(w.offers ?? []).length ? `<div class="lane">${(w.offers ?? []).map((o) => `
-      <div class="slab" style="cursor:default">
-        <span class="dot live"></span>
+      <div class="slab" style="cursor:default" data-offered="${esc(o.id)}">
+        <span class="kindmark" aria-hidden="true">${KIND_MARK[o.kind] ?? KIND_MARK.folder}</span>
         <div class="grow">
           <div class="line1"><b>${esc(o.name)}</b>
-            <span class="chip">${o.files} files</span>
-            <span class="chip">${esc(size(o.bytes))}</span>
+            <span class="chip">${esc(KIND_WORD[o.kind] ?? 'Folder')}</span>
             ${o.everything ? '<span class="chip">everything included</span>' : ''}</div>
-          <div class="fact">Any of your computers on this network can take a copy — when it asks.</div>
-          <div class="path">${esc(o.path ?? '')}</div>
+          <div class="path" title="${esc(o.path ?? '')}">${esc(o.path ?? '')}</div>
         </div>
-        <div class="acts"><button class="quiet small" data-unoffer="${esc(o.id)}">Stop offering</button></div>
+        <span class="metric">${esc(size(o.bytes))}</span>
+        <span class="metric quiet">${o.kind === 'file' ? '' : `${o.files} files`}</span>
+        <span class="state finished"><span class="pip"></span>Shared</span>
+        <div class="acts">
+          <button class="small icon" data-offered-more="${esc(o.id)}"
+            data-tip="More for ${esc(o.name)}" aria-label="More for ${esc(o.name)}">⋯</button>
+        </div>
       </div>`).join('')}</div>`
     : `<div class="empty"><b>Nothing offered yet.</b>
-         Offer a folder and your other computers can take a copy. Nothing moves until one asks.</div>`}
+         Offer a file or a folder and your other computers can take a copy. Nothing moves until one asks.</div>`}
     <div class="bar" style="margin-top:.6rem">
-      <button class="go" id="w-offer-folder">Offer a folder…</button>
+      <button class="go" id="w-offer">Offer…</button>
     </div>
 
-    <h2>Projects your other computers have</h2>
+    <h2>Available from your other computers</h2>
     ${theirs.length ? `<div class="lane">${theirs.map((p) => `
       <div class="slab" style="cursor:default">
-        <span class="dot ${p.url ? 'live' : 'off'}"></span>
+        <span class="kindmark" aria-hidden="true">${KIND_MARK.project}</span>
         <div class="grow">
           <div class="line1"><b>${esc(p.name)}</b>
-            ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
+            <span class="chip">${p.kind ? esc(p.kind) : 'Project'}</span>
             <span class="chip">on ${esc(p.fromName)}</span></div>
-          <div class="fact">${esc(p.says ?? '')}</div>
-          ${p.lastDid ? `<div class="did">Last time: ${esc(p.lastDid)}</div>` : ''}
-          ${p.url ? '' : '<div class="did">No copy on GitHub — ask that computer to offer the folder instead.</div>'}
+          <div class="fact">${esc(p.says ?? '')}${p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</div>
         </div>
+        <span class="state ${p.url ? 'finished' : 'notStarted'}"><span class="pip"></span>${
+  p.url ? 'Available' : 'Not on GitHub'}</span>
         <div class="acts">
-          <button class="small" data-bring='${esc(JSON.stringify(p))}' ${p.url ? '' : 'disabled'}>Bring it from GitHub</button>
+          <button class="small" data-bring='${esc(JSON.stringify(p))}' ${p.url ? '' : 'disabled'}
+            ${p.url ? '' : `data-tip="Ask ${esc(p.fromName)} to offer the folder instead"`}>Bring it here</button>
         </div>
       </div>`).join('')}</div>`
-    : `<div class="empty"><b>Nothing listed yet.</b>
-         Every project on your other computers shows here unless it is marked private there.</div>`}
+    : `<div class="empty"><b>Nothing offered to this computer.</b>
+         Anything your other computers offer shows here.</div>`}
 
     <h2>Notes between your computers</h2>
     <div class="card">
@@ -2817,7 +2838,6 @@ SCREENS.workspace = async () => {
     await refreshMe();
     draw();
   });
-  $('#w-offer-folder').onclick = offerFolder;
   $('#w-leave').onclick = async () => {
     const sure = await confirmThat({
       title: 'Take this computer out',
@@ -2833,8 +2853,36 @@ SCREENS.workspace = async () => {
   };
 
   for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekAt(b.dataset.peek, w);
-  for (const b of document.querySelectorAll('[data-unoffer]')) {
-    b.onclick = async () => { say(await post('/local/withdraw', { id: b.dataset.unoffer })); draw(); };
+  // Offering is one control with two answers rather than two buttons, because
+  // they are the same decision with a different noun in it.
+  $('#w-offer').onclick = (e) => {
+    const room = e.currentTarget.getBoundingClientRect();
+    menuAt({ x: room.left, y: room.bottom + 6 }, [
+      { what: 'Offer a file…', run: offerFile },
+      { what: 'Offer a folder…', run: offerFolder },
+    ]);
+  };
+
+  for (const b of document.querySelectorAll('[data-offered-more]')) {
+    const one = (w.offers ?? []).find((o) => o.id === b.dataset.offeredMore);
+    const items = [
+      { what: 'Show it in Explorer', run: () => post('/reveal', { path: one?.path }) },
+      { what: 'Copy where it is', run: () => navigator.clipboard?.writeText(one?.path ?? '') },
+      '-',
+      {
+        what: 'Stop offering it',
+        run: async () => { say(await post('/local/withdraw', { id: b.dataset.offeredMore })); draw(); },
+      },
+    ];
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const room = b.getBoundingClientRect();
+      menuAt({ x: room.right - 210, y: room.bottom + 6 }, items);
+    };
+    b.closest('[data-offered]').oncontextmenu = (e) => {
+      e.preventDefault();
+      menuAt({ x: e.clientX, y: e.clientY }, items);
+    };
   }
   for (const b of document.querySelectorAll('[data-bring]')) {
     b.onclick = async () => {
@@ -2855,6 +2903,24 @@ SCREENS.workspace = async () => {
     if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw({ quietly: true });
   }, 20000);
 };
+
+/**
+ * Offer one file to the other computers on this network.
+ *
+ * Its own errand rather than a mode of the folder one, because there is nothing
+ * to decide: a file is the file. The question the folder version has to ask —
+ * whether to include the folders that get rebuilt anyway — has no meaning here,
+ * and a sheet that asks a question with one answer is a sheet that wastes a
+ * press.
+ */
+async function offerFile() {
+  const chosen = await post('/choose/file');
+  if (chosen.cancelled) return;
+  if (!chosen.ok) return say(chosen), draw();
+
+  say(await post('/local/offer', { path: chosen.path, kind: 'file' }));
+  draw();
+}
 
 /** Offer a folder to the other computers on this network. */
 async function offerFolder() {
