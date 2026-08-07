@@ -8,6 +8,11 @@ that never ran at all: the file holding them was killing the process before it
 could report anything (D-83).
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
+**Being redesigned.** The foundation is in and every screen is drawn on it:
+tokens, a grouped rail, a bar across the work, one accent, lists as panels
+rather than columns of cards, and everything reachable by typing. What is left
+is the detail pass on each screen. D-89 to D-93.
+
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
 > worst of these faults *only happens in the installed copy* — so it will keep

@@ -1001,6 +1001,62 @@ Nothing about that refusal concerns this program. A virus scanner reads a file t
 
 ---
 
+### D-89 `[DECIDED]` — The sheet is tokens first, and that is what "written once" has to mean
+
+**Decision.** Every value in `app/ui/style.css` comes from a token declared at the top. A number appearing twice in that file is a token that has not been made yet. This is the second full rewrite of that sheet.
+
+**Why.** D-56 rewrote this file once already, for a good reason, and stated the rule: contradictory rules in one stylesheet are a correctness problem, not a tidiness one. By this session the last 250 lines were four blocks of overrides — re-setting type sizes, radii, shadows and every animation length declared earlier. **The truth about any property once again depended on reading to the end.**
+
+So D-56 was right and insufficient. "Write it once" is a description of a moment; the file is edited afterwards by definition. What survives editing is a *rule you can check*: if the value is a literal, it is wrong. Appending an override becomes visibly the wrong shape rather than merely inelegant.
+
+**The one place this pays immediately.** Reduced motion used to be nine separate `@media` blocks scattered after each animation, and two of them had been missed. It is now one block that sets the motion tokens to zero, so anything using a token is covered whether or not anybody remembered.
+
+---
+
+### D-90 `[DECIDED]` — A list is one panel with lines in it, not a column of cards
+
+**Decision.** `.lane` is a single bordered, rounded surface and its children are rows divided by a hairline. A card is for something conceptually independent of what surrounds it, and nothing else.
+
+**Why.** Every list in the product was a stack of separately bordered, separately rounded, separately shadowed boxes with a gap between them. That spends four pixels of furniture per row to say what one pixel of line says better, and — the part that actually matters — **it makes eleven related things look like eleven unrelated things.** The AI apps page is a list of one kind of thing; it was drawn as eleven floating rectangles.
+
+This is the single loudest signal of a hurriedly-styled interface, and removing it changed the feel of every screen at once without a line of screen code being touched, because every screen already used `.lane`.
+
+**What it cost:** nothing on any screen had to change. That is the argument for having had a shared class in the first place.
+
+---
+
+### D-91 `[DECIDED]` — One accent, and it means selected, primary, or focused
+
+**Decision.** `#7C5CFC`, spent on four things: the active place in the rail, the primary action, the focus ring, and a selected row. Not on borders generally, not on headings, not as a gradient across large surfaces.
+
+**Why.** The gradient from violet to cyan was on the mark, the primary action, the spine of a published project, every progress bar and every chip that wanted to look important. A colour used everywhere means nothing anywhere, and an accent's whole job is to be the thing your eye goes to first.
+
+**What was reversed.** D-56's stated look was "a dark terminal-adjacent surface with one gradient — violet into cyan". The gradient is gone; the accent that replaces it is a single flat colour. The rest of D-56's reasoning — grey with meaning-coloured accents, interactive where interaction tells you something — stands unchanged and is in fact easier to see now.
+
+---
+
+### D-92 `[DECIDED]` — Everything by typing, and nothing only by typing
+
+**Decision.** `Ctrl K` opens a field that reaches every place and every common errand, with the keyboard. **Nothing lives only there.** Every entry in it is something already reachable by pressing something visible.
+
+**Why.** A tool somebody has open all day should not require the mouse to change what they are looking at. The rule attached to it is the load-bearing half: a thing you can do *only* through a palette is a thing that does not exist for anybody who has not been told the palette is there — which is a way of hiding features while feeling like you are adding them.
+
+**Why this is a surface, and why that is allowed.** A-3 draws the line between a surface and a render target: a surface captures intent. This captures intent, so it is the third one. It obeys everything the other two obey — one plain sentence on failure, no counts, nothing that comes at you.
+
+**What was reversed, and it was a bug wearing a feature's clothes.** Bare digits used to move between places, so typing a number anywhere outside a text box teleported you somewhere else. Every shortcut now needs Ctrl.
+
+---
+
+### D-93 `[DECIDED]` — The places are grouped, and the bar across the top is chrome
+
+**Decision.** The rail groups its six places into what you start, what leaves this computer, and what changes the manager. A shallow bar above the work says where you are and holds the way in by typing. Below 68rem the rail keeps every place and loses only its words.
+
+**Why.** Six undivided rows is a list you re-read every time rather than a shape you learn, and the grouping says something true rather than merely tidy. D-69 chose a rail over a bar because vertical room is the scarcest thing on a laptop; a 48px bar that holds only where-you-are and the search does not reopen that decision — it spends the smallest possible amount of the scarce thing on the one question a person asks constantly, which is *where am I*.
+
+**The rule for narrower windows:** nothing becomes unreachable. Words go, places never do.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

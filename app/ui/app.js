@@ -102,6 +102,22 @@ const TABS = [
   { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
 
+/**
+ * The places, in groups.
+ *
+ * Six things in one undivided column is a list you read every time rather than
+ * a shape you learn. Grouped, it is three short lists, and which group a place
+ * is in says something true about it: the first three are where you start
+ * something, the next two are where it leaves this computer, and the last is
+ * where you change how the manager behaves. Settings stays a place of its own
+ * rather than an icon in a corner, which is D-69 and still right.
+ */
+const GROUPS = [
+  { name: 'Work', places: ['projects', 'apps', 'terminals'] },
+  { name: 'Out into the world', places: ['workspace', 'ship'] },
+  { name: 'This computer', places: ['settings'] },
+];
+
 /** The two behind the icons at the far end, out of the way of the daily five. */
 const ASIDE = [
   { id: 'feedback', name: 'Tell us what is wrong', glyph: '✎' },
@@ -311,39 +327,77 @@ function identitySheet(g) {
   });
 }
 
-function drawNav() {
-  const here = [...TABS, ...ASIDE].find((t) => t.id === at.tab);
+const placeCalled = (id) => [...TABS, ...ASIDE].find((t) => t.id === id);
 
+/** One place in the rail, drawn the same way wherever it appears. */
+const railTab = (t) => `
+  <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}"
+    data-tip="${esc(t.name)}" data-key="${esc(shortcutFor(t.id) ?? '')}"
+    ${at.tab === t.id ? 'aria-current="page"' : ''}>
+    <span class="glyph" aria-hidden="true">${t.glyph}</span>
+    <span class="label">${esc(t.name)}</span>
+  </button>`;
+
+function drawNav() {
   $('#nav').innerHTML = `
     <div class="rail">
-      <div class="logo">${LOGO}</div>
-      <div class="places">
-        ${TABS.map((t) => `
-          <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}" title="${esc(t.name)}">
-            <span class="glyph" aria-hidden="true">${t.glyph}</span>
-            <span class="label">${esc(t.name)}</span>
-          </button>`).join('')}
-      </div>
+      <div class="logo">${LOGO}<span class="wordmark">Viberant</span></div>
+
+      ${GROUPS.map((g) => `
+        <div class="group">
+          <span class="label-tiny">${esc(g.name)}</span>
+          <div class="places">${g.places.map((id) => railTab(placeCalled(id))).join('')}</div>
+        </div>`).join('')}
+
       <div class="rest"></div>
-      ${ASIDE.map((t) => `
-        <button class="tab ${at.tab === t.id ? 'on' : ''}" data-tab="${t.id}" title="${esc(t.name)}">
-          <span class="glyph" aria-hidden="true">${t.glyph}</span>
-          <span class="label">Feedback</span>
-        </button>`).join('')}
-      <div class="drop">
-        <button class="who" id="who" title="${esc(signedInAs() ?? 'Not signed in')}">
-          <span class="face">${signedInAs() ? esc(signedInAs().slice(0, 1).toUpperCase()) : '?'}</span>
-          <span class="grow">
-            <span class="name">${esc(signedInAs() ?? 'Not signed in')}</span>
-            <span class="what">${esc(me.machineName || 'this computer')}</span>
-          </span>
-        </button>
-        <div class="panel" hidden id="who-panel"></div>
+
+      <div class="places">${ASIDE.map(railTab).join('')}</div>
+
+      <div class="foot">
+        <div class="drop">
+          <button class="who" id="who" data-tip="${esc(signedInAs() ?? 'Not signed in')}">
+            <span class="face">${signedInAs() ? esc(signedInAs().slice(0, 1).toUpperCase()) : '?'}</span>
+            <span class="grow">
+              <span class="name">${esc(signedInAs() ?? 'Not signed in')}</span>
+              <span class="what">${esc(me.machineName || 'this computer')}</span>
+            </span>
+          </button>
+          <div class="panel" hidden id="who-panel"></div>
+        </div>
       </div>
     </div>`;
 
   for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => go(b.dataset.tab);
   $('#who').onclick = (e) => { e.stopPropagation(); openWhoPanel(); };
+
+  drawTop();
+}
+
+/**
+ * The bar across the work: where you are, and the way to everything by typing.
+ *
+ * Deliberately shallow and deliberately almost empty. A header is chrome — it
+ * says where you are and gets out of the way. Anything that belongs to the page
+ * belongs on the page, not up here.
+ */
+function drawTop() {
+  const here = placeCalled(at.tab);
+  const open = me.currentName;
+
+  $('#top').innerHTML = `
+    <nav class="crumb" aria-label="Where you are">
+      <b class="here">${esc(here?.name ?? '')}</b>
+      ${open ? `<span class="sep" aria-hidden="true">/</span>
+        <span class="here" title="${esc(me.current ?? '')}">${esc(open)}</span>` : ''}
+    </nav>
+    <div class="rest"></div>
+    <button class="seek" id="seek" data-tip="Find anything, or do anything" data-key="Ctrl K">
+      <span aria-hidden="true">⌕</span>
+      <span class="what">Search Viberant…</span>
+      <span class="kbd">Ctrl K</span>
+    </button>`;
+
+  $('#seek').onclick = openPalette;
 }
 
 /**
@@ -466,6 +520,251 @@ async function go(tab, { keepSaid = false } = {}) {
   await draw();
 }
 
+// ---------------------------------------------------------------------------
+// Everything by typing
+//
+// One field and a list. It is a way to reach what is already there and never a
+// place anything lives only here — a thing you can do exclusively through a
+// palette is a thing somebody who does not know it exists cannot do at all.
+// ---------------------------------------------------------------------------
+
+/** The places worth a key of their own, and the key. */
+const SHORTCUTS = {
+  projects: '1', apps: '2', terminals: '3', workspace: '4', ship: '5', settings: ',',
+};
+const shortcutFor = (id) => (SHORTCUTS[id] ? `Ctrl ${SHORTCUTS[id].toUpperCase()}` : null);
+
+/**
+ * Everything the palette can reach.
+ *
+ * Built fresh each time it opens rather than held, because half of it depends
+ * on what is open right now, and a list that is quietly out of date is worse
+ * than one that costs a millisecond to build.
+ */
+function everything() {
+  const out = [];
+
+  for (const t of [...TABS, ...ASIDE]) {
+    out.push({
+      group: 'Go to', glyph: t.glyph, what: t.name,
+      key: shortcutFor(t.id), run: () => go(t.id),
+    });
+  }
+
+  if (me.currentName) {
+    out.push({
+      group: 'This project', glyph: '◳', what: `Open ${me.currentName}`,
+      where: 'projects', run: () => go('projects'),
+    });
+    out.push({
+      group: 'This project', glyph: '↑', what: 'Save and send',
+      run: async () => { await go('projects'); $('#save')?.click(); },
+    });
+  }
+
+  // Only errands here. Every place is already above under "Go to", and listing
+  // Settings twice makes the list longer without making anything reachable.
+  out.push({ group: 'Do', glyph: '＋', what: 'Add a project', run: async () => { await go('projects'); $('#add')?.click(); } });
+  out.push({ group: 'Do', glyph: '⟳', what: 'Check the other computers again', run: async () => { await go('workspace'); $('#w-refresh')?.click(); } });
+
+  return out;
+}
+
+/** Everything whose words contain what was typed, in the order typed matters. */
+function matching(all, typed) {
+  const want = typed.trim().toLowerCase();
+  if (!want) return all;
+  return all
+    .map((one) => {
+      const words = `${one.what} ${one.group}`.toLowerCase();
+      const at = words.indexOf(want);
+      return at < 0 ? null : { ...one, rank: one.what.toLowerCase().startsWith(want) ? 0 : at + 1 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.rank - b.rank);
+}
+
+let paletteOpen = false;
+
+function openPalette() {
+  if (paletteOpen) return closeLayer();
+  const all = everything();
+  let shown = all;
+  let on = 0;
+
+  const list = () => {
+    if (!shown.length) return '<div class="none">Nothing here by that name.</div>';
+    const groups = [];
+    for (const one of shown) {
+      const last = groups[groups.length - 1];
+      if (last && last.name === one.group) last.items.push(one);
+      else groups.push({ name: one.group, items: [one] });
+    }
+    let n = -1;
+    return groups.map((g) => `
+      <div class="group">
+        <span class="label-tiny">${esc(g.name)}</span>
+        ${g.items.map((one) => {
+    n += 1;
+    return `<button class="hit ${n === on ? 'on' : ''}" data-hit="${n}" role="option" ${n === on ? 'aria-selected="true"' : ''}>
+            <span class="glyph" aria-hidden="true">${one.glyph ?? '·'}</span>
+            <span class="what">${esc(one.what)}</span>
+            ${one.key ? `<span class="kbd">${esc(one.key)}</span>` : ''}
+          </button>`;
+  }).join('')}
+      </div>`).join('');
+  };
+
+  layer.innerHTML = `
+    <div class="veil">
+      <div class="palette" role="dialog" aria-modal="true" aria-label="Search Viberant">
+        <div class="ask">
+          <span aria-hidden="true" style="color:var(--faint)">⌕</span>
+          <input id="pal-ask" placeholder="Search Viberant…" autocomplete="off"
+            role="combobox" aria-expanded="true" aria-controls="pal-found">
+        </div>
+        <div class="found" id="pal-found" role="listbox">${list()}</div>
+        <footer>
+          <span><span class="kbd">↑↓</span> move</span>
+          <span><span class="kbd">↵</span> choose</span>
+          <span><span class="kbd">Esc</span> close</span>
+        </footer>
+      </div>
+    </div>`;
+  paletteOpen = true;
+
+  const found = $('#pal-found');
+  const ask = $('#pal-ask');
+  ask.focus();
+
+  const repaint = () => {
+    found.innerHTML = list();
+    wire();
+    found.querySelector('.hit.on')?.scrollIntoView({ block: 'nearest' });
+  };
+
+  const choose = async (n) => {
+    const one = shown[n];
+    if (!one) return;
+    closeLayer();
+    await one.run();
+  };
+
+  const wire = () => {
+    for (const b of found.querySelectorAll('[data-hit]')) {
+      b.onclick = () => choose(Number(b.dataset.hit));
+      b.onmousemove = () => {
+        const n = Number(b.dataset.hit);
+        if (n === on) return;
+        on = n;
+        found.querySelector('.hit.on')?.classList.remove('on');
+        b.classList.add('on');
+      };
+    }
+  };
+  wire();
+
+  ask.oninput = () => { shown = matching(all, ask.value); on = 0; repaint(); };
+  ask.onkeydown = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); on = Math.min(on + 1, shown.length - 1); repaint(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); on = Math.max(on - 1, 0); repaint(); }
+    else if (e.key === 'Enter') { e.preventDefault(); choose(on); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeLayer(); }
+  };
+
+  $('.veil').onclick = (e) => { if (e.target === $('.veil')) closeLayer(); };
+}
+
+// ---------------------------------------------------------------------------
+// The keyboard
+//
+// One listener. There used to be two, with overlapping ideas about Escape, and
+// the older one began `e.target.matches(...)` — which throws outright whenever
+// the key was pressed with nothing focused, because the target is then the
+// window and a window has no such thing. An exception inside a key handler
+// surfaces nowhere a person would look, which is D-65's whole point and the
+// fourth time this codebase has produced that exact shape.
+//
+// Nothing here takes a key the browser or Windows already means something by.
+// Bare digits used to move between places, which meant typing a number
+// anywhere outside a box teleported you; every shortcut now needs Ctrl, and
+// every one of them is also reachable by pressing something.
+// ---------------------------------------------------------------------------
+
+/** Whether the keystroke belongs to a box somebody is typing in. */
+const typing = (e) => {
+  const el = e.target;
+  return el instanceof HTMLElement
+    && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+};
+
+addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    return openPalette();
+  }
+
+  if (e.key === 'Escape') {
+    if (layer.innerHTML) return closeLayer();
+    if (document.querySelector('.panel:not([hidden])')) return closePanels();
+    if (at.inside) {
+      at.inside = false;
+      post('/close').then(refreshMe).then(() => draw());
+    }
+    return;
+  }
+
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || typing(e)) return;
+
+  const place = Object.keys(SHORTCUTS).find((id) => SHORTCUTS[id] === e.key);
+  if (place) { e.preventDefault(); go(place); }
+});
+
+// ---------------------------------------------------------------------------
+// What a control means, on hover
+//
+// Only ever a name and a key — never the only place something is said, which
+// is the rule that keeps a tooltip a convenience rather than a hiding place.
+// ---------------------------------------------------------------------------
+
+let tipTimer = null;
+let tipEl = null;
+
+const hideTip = () => { clearTimeout(tipTimer); tipEl?.remove(); tipEl = null; };
+
+addEventListener('pointerover', (e) => {
+  const on = e.target instanceof HTMLElement ? e.target.closest('[data-tip]') : null;
+  if (!on) return;
+  clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => {
+    // Only where the words are actually hidden. A button with its name written
+    // on it does not need to be told what its name is.
+    if (!on.isConnected) return;
+    const label = on.querySelector('.label');
+    if (label && getComputedStyle(label).display !== 'none' && !on.dataset.key) return;
+
+    hideTip();
+    const room = on.getBoundingClientRect();
+    tipEl = document.createElement('div');
+    tipEl.className = 'tip';
+    tipEl.setAttribute('role', 'tooltip');
+    tipEl.innerHTML = `<span>${esc(on.dataset.tip)}</span>${
+      on.dataset.key ? `<span class="kbd">${esc(on.dataset.key)}</span>` : ''}`;
+    document.body.appendChild(tipEl);
+
+    // Measured at the moment of opening and flipped where there is no room,
+    // which is D-57 applied to something much smaller than a menu.
+    const mine = tipEl.getBoundingClientRect();
+    const left = Math.min(room.right + 8, innerWidth - mine.width - 8);
+    tipEl.style.left = `${Math.max(8, left)}px`;
+    tipEl.style.top = `${Math.max(8, Math.min(room.top + (room.height - mine.height) / 2, innerHeight - mine.height - 8))}px`;
+  }, 380);
+}, { passive: true });
+
+addEventListener('pointerout', hideTip, { passive: true });
+addEventListener('pointerdown', hideTip, { passive: true });
+addEventListener('scroll', hideTip, { passive: true, capture: true });
+
 /**
  * Draw the screen you are on.
  *
@@ -532,7 +831,7 @@ addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels()
 // Layers
 // ---------------------------------------------------------------------------
 
-function closeLayer() { layer.innerHTML = ''; }
+function closeLayer() { layer.innerHTML = ''; paletteOpen = false; }
 
 function sheet({ title, body, foot = '', narrow = false, onOpen }) {
   layer.innerHTML = `
@@ -2719,22 +3018,6 @@ async function checkPulse() {
   } catch { /* the server is starting or stopping; nothing to say about it */ }
 }
 setInterval(checkPulse, 4000);
-
-// ---------------------------------------------------------------------------
-// Keyboard
-// ---------------------------------------------------------------------------
-
-addEventListener('keydown', (e) => {
-  if (e.target.matches('input, textarea, select')) return;
-  if (e.key === 'Escape') {
-    if (layer.innerHTML) closeLayer();
-    else if (document.querySelector('.panel:not([hidden])')) closePanels();
-    else if (at.inside) { at.inside = false; post('/close').then(refreshMe).then(draw); }
-    return;
-  }
-  const n = Number(e.key);
-  if (n >= 1 && n <= TABS.length) go(TABS[n - 1].id);
-});
 
 // ---------------------------------------------------------------------------
 // Start
