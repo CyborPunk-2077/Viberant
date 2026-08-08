@@ -753,7 +753,56 @@ const routes = {
 
   /** Everybody in this workspace, and how each can be reached right now. */
   async 'GET /team'() {
-    return anywhere.around();
+    const ws = await membersOf.current();
+    // Anything that has run out goes now, so a list can never show a code that
+    // would be refused if anybody typed it.
+    if (ws) await membersOf.sweepInvites(ws);
+
+    const me = await device.card();
+    return {
+      ...(await anywhere.around()),
+      invites: ws ? await membersOf.liveInvites(ws) : [],
+      // Whether this computer may do the things that manage a workspace, so the
+      // page can offer them rather than offering and then refusing.
+      mayManage: !!ws && membersOf.may(ws, me.deviceId, 'manageMembers'),
+    };
+  },
+
+  /**
+   * Stop taking part, from this computer.
+   *
+   * Nothing of anybody's is deleted. The workspace carries on for everybody
+   * else — somebody leaving is not the same as a workspace ending.
+   */
+  async 'POST /team/leave'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: null };
+
+    const me = await device.card();
+    await anywhere.stop().catch(() => null);
+    const out = await membersOf.leave(body?.workspace ?? ws.id, me.deviceId);
+    if (out.ok) await activity.remember('left', { who: me.displayName });
+    return { ...out, ...(await anywhere.around()) };
+  },
+
+  /** End a workspace, as its owner. Separate, and harder to reach. */
+  async 'POST /team/close'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: null };
+
+    const me = await device.card();
+    await anywhere.stop().catch(() => null);
+    const out = await membersOf.close(body?.workspace ?? ws.id, me.deviceId);
+    return { ...out, ...(await anywhere.around()) };
+  },
+
+  async 'POST /team/rename'({ body }) {
+    const ws = await membersOf.current();
+    const me = await device.card();
+    if (!ws || !membersOf.may(ws, me.deviceId, 'manageMembers')) {
+      return { ok: false, sentence: 'Only whoever owns this workspace can rename it.', action: null };
+    }
+    return { ...(await membersOf.rename(ws.id, body?.name)), ...(await anywhere.around()) };
   },
 
   async 'POST /team/start'() {
@@ -1106,6 +1155,65 @@ const routes = {
   /** What has happened in this workspace, as facts rather than a feed. */
   async 'GET /team/activity'() {
     return { ok: true, activity: await activity.recently() };
+  },
+
+  /**
+   * Connect Vercel, on its own, rather than only as the first step of a deploy.
+   *
+   * Somebody pressing Connect wants to be connected; making them start a deploy
+   * to get there is the reason the screen sat on "Not connected" while the
+   * browser had plainly said yes. The errand is a job so the page can watch it,
+   * and the page asks for the state again when it finishes — no restart.
+   */
+  async 'POST /ship/connect'({ body }) {
+    const which = String(body?.place ?? 'vercel');
+    if (which !== 'vercel') {
+      return { ok: false, sentence: 'That one has nothing to connect.', action: null };
+    }
+
+    const state = await providers.vercel.state();
+    if (!state.here) {
+      return { ok: false, sentence: state.missing, action: `Install it once with ${state.how}, then try again.` };
+    }
+    if (state.connected) {
+      return { ok: true, connected: true, login: state.login, sentence: `Already connected as ${state.login}.` };
+    }
+
+    const job = jobs.begin({ what: 'Connecting Vercel', where: current?.dir ?? '', kind: 'deploy' });
+
+    (async () => {
+      const done = await providers.vercel.connect(job, jobs);
+      // Asked again afterwards rather than believed: the command exiting is not
+      // the same as this computer being signed in, and the difference is
+      // exactly what nobody was checking.
+      const after = await providers.vercel.state();
+
+      jobs.end(job, after.connected
+        ? { ok: true, sentence: `Vercel is connected as ${after.login}.`, action: 'Deploy whenever you are ready.' }
+        : {
+          ok: false,
+          sentence: 'Vercel is still not connected on this computer.',
+          action: done.ok
+            ? 'The sign-in finished but this computer was not left signed in. Try again.'
+            : 'Finish the sign-in in your browser, then try again.',
+        });
+    })().catch((e) => jobs.end(job, {
+      ok: false,
+      sentence: 'Connecting Vercel stopped part way through.',
+      action: String(e?.message ?? e),
+    }));
+
+    return { ok: true, job: job.id };
+  },
+
+  /** What every place this can put a site is, asked fresh. */
+  async 'GET /ship/places'() {
+    const [v, look] = await Promise.all([
+      providers.vercel.state(),
+      current ? providers.inspect(current.dir) : null,
+    ]);
+    const bound = current ? await providers.bindingFor(current.dir) : null;
+    return { ok: true, vercel: v, look, live: bound ?? null, project: current?.name ?? null };
   },
 
   async 'GET /feedback'() {

@@ -200,7 +200,22 @@ export const vercel = {
   id: 'vercel',
   name: 'Vercel',
 
-  /** Is the command here, and is somebody signed in to it. */
+  /**
+   * Is the command here, and is somebody signed in to it.
+   *
+   * **Asked through a shell on Windows, and that is the whole of the bug that
+   * made this say "Not connected" while Vercel was signed in.** What npm
+   * installs globally on Windows is `vercel.cmd`, a batch file, plus an
+   * extensionless shell script beside it. `where vercel` finds the script — so
+   * this believed the command was here — and then starting it without a shell
+   * cannot run a batch file at all, so asking who was signed in failed every
+   * time and failed silently. The browser authorised, the CLI wrote its
+   * credentials, and this went on reporting nobody.
+   *
+   * The same fault as `machines.mjs` found for npm, and safe for the same
+   * reason: nothing in this line comes from anybody. The command is a constant
+   * and so are the arguments.
+   */
   async state() {
     if (!(await onPath('vercel'))) {
       return {
@@ -210,9 +225,19 @@ export const vercel = {
         how: 'npm install -g vercel',
       };
     }
-    const who = await quiet(() => run('vercel', ['whoami'], { timeout: 20000 }));
-    const login = who ? String(who.stdout).trim() : null;
-    return { here: true, connected: !!login, login };
+
+    const who = await quiet(() => vercelSays(['whoami'], { timeout: 20000 }));
+    if (!who) {
+      // Here, and could not be asked. Not the same as nobody being signed in,
+      // and saying the wrong one of those is what this file was doing.
+      return { here: true, connected: false, login: null, reachable: false };
+    }
+
+    // The last non-empty line of what it printed. Tooling adds notices above.
+    const login = String(who.stdout ?? '').split('\n')
+      .map((l) => l.trim()).filter(Boolean).pop() ?? null;
+
+    return { here: true, connected: !!login, login, reachable: true };
   },
 
   /**
@@ -223,7 +248,11 @@ export const vercel = {
    */
   connect(job, jobs) {
     jobs.step(job, 'Opening your browser so Vercel can confirm it is you.');
-    return jobs.runInto(job, { file: 'vercel', args: ['login'], timeout: 5 * 60 * 1000 });
+    return jobs.runInto(job, {
+      file: WINDOWS ? 'vercel.cmd' : 'vercel',
+      args: ['login'],
+      timeout: 5 * 60 * 1000,
+    });
   },
 
   supports(look) {
@@ -240,7 +269,9 @@ export const vercel = {
     jobs.step(job, `Sending ${name} to Vercel from ${dir}.`);
 
     const out = await jobs.runInto(job, {
-      file: 'vercel',
+      // The batch file by name, because the extensionless script beside it
+      // cannot be started directly on Windows.
+      file: WINDOWS ? 'vercel.cmd' : 'vercel',
       args: ['--prod', '--yes'],
       cwd: dir,
       timeout: 20 * 60 * 1000,
@@ -267,5 +298,18 @@ export const vercel = {
     return { ok: true, at: address[0], provider: 'vercel' };
   },
 };
+
+/**
+ * Ask Vercel something, in the one way that works on both platforms.
+ *
+ * A shell on Windows, with the argument list folded into the command, because
+ * passing an argument array alongside `shell: true` is a general hazard and
+ * these are constants written here rather than anything from a request.
+ */
+function vercelSays(args, { timeout = 20000, cwd } = {}) {
+  return WINDOWS
+    ? run(`vercel ${args.join(' ')}`, [], { timeout, cwd, shell: true, windowsHide: true })
+    : run('vercel', args, { timeout, cwd });
+}
 
 export const PLACES = { vercel };

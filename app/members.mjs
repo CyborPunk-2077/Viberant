@@ -208,13 +208,25 @@ export async function invite({ workspace, by, role = 'member' }) {
   for (let i = 0; i < 8; i += 1) code += SAYABLE[raw[i] % SAYABLE.length];
   const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
 
+  /**
+   * One moment, decided once.
+   *
+   * It was worked out twice — once for the record and once for the answer — so
+   * the countdown on screen was running against a different instant from the
+   * one that actually refuses the code. Milliseconds apart and therefore
+   * invisible, and exactly the kind of thing that makes a timer and a server
+   * disagree about whether something is still valid.
+   */
+  const madeAt = Date.now();
+  const expiresAt = madeAt + INVITE_LASTS;
+
   workspace.invites ??= {};
   workspace.invites[hashOf(shown)] = {
     of: hashOf(shown),
     role,
     by,
-    madeAt: Date.now(),
-    expiresAt: Date.now() + INVITE_LASTS,
+    madeAt,
+    expiresAt,
     usedAt: null,
     tries: 0,
   };
@@ -224,7 +236,7 @@ export async function invite({ workspace, by, role = 'member' }) {
     ok: true,
     // The only time the code exists in the clear is on its way to the screen.
     code: shown,
-    expiresAt: Date.now() + INVITE_LASTS,
+    expiresAt,
     sentence: `${shown} lets one person join, for the next ten minutes.`,
     action: 'Read it to them. It works once.',
   };
@@ -233,6 +245,37 @@ export async function invite({ workspace, by, role = 'member' }) {
 const hashOf = (code) => createHash('sha256')
   .update(String(code ?? '').toUpperCase().replace(/[^0-9A-Z]/g, ''))
   .digest('hex');
+
+/**
+ * Invitations that have not been used and have not run out.
+ *
+ * Read rather than remembered, so restarting the app cannot give an expired
+ * code another ten minutes — the clock that matters is the one written down
+ * when the code was made, and it is the same clock after a restart.
+ */
+export async function liveInvites(workspace) {
+  const now = Date.now();
+  return Object.values(workspace?.invites ?? {})
+    .filter((one) => !one.usedAt && now < one.expiresAt)
+    .map((one) => ({ of: one.of, role: one.role, by: one.by, expiresAt: one.expiresAt }));
+}
+
+/**
+ * Throw away every invitation that has run out.
+ *
+ * Called whenever anybody looks. An expired code is already refused by
+ * `redeem`, so this is about the list rather than about safety — but a list
+ * that keeps showing something dead is a list nobody trusts.
+ */
+export async function sweepInvites(workspace) {
+  const now = Date.now();
+  let went = 0;
+  for (const [key, one] of Object.entries(workspace?.invites ?? {})) {
+    if (one.usedAt || now >= one.expiresAt) { delete workspace.invites[key]; went += 1; }
+  }
+  if (went) await save(workspace);
+  return went;
+}
 
 /** Stop an invitation working, whether or not anybody has seen it. */
 export async function cancelInvite(workspace, of) {
@@ -415,6 +458,85 @@ export async function revoke(workspace, what) {
     sentence: `${what} is no longer in ${workspace.name}.`,
     action: 'Their own files and their own GitHub are untouched.',
   };
+}
+
+/**
+ * Stop taking part in a workspace, from this computer.
+ *
+ * **Nothing of anybody's is deleted.** Not your projects, not your files, not
+ * your copies of anything that came from somebody else's machine. Leaving is
+ * about what happens next: this computer stops appearing to the others and
+ * stops being able to reach them.
+ *
+ * The workspace itself carries on for everybody else. Somebody leaving is not
+ * the same as a workspace ending, and conflating the two is how a person
+ * closing a window deletes a team's shared arrangement.
+ */
+export async function leave(workspaceId, deviceId) {
+  const state = await book();
+  const ws = state.workspaces[workspaceId];
+  if (!ws) return { ok: false, sentence: 'This computer is not in that workspace.', action: null };
+
+  const name = ws.name;
+  delete ws.devices?.[deviceId];
+  delete state.workspaces[workspaceId];
+  if (state.joined === workspaceId) {
+    state.joined = Object.keys(state.workspaces)[0] ?? null;
+  }
+  await keep(state);
+
+  return {
+    ok: true,
+    sentence: `This computer has left ${name}.`,
+    action: 'Nothing on it was touched — your projects, your files and your GitHub are exactly as they were.',
+  };
+}
+
+/**
+ * End a workspace, as its owner.
+ *
+ * Separate from leaving, and deliberately harder to reach. What it ends is the
+ * arrangement: membership, every device's place in it, and every invitation.
+ * What it does not end, and must never end, is anybody's work — including the
+ * work of people who joined. Their copies are theirs.
+ */
+export async function close(workspaceId, byDevice) {
+  const state = await book();
+  const ws = state.workspaces[workspaceId];
+  if (!ws) return { ok: false, sentence: 'That workspace is not here.', action: null };
+
+  if (!may(ws, byDevice, 'manageMembers')) {
+    return {
+      ok: false,
+      sentence: 'Only whoever owns this workspace can close it.',
+      action: 'You can leave it instead, which affects only this computer.',
+    };
+  }
+
+  const { name } = ws;
+  delete state.workspaces[workspaceId];
+  if (state.joined === workspaceId) state.joined = Object.keys(state.workspaces)[0] ?? null;
+  await keep(state);
+
+  return {
+    ok: true,
+    sentence: `${name} is closed.`,
+    action: 'Nobody’s files were deleted — not yours, and not anybody else’s copies of what was shared.',
+  };
+}
+
+/** Call it something else. Everything else about it stays as it is. */
+export async function rename(workspaceId, to) {
+  const called = String(to ?? '').trim().slice(0, 60);
+  if (!called) return { ok: false, sentence: 'A workspace needs a name.', action: 'Type one.' };
+
+  const state = await book();
+  const ws = state.workspaces[workspaceId];
+  if (!ws) return { ok: false, sentence: 'That workspace is not here.', action: null };
+
+  ws.name = called;
+  await keep(state);
+  return { ok: true, sentence: `It is called ${called} now.` };
 }
 
 /** Has this device been thrown out? Asked on every connection. */

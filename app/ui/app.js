@@ -1593,7 +1593,22 @@ addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels()
 // Layers
 // ---------------------------------------------------------------------------
 
-function closeLayer() { layer.innerHTML = ''; paletteOpen = false; }
+/**
+ * Things to stop when whatever is on top goes away.
+ *
+ * A sheet with a clock in it leaves the clock running otherwise, ticking
+ * against elements that are no longer there — once per second, forever, and
+ * one more every time the sheet is opened again.
+ */
+let closingJobs = [];
+const whenLayerCloses = (fn) => { closingJobs.push(fn); };
+
+function closeLayer() {
+  for (const fn of closingJobs) { try { fn(); } catch { /* it is going anyway */ } }
+  closingJobs = [];
+  layer.innerHTML = '';
+  paletteOpen = false;
+}
 
 function sheet({ title, body, foot = '', narrow = false, onOpen }) {
   layer.innerHTML = `
@@ -3491,8 +3506,10 @@ function vercelRow(d) {
       </span>
       <span class="tacts">
         <span class="state ${state.s}"><span class="pip"></span>${esc(state.word)}</span>
-        <button class="${v.here ? 'go ' : ''}small" data-site="vercel" ${v.here ? '' : 'disabled'}>
-          ${v.connected ? 'Deploy website' : 'Connect and deploy'}</button>
+        ${v.here && !v.connected
+    ? '<button class="go small" id="v-connect">Connect Vercel</button>'
+    : `<button class="${v.here ? 'go ' : ''}small" data-site="vercel" ${v.here && v.connected ? '' : 'disabled'}>
+          Deploy website</button>`}
       </span>
     </div>`;
 }
@@ -3677,6 +3694,26 @@ SCREENS.ship = async () => {
   for (const b of document.querySelectorAll('[data-site]')) {
     b.onclick = () => begin(b, '/ship/site', { place: b.dataset.site });
   }
+
+  /**
+   * Connecting, watched to its end and then asked again.
+   *
+   * The screen used to change only when something else redrew it, so a browser
+   * that had plainly said yes left "Not connected" on screen until the app was
+   * restarted. Now the errand is watched, and when it finishes the state is
+   * fetched fresh — the row changes on its own.
+   */
+  $('#v-connect')?.addEventListener('click', async () => {
+    const b = $('#v-connect');
+    b.disabled = true;
+    b.textContent = 'Waiting for your browser…';
+
+    const out = await post('/ship/connect', { place: 'vercel' });
+    if (!out.ok) { say(out); return draw(); }
+    if (out.connected) { say(out); return draw(); }
+
+    watchJob(out.job, () => draw());
+  });
   $('#app-build').onclick = () => begin($('#app-build'), '/ship/app', { giveOut: false });
   $('#app-out').onclick = async () => {
     const version = await ask({
@@ -3716,12 +3753,26 @@ let jobShown = null;
 function stopWatchingJob() {
   clearTimeout(jobTimer);
   jobTimer = null;
+  // A screen that stopped watching must not be called back later, or the
+  // callback from a previous errand fires against a page that has moved on.
+  whenJobEnds = null;
 }
 
-async function watchJob(id) {
+/**
+ * Watch an errand, and optionally be told once when it is over.
+ *
+ * The callback is what lets a screen that started something reflect the result
+ * of it. Connecting Vercel is the case that needed it: the browser says yes,
+ * the errand ends, and the row has to stop saying "Not connected" without
+ * anybody restarting anything.
+ */
+let whenJobEnds = null;
+
+async function watchJob(id, onEnd = null) {
   stopWatchingJob();
   watching = id;
   jobShown = null;
+  whenJobEnds = onEnd;
   await paintJob();
 }
 
@@ -3826,6 +3877,33 @@ async function paintJob({ again = true } = {}) {
     }
   }
 
+  /**
+   * Try again, where trying again is a thing this can actually do.
+   *
+   * Only for errands whose whole input is the project that is still open — a
+   * deploy or a build. A retry that quietly ran against something else would be
+   * worse than no retry, so anything this cannot repeat exactly does not offer
+   * one.
+   */
+  const clear = $('#job-clear');
+  if (clear && j.running === false && j.ok === false) {
+    const again = j.kind === 'deploy' ? { at: '/ship/site', body: { place: 'vercel' } }
+      : j.kind === 'build' ? { at: '/ship/app', body: { giveOut: false } }
+        : null;
+
+    if (again && !clear.querySelector('[data-retry]')) {
+      clear.innerHTML = '<button class="small" data-retry="1">Try again</button>';
+      clear.querySelector('[data-retry]').onclick = async () => {
+        const out = await post(again.at, again.body);
+        if (out.job) return watchJob(out.job);
+        say(out);
+        draw();
+      };
+    }
+  } else if (clear && clear.querySelector('[data-retry]')) {
+    clear.innerHTML = '';
+  }
+
   /*
    * Something failed and there are four hundred lines underneath saying why, of
    * which one matters. This is the single most useful place in the product to
@@ -3880,7 +3958,12 @@ async function paintJob({ again = true } = {}) {
     // Finished. The page is told once, quietly, so what changed underneath the
     // errand appears — and never with a full redraw, which is what made the
     // whole application blink at the end of every deploy.
-    jobTimer = setTimeout(() => { if (!layer.innerHTML) draw({ quietly: true }); }, 600);
+    const told = whenJobEnds;
+    whenJobEnds = null;
+    jobTimer = setTimeout(() => {
+      if (told) return told(j);
+      if (!layer.innerHTML) draw({ quietly: true });
+    }, 600);
   }
 }
 
@@ -3959,6 +4042,7 @@ async function drawTeam() {
       <span class="count">${t.mine.length + t.team.length}</span>
       <span class="grow"></span>
       <button class="small" id="team-invite">Invite somebody</button>
+      <button class="quiet small" id="team-manage">Manage…</button>
     </div>
 
     ${t.stillWorks ? `<div class="said"><b>${esc(t.stillWorks.sentence)}</b></div>` : ''}
@@ -3973,6 +4057,20 @@ async function drawTeam() {
     <div id="lately"></div>`;
 
   $('#team-invite').onclick = inviteSomebody;
+  $('#team-manage').onclick = () => manageWorkspace(t);
+
+  // Invitations that are still worth showing, with the same clock the workspace
+  // wrote down — so this list can never outlive what it is describing.
+  const live = (t.invites ?? []).filter((one) => one.expiresAt > Date.now());
+  if (live.length) {
+    const soonest = Math.min(...live.map((one) => one.expiresAt));
+    const at = $('#team-invite');
+    if (at) {
+      at.textContent = `Invite somebody (${live.length} waiting)`;
+      at.title = `The next one runs out in ${Math.max(1, Math.round((soonest - Date.now()) / 60000))} minutes.`;
+    }
+  }
+
   drawLately();
 
   for (const b of box.querySelectorAll('[data-compare]')) {
@@ -4089,17 +4187,15 @@ async function inviteSomebody() {
   const made = await post('/team/invite', {});
   if (!made.ok) return say(made), draw();
 
-  const minutes = Math.max(1, Math.round((made.expiresAt - Date.now()) / 60000));
-
   sheet({
     title: 'Invite somebody',
     narrow: true,
     body: `
       <p style="margin-top:0">Read this to them. They type it into Viberant on their
         own computer, and their computers appear here.</p>
-      <div class="card" style="text-align:center;padding:1.4rem">
-        <div class="mono" style="font-size:2rem;letter-spacing:.18em">${esc(made.code)}</div>
-        <div style="color:var(--faint);margin-top:.5rem">Runs out in ${minutes} minutes</div>
+      <div class="card" style="text-align:center;padding:1.4rem" id="inv-card">
+        <div class="mono" id="inv-code" style="font-size:2rem;letter-spacing:.18em">${esc(made.code)}</div>
+        <div style="color:var(--faint);margin-top:.5rem" id="inv-left"></div>
       </div>
       <p style="color:var(--quiet);font-size:.89rem">It works once, and it is a way in
         rather than a key \u2014 nothing that travels between your computers is protected
@@ -4108,8 +4204,123 @@ async function inviteSomebody() {
            <button class="go" id="inv-done">Done</button>`,
   });
 
+  /**
+   * A code that goes when it goes.
+   *
+   * The clock is the one the workspace wrote down, not one this page started —
+   * so closing the sheet and opening it again cannot give a dying code another
+   * ten minutes, and neither can restarting the app. When it runs out the code
+   * is taken off the screen rather than left sitting there being refused by
+   * anybody who tries it.
+   */
+  const tick = setInterval(() => {
+    const box = $('#inv-left');
+    if (!box || !box.isConnected) return clearInterval(tick);
+
+    const left = made.expiresAt - Date.now();
+    if (left > 0) {
+      const m = Math.floor(left / 60000);
+      const sec = Math.floor((left % 60000) / 1000);
+      box.textContent = `Runs out in ${m}:${String(sec).padStart(2, '0')}`;
+      return;
+    }
+
+    clearInterval(tick);
+    const card = $('#inv-card');
+    if (card) {
+      card.innerHTML = `<b>That invitation has run out.</b>
+        <div style="color:var(--faint);margin-top:.4rem">It will not work for anybody now,
+          including anybody who wrote it down.</div>`;
+    }
+    const copy = $('#inv-copy');
+    if (copy) { copy.disabled = true; copy.textContent = 'Copy it'; }
+
+    const done = $('#inv-done');
+    if (done) {
+      done.textContent = 'Make a new one';
+      done.onclick = async () => { closeLayer(); await inviteSomebody(); };
+    }
+  }, 1000);
+
+  // Cleared whichever way the sheet goes, so nothing is left ticking against a
+  // page that is not there any more.
+  whenLayerCloses(() => clearInterval(tick));
+
   $('#inv-copy').onclick = () => navigator.clipboard?.writeText(made.code);
-  $('#inv-done').onclick = () => { closeLayer(); draw(); };
+  $('#inv-done').onclick = () => { clearInterval(tick); closeLayer(); draw(); };
+}
+
+/**
+ * Leaving, renaming, and closing — three different things, said as three.
+ *
+ * Leaving affects this computer. Closing ends the arrangement for everybody.
+ * Neither touches a single file, and both say so, because the fear that stops
+ * people pressing either is that their work is about to go.
+ */
+async function manageWorkspace(t) {
+  sheet({
+    title: t.workspace?.name ?? 'This workspace',
+    narrow: true,
+    body: `
+      <p style="margin-top:0">${t.mine.length + t.team.length} computer${
+  t.mine.length + t.team.length === 1 ? '' : 's'}, and ${t.team.length ? 'a team' : 'just yours'}.</p>
+      <div class="menu">
+        ${t.mayManage ? `<button class="pick" data-ws="rename"><b>Rename it</b>
+          <span>Only the name changes.</span></button>` : ''}
+        <button class="pick" data-ws="leave"><b>Leave it, on this computer</b>
+          <span>This computer stops appearing to the others. Your projects, your files and
+            your GitHub are untouched, and it carries on for everybody else.</span></button>
+        ${t.mayManage ? `<button class="pick danger" data-ws="close"><b>Close it for everybody\u2026</b>
+          <span>Ends the arrangement: membership, every computer's place in it, and every
+            invitation. Nobody's files are deleted \u2014 not yours, and not anybody
+            else's copies of what was shared.</span></button>` : ''}
+      </div>`,
+    foot: '<button class="quiet" id="ws-no">Never mind</button>',
+  });
+
+  $('#ws-no').onclick = closeLayer;
+
+  $('[data-ws="rename"]')?.addEventListener('click', async () => {
+    closeLayer();
+    const name = await ask({
+      title: 'Rename this workspace',
+      label: 'What should it be called?',
+      value: t.workspace?.name ?? '',
+      confirm: 'Rename it',
+    });
+    if (!name) return;
+    say(await post('/team/rename', { name }));
+    draw();
+  });
+
+  $('[data-ws="leave"]')?.addEventListener('click', async () => {
+    closeLayer();
+    const sure = await confirmThat({
+      title: 'Leave this workspace?',
+      what: 'This computer stops appearing to the others, and stops being able to reach them.',
+      why: 'Nothing on this computer is touched. Your projects, your files and your GitHub are exactly as they were, and the workspace carries on for everybody else.',
+      confirm: 'Leave it',
+    });
+    if (!sure) return;
+    say(await post('/team/leave', {}));
+    await refreshMe();
+    draw();
+  });
+
+  $('[data-ws="close"]')?.addEventListener('click', async () => {
+    closeLayer();
+    const sure = await confirmThat({
+      title: `Close ${t.workspace?.name ?? 'this workspace'}?`,
+      what: 'It ends for everybody. Every computer in it, every invitation, and every membership.',
+      why: 'No files are deleted anywhere — not yours, and not anybody else\u2019s copies of what was shared. What ends is the arrangement, not the work.',
+      confirm: 'Close it',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await post('/team/close', {}));
+    await refreshMe();
+    draw();
+  });
 }
 
 async function revokeDevice(one) {
