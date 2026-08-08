@@ -252,8 +252,10 @@ wrong place to be when the thought arrives.
 
 *Left, and stated plainly rather than glossed. In priority order.*
 
-- **The installer has not been built since any of this.** `npm run build`.
-  Everything above is in the source; the installed copy still has the old code.
+- **Install the rebuilt one.** `dist/Viberant-Setup-0.1.0.exe` was built after
+  everything above and carries it — checked by reading `newer.mjs` and the fixed
+  stylesheet out of the packed copy, rather than trusting the build. Run it to
+  replace the installed copy.
 - **Resuming an interrupted transfer.** It fails honestly and retries from the
   start. It does not pick up where it stopped. Per the brief's own priority,
   reliable transfer and honest retry came first and both are done.
@@ -266,11 +268,9 @@ wrong place to be when the thought arrives.
   at opening the download page, on purpose. Nothing to build here — something to
   buy and keep safe.
 
-> **Read this first if you are running the installed copy.** Everything below was
-> fixed in the source. The installer in `dist/` still has the old code, and the
-> worst of these faults *only happens in the installed copy* — so it will keep
-> happening until it is built again: `npm run build`. Until then, `start.bat`
-> or `node app/server.mjs` has the fixes.
+> **If you are running the installed copy, install it again.** The installer in
+> `dist/` was rebuilt after everything on this page and carries all of it. Until
+> you run it, the installed copy has the old code.
 
 ---
 

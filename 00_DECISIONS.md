@@ -1489,6 +1489,8 @@ Folding is the only irreversible step in the product, so it is guarded by checks
 
 **Locked**, alongside D-96, D-107 and D-125, because the failure is silent and the damage is not recoverable by pressing something afterwards.
 
+**Checked, not assumed.** The build log prints `signing with signtool.exe` four times, which reads exactly like an installer being signed. It is not one — with no certificate configured that step runs and produces nothing. `Get-AuthenticodeSignature` on the built installer answers `NotSigned`. Anybody reading that log and concluding otherwise would ship an update path on a false premise, so the state of the signature is asked of the file rather than of the build.
+
 **Considered and rejected.** Checking a hash published beside the file — a hash from the same place as the file proves only that the file arrived intact from whoever put it there. Prompting before running the downloaded installer — the prompt is the part that gets clicked through; the signature is the part that does not. Saying "not implemented" — that tells nobody what is missing or who can supply it, so `signing()` says exactly what has to be true and the page shows it.
 
 **One correction found on the way.** `gh` reports both "no releases yet" and "could not reach GitHub" as a refusal. Reading them as one would have told somebody to check they were online when the truth was that no version exists — wrong advice, confidently, which is the exact failure this product is meant to be better than. They are told apart by what was said.
