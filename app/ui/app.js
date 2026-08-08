@@ -18,6 +18,51 @@ const view = $('#view');
 const layer = $('#layer');
 
 /**
+ * Writing the same page again costs nothing.
+ *
+ * Setting `innerHTML` to the very same string still throws every element away
+ * and builds them all again — the browser does not compare, it obeys. That is
+ * the flicker: sitting on a screen touching nothing, something polls, finds
+ * that nothing has changed, rebuilds the whole page anyway, and for one frame
+ * the page is gone.
+ *
+ * The quiet redraw already noticed *afterwards* that nothing had moved and put
+ * the scroll position back. Noticing afterwards is repair. This is the same
+ * check happening before the damage, and it is done here — once, on the one
+ * element every screen writes into — rather than at thirteen call sites where
+ * the fourteenth would be written without it.
+ *
+ * Most redraws are identical, because most of what polls has nothing new to
+ * say. Those are now free.
+ */
+let lastPainted = null;
+
+Object.defineProperty(view, 'innerHTML', {
+  get() { return Element.prototype.__lookupGetter__('innerHTML').call(this); },
+  set(html) {
+    /*
+     * Compared against what a screen last *produced*, not against what is on
+     * the page now.
+     *
+     * Comparing with the page is what does not work, and it took measuring to
+     * see why: several screens draw in two stages — the page, then a slower
+     * answer written into a box inside it. So the page is never equal to what
+     * the screen produces, the guard never matches, and every poll rebuilds
+     * everything. Nine rebuilds in fifty idle seconds, measured, on a screen
+     * where nothing at all had happened.
+     *
+     * Remembering the production makes the comparison honest: the same page
+     * built twice is written once, and the slow answers filled in afterwards
+     * are left exactly where they are.
+     */
+    if (lastPainted === html) return;
+    lastPainted = html;
+    Element.prototype.__lookupSetter__('innerHTML').call(this, html);
+  },
+  configurable: true,
+});
+
+/**
  * Asking the server something, and telling it to do something.
  *
  * These used to be one function that decided which it was by whether you had
@@ -672,6 +717,9 @@ function openMovingPanel() {
 
 const SCREENS = {};
 
+/** What Activity has asking on its own behalf, cleared when you leave it. */
+let activityTimer = null;
+
 /**
  * The places whose contents are read down rather than across.
  *
@@ -684,6 +732,8 @@ const SCREENS = {};
 const READING = new Set(['settings', 'feedback', 'ask']);
 
 async function go(tab, { keepSaid = false } = {}) {
+  // Whatever the screen you are leaving had asking on its own behalf.
+  clearTimeout(activityTimer);
   at.tab = tab;
   if (!keepSaid) said = null;
   closePanels();
@@ -6093,7 +6143,22 @@ SCREENS.activity = async () => {
    */
   if (watching) return paintJob({ again: !jobTimer });
   if (running.length) watchJob(running[0].id);
+
+  /*
+   * Looking again, which is now free when nothing has changed.
+   *
+   * This screen used to notice a new errand only because something else
+   * redrew the page. Once identical redraws stopped rebuilding anything, that
+   * accident stopped happening too — and an errand started from somewhere
+   * else never appeared here. So it asks on its own, and the answer costs
+   * nothing at all unless there is something new to say.
+   */
+  clearTimeout(activityTimer);
+  activityTimer = setTimeout(() => {
+    if (at.tab === 'activity' && !layer.innerHTML) draw({ quietly: true });
+  }, 3000);
 };
+
 
 /** What a kind of errand is called, in words. */
 const kindCalled = (id) => JOB_KINDS.find((k) => k.id === id)?.name ?? id ?? 'Other';

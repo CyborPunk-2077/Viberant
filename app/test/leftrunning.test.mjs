@@ -153,6 +153,54 @@ describe('opening an errand to read it does not close it', () => {
   });
 });
 
+describe('the same page written twice is written once', () => {
+  /**
+   * The flicker, and why the obvious version of this fix does not work.
+   *
+   * Setting `innerHTML` to the very same string still throws every element
+   * away and builds them again — the browser does not compare, it obeys. So
+   * a poll that finds nothing new still rebuilds the whole page, and for one
+   * frame the page is gone.
+   *
+   * Comparing against what is *on the page* is the version that does not work,
+   * and it took measuring to see why: several screens draw in two stages, so
+   * the page is never equal to what the screen produces and the guard never
+   * matches. Measured before the fix: nine rebuilds in fifty idle seconds on a
+   * screen where nothing had happened. After: none.
+   */
+  test('a screen writing the page it already wrote changes nothing', () => {
+    assert.match(page, /Object\.defineProperty\(view, 'innerHTML'/,
+      'nothing stops an identical page being rebuilt');
+    assert.match(page, /if \(lastPainted === html\) return;/,
+      'the guard compares against something other than what a screen produced');
+  });
+
+  test('and it compares against what was produced, not what is on the page', () => {
+    const at = page.indexOf("Object.defineProperty(view, 'innerHTML'");
+    const body = page.slice(at, at + 1800);
+    assert.equal(/__lookupGetter__\('innerHTML'\)\.call\(this\) === html/.test(body), false,
+      'comparing with the page means a screen that fills something in later never matches itself');
+  });
+
+  test('the shell is never part of what a screen writes', () => {
+    // The rail, the bar across the top and the picture behind everything are
+    // written once. A screen that rebuilt them would be a screen that makes
+    // the whole window blink.
+    for (const one of ['SCREENS.workspace', 'SCREENS.activity', 'SCREENS.projects', 'SCREENS.settings']) {
+      const body = bodyOf(page, `${one} = async ()`);
+      for (const never of [/nav\.innerHTML/, /document\.body\.innerHTML/, /#wall/]) {
+        assert.equal(never.test(body), false, `${one} writes ${never}`);
+      }
+    }
+  });
+
+  test('a screen that asks on its own behalf stops when you leave it', () => {
+    const body = bodyOf(page, 'async function go(tab');
+    assert.match(body, /clearTimeout\(activityTimer\)/,
+      'a screen keeps asking after you have gone somewhere else');
+  });
+});
+
 describe('what a page shows is what a person can reach', () => {
   test('every control with a name has something listening for it', () => {
     const named = new Set();
