@@ -246,6 +246,257 @@ const SCENES = {
       ink.globalAlpha = 1;
     };
   },
+
+  /**
+   * Andromeda: a galaxy seen at an angle, turning.
+   *
+   * The whole thing is one shape drawn twice — two arms, each a run of
+   * overlapping soft dots along a logarithmic spiral. That is what a spiral
+   * galaxy is, and it means the picture holds together at any window size
+   * rather than being a texture that happens to look right at one.
+   *
+   * It turns once every twelve minutes or so. Slow enough that you notice only
+   * if you sit still, which is the rule every scene here obeys.
+   */
+  andromeda(w, h) {
+    const stars = seeded(180, w, h, { r: [0.3, 1.1], a: [0.2, 0.55] });
+    /**
+     * The arms, as many small dots rather than a few large ones.
+     *
+     * Written first with dots a fifth of the window across, which did not read
+     * as a galaxy at all — it read as a grey smear lying across the middle of
+     * the page. Overlapping soft shapes only look like a structure when each is
+     * small enough that the structure is what you see instead of the shape.
+     * Found by photographing it, which is the only way any of this is known.
+     */
+    const dots = [];
+    for (const arm of [0, Math.PI]) {
+      for (let i = 0; i < 150; i += 1) {
+        const t = i / 150;
+        dots.push({
+          a: arm + t * 3.2,
+          d: 0.04 + t * 0.26,
+          size: 0.038 - t * 0.018,
+          alpha: 0.26 * (1 - t * 0.8),
+          warm: t < 0.3,
+        });
+      }
+    }
+
+    return (time) => {
+      ink.fillStyle = '#05050b';
+      ink.fillRect(0, 0, w, h);
+
+      for (const s of stars) {
+        ink.globalAlpha = s.a * (0.85 + 0.15 * Math.sin(time * 0.5 + s.phase));
+        ink.fillStyle = '#ffffff';
+        ink.beginPath();
+        ink.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ink.fill();
+      }
+      ink.globalAlpha = 1;
+
+      // Seen at an angle: the whole galaxy is squashed on one axis. Placed off
+      // to one side so its core does not sit under the middle of the page.
+      const cx = w * 0.74;
+      const cy = h * 0.33;
+      const reach = Math.max(w, h);
+      const turn = time * 0.0087;
+
+      ink.globalCompositeOperation = 'lighter';
+      for (const p of dots) {
+        const a = p.a + turn;
+        const x = cx + Math.cos(a) * p.d * reach;
+        const y = cy + Math.sin(a) * p.d * reach * 0.42;
+        const rad = reach * p.size;
+        const g = ink.createRadialGradient(x, y, 0, x, y, rad);
+        const c = p.warm ? '255,214,170' : '150,175,255';
+        g.addColorStop(0, `rgba(${c},${p.alpha})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ink.fillStyle = g;
+        ink.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+      }
+
+      // The core, which is the brightest thing in the picture and still dim.
+      const core = ink.createRadialGradient(cx, cy, 0, cx, cy, reach * 0.10);
+      core.addColorStop(0, 'rgba(255,236,205,0.34)');
+      core.addColorStop(0.35, 'rgba(255,196,140,0.12)');
+      core.addColorStop(1, 'rgba(0,0,0,0)');
+      ink.fillStyle = core;
+      ink.fillRect(0, 0, w, h);
+      ink.globalCompositeOperation = 'source-over';
+    };
+  },
+
+  /**
+   * Deep field: almost nothing, very far away.
+   *
+   * The quietest of them, and the one most likely to be left on. A scattering
+   * of small ellipses at different angles, each one a galaxy, on a field that
+   * is very nearly black. Nothing moves except a slow shimmer.
+   */
+  deepfield(w, h) {
+    const far = seeded(64, w, h, { r: [1.4, 5.5], a: [0.10, 0.30] });
+    const near = seeded(90, w, h, { r: [0.3, 0.9], a: [0.20, 0.45] });
+
+    return (t) => {
+      ink.fillStyle = '#030308';
+      ink.fillRect(0, 0, w, h);
+
+      ink.globalCompositeOperation = 'lighter';
+      for (const g of far) {
+        ink.save();
+        ink.translate(g.x, g.y);
+        ink.rotate(g.phase);
+        ink.scale(1, 0.34 + (g.phase % 1) * 0.4);
+        const shine = ink.createRadialGradient(0, 0, 0, 0, 0, g.r * 3.4);
+        const c = g.warm ? '255,206,168' : '178,196,255';
+        shine.addColorStop(0, `rgba(${c},${g.a * (0.9 + 0.1 * Math.sin(t * 0.25 + g.phase))})`);
+        shine.addColorStop(0.5, `rgba(${c},${g.a * 0.3})`);
+        shine.addColorStop(1, 'rgba(0,0,0,0)');
+        ink.fillStyle = shine;
+        ink.beginPath();
+        ink.arc(0, 0, g.r * 3.4, 0, Math.PI * 2);
+        ink.fill();
+        ink.restore();
+      }
+      ink.globalCompositeOperation = 'source-over';
+
+      for (const s of near) {
+        ink.globalAlpha = s.a * (0.8 + 0.2 * Math.sin(t * 0.4 + s.phase));
+        ink.fillStyle = '#ffffff';
+        ink.beginPath();
+        ink.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ink.fill();
+      }
+      ink.globalAlpha = 1;
+    };
+  },
+
+  /**
+   * Event horizon: light bent around something that is not there.
+   *
+   * A black disc, a thin bright ring, and a band of light that passes behind it
+   * and is drawn above and below — which is the actual thing a photograph of
+   * one shows, and the reason it looks wrong at first.
+   *
+   * Deliberately the darkest scene here. The centre is genuinely black, so text
+   * over it reads better than over anything else.
+   */
+  horizon(w, h) {
+    const stars = seeded(150, w, h, { r: [0.3, 1.2], a: [0.2, 0.6] });
+    const cx = 0.5;
+    const cy = 0.46;
+
+    return (t) => {
+      ink.fillStyle = '#040406';
+      ink.fillRect(0, 0, w, h);
+
+      for (const s of stars) {
+        ink.globalAlpha = s.a * (0.8 + 0.2 * Math.sin(t * 0.5 + s.phase));
+        ink.fillStyle = '#ffffff';
+        ink.beginPath();
+        ink.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ink.fill();
+      }
+      ink.globalAlpha = 1;
+
+      const x = w * cx;
+      const y = h * cy;
+      const r = Math.min(w, h) * 0.19;
+
+      // The band of light, squashed almost flat and turning slowly.
+      ink.globalCompositeOperation = 'lighter';
+      for (const [tilt, spin, alpha] of [[0.16, 1, 0.34], [-0.16, -1, 0.20]]) {
+        ink.save();
+        ink.translate(x, y);
+        ink.rotate(Math.sin(t * 0.012) * 0.05);
+        ink.scale(1, tilt < 0 ? -1 : 1);
+        const band = ink.createLinearGradient(-r * 2.6, 0, r * 2.6, 0);
+        const shift = (Math.sin(t * 0.05 * spin) + 1) / 2;
+        band.addColorStop(0, 'rgba(0,0,0,0)');
+        band.addColorStop(Math.max(0.05, shift * 0.5), `rgba(255,190,120,${alpha})`);
+        band.addColorStop(1, 'rgba(0,0,0,0)');
+        ink.fillStyle = band;
+        ink.beginPath();
+        ink.ellipse(0, 0, r * 2.6, r * 0.42, 0, 0, Math.PI * 2);
+        ink.fill();
+        ink.restore();
+      }
+      ink.globalCompositeOperation = 'source-over';
+
+      // The hole itself, which is the one genuinely black thing on this page.
+      ink.fillStyle = '#000000';
+      ink.beginPath();
+      ink.arc(x, y, r, 0, Math.PI * 2);
+      ink.fill();
+
+      // And the thin ring where light just fails to escape.
+      ink.strokeStyle = 'rgba(255,206,150,0.55)';
+      ink.lineWidth = Math.max(1, r * 0.018);
+      ink.beginPath();
+      ink.arc(x, y, r * 1.02, 0, Math.PI * 2);
+      ink.stroke();
+    };
+  },
+
+  /**
+   * Mars horizon: a rust-coloured surface under a thin sky.
+   *
+   * The only warm scene, and the only one with ground in it. The sky is a wash
+   * from dust rather than a gradient from blue, which is what makes it read as
+   * somewhere else rather than as a sunset.
+   */
+  mars(w, h) {
+    const stars = seeded(70, w, h, { r: [0.3, 0.9], a: [0.10, 0.30] });
+    const skyline = h * 0.58;
+
+    return (t) => {
+      const sky = ink.createLinearGradient(0, 0, 0, skyline);
+      sky.addColorStop(0, '#0a0708');
+      sky.addColorStop(0.55, '#1c110d');
+      sky.addColorStop(1, '#412013');
+      ink.fillStyle = sky;
+      ink.fillRect(0, 0, w, skyline);
+
+      for (const s of stars) {
+        if (s.y > skyline * 0.8) continue;
+        ink.globalAlpha = s.a * (0.7 + 0.3 * Math.sin(t * 0.4 + s.phase));
+        ink.fillStyle = '#ffe6d0';
+        ink.beginPath();
+        ink.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ink.fill();
+      }
+      ink.globalAlpha = 1;
+
+      // Dust, moving across at walking pace and never repeating visibly.
+      ink.globalCompositeOperation = 'lighter';
+      for (const d of [{ y: 0.40, a: 0.10, sp: 0.010 }, { y: 0.52, a: 0.13, sp: 0.017 }]) {
+        const cxd = w * (((t * d.sp) % 1.6) - 0.3);
+        const g = ink.createRadialGradient(cxd, h * d.y, 0, cxd, h * d.y, w * 0.5);
+        g.addColorStop(0, `rgba(214,132,86,${d.a})`);
+        g.addColorStop(1, 'rgba(0,0,0,0)');
+        ink.fillStyle = g;
+        ink.fillRect(0, 0, w, skyline);
+      }
+      ink.globalCompositeOperation = 'source-over';
+
+      // The ground: two folds of land, the nearer one darker.
+      for (const [at, tone, bump] of [[skyline, '#2e1409', 0.030], [skyline + h * 0.09, '#1b0c06', 0.055]]) {
+        ink.fillStyle = tone;
+        ink.beginPath();
+        ink.moveTo(0, h);
+        ink.lineTo(0, at);
+        for (let x = 0; x <= w; x += 12) {
+          const n = Math.sin(x * 0.004 + at) * 0.6 + Math.sin(x * 0.011 + at * 2) * 0.4;
+          ink.lineTo(x, at + n * h * bump);
+        }
+        ink.lineTo(w, h);
+        ink.closePath();
+        ink.fill();
+      }
+    };
+  },
 };
 
 /** Points that stay put between frames, so a scene does not boil. */
@@ -397,6 +648,10 @@ export const SCENE_FOR = {
   orbital: 'orbital',
   nebula: 'nebula',
   rig: 'rig',
+  andromeda: 'andromeda',
+  deepfield: 'deepfield',
+  horizon: 'horizon',
+  mars: 'mars',
 };
 
 fit();

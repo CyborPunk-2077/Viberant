@@ -213,6 +213,87 @@
   --vibe-a: #8b5cf6; --vibe-b: #a78bfa; --vibe-c: #6d28d9;
 }
 
+/*
+ * Andromeda: the same violet family as Nebula, wound tighter and colder.
+ *
+ * The scene behind it has a warm core, so the interface deliberately does not:
+ * two warms competing is the one combination that makes a backdrop read as
+ * part of the page rather than behind it.
+ */
+:root[data-theme="andromeda"], [data-theme="andromeda"] {
+  --page: #05050b; --deep: #030307; --card: #0c0c16; --raised: #12121f;
+  --lifted: #171729; --hover: #151525;
+  --line: #232342; --line-soft: rgba(255, 255, 255, .06); --line-strong: #37375f;
+  --ink: #eef0fb; --quiet: #a4a6c4; --faint: #757897; --dim: #565873;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #7aa2ff;
+  --vibe-a: #6d7bff; --vibe-b: #93a0ff; --vibe-c: #4954d6;
+}
+
+/*
+ * Deep Field: as near to nothing as this gets and still be a look.
+ *
+ * The quietest scene deserves the quietest interface, so the accent is the
+ * palest here. Anybody who wants the app to disappear picks this one.
+ */
+:root[data-theme="deepfield"], [data-theme="deepfield"] {
+  --page: #030308; --deep: #010104; --card: #0a0a11; --raised: #0f0f18;
+  --lifted: #141420; --hover: #12121c;
+  --line: #1e1e2e; --line-soft: rgba(255, 255, 255, .05); --line-strong: #2f2f45;
+  --ink: #edeef4; --quiet: #9c9fb2; --faint: #6e7185; --dim: #515467;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #8ab4f8;
+  --vibe-a: #8ea4d2; --vibe-b: #b0c1e6; --vibe-c: #6379a6;
+}
+
+/*
+ * Event Horizon: near-black, and one warm ring.
+ *
+ * The darkest look here by some way. The scene has a genuinely black centre,
+ * which is why this is the one to pick if a window ends up sitting over the
+ * middle of the screen with text on it.
+ */
+:root[data-theme="horizon"], [data-theme="horizon"] {
+  --page: #040406; --deep: #010102; --card: #0a0a0d; --raised: #101014;
+  --lifted: #15151b; --hover: #131318;
+  --line: #22222a; --line-soft: rgba(255, 255, 255, .05); --line-strong: #35353f;
+  --ink: #f4f2ee; --quiet: #a8a49c; --faint: #7a766e; --dim: #5a5751;
+  --live: #34d399; --attention: #ffc766; --trouble: #ff7a68; --cool: #ffbe78;
+  --vibe-a: #f0a23c; --vibe-b: #ffc16b; --vibe-c: #c07a24;
+  --vibe-ink: #150c02;
+}
+
+/*
+ * Mars Horizon: the only warm one with ground under it.
+ *
+ * Rust rather than fire — Ember is a fire, this is a place. The difference is
+ * that the greys here carry a little red in them, so nothing reads as neutral.
+ */
+:root[data-theme="mars"], [data-theme="mars"] {
+  --page: #0d0705; --deep: #080403; --card: #170e09; --raised: #1e130d;
+  --lifted: #251811; --hover: #221610;
+  --line: #372116; --line-soft: rgba(255, 255, 255, .055); --line-strong: #59362a;
+  --ink: #f7ebe4; --quiet: #c29c8d; --faint: #967468; --dim: #705850;
+  --live: #8ecf7a; --attention: #ffbe57; --trouble: #ff6a52; --cool: #ff9f70;
+  --vibe-a: #d4703c; --vibe-b: #e8956a; --vibe-c: #a8512a;
+  --vibe-ink: #180b05;
+}
+
+/*
+ * Tactical: near-black, one hard orange, and nothing else carrying colour.
+ *
+ * The strictest of them. The states keep their meaning — a failure still reads
+ * red, because a look may never change what a colour means (D-95) — but
+ * everything discretionary is grey or orange and there is no third option.
+ */
+:root[data-theme="tactical"], [data-theme="tactical"] {
+  --page: #08090a; --deep: #050506; --card: #0e0f11; --raised: #141517;
+  --lifted: #1a1b1e; --hover: #17181a;
+  --line: #24262a; --line-soft: rgba(255, 255, 255, .05); --line-strong: #383b41;
+  --ink: #eff0f1; --quiet: #9ea1a6; --faint: #71747a; --dim: #54575c;
+  --live: #4ade80; --attention: #ff9f1a; --trouble: #ff4d4d; --cool: #ff9f1a;
+  --vibe-a: #ff6a00; --vibe-b: #ff8c33; --vibe-c: #c24f00;
+  --vibe-ink: #140700;
+}
+
 :root[data-theme="rig"], [data-theme="rig"] {
   --page: #08090b; --deep: #050607; --card: #0e1013; --raised: #14171b;
   --lifted: #191d22; --hover: #171a1f;
