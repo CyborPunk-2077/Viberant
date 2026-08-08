@@ -64,16 +64,33 @@ async function proseIn(file) {
   // Not `=>`, which is a function rather than the end of a tag. An arrow
   // followed anywhere later by a less-than reads as a whole run of code being
   // shown to somebody, and the words inside it are not sentences.
-  for (const m of withoutComments.matchAll(/(?<!=)>([^<>{}$`]{12,})</g)) {
+  //
+  // Three characters, not twelve. Twelve was chosen to keep code out, and it
+  // did — along with every short label on every screen. The word `Repository`
+  // sat at the top of the deploy page for as long as this audit has existed:
+  // ten characters wide, never once read by it, because a label is one word and
+  // a sentence is not. A label is the most read thing on a screen.
+  for (const m of withoutComments.matchAll(/(?<!=)>([^<>{}$`]{3,})</g)) {
     found.push(m[1]);
   }
 
   return found
     .map((s) => s.trim())
-    .filter((s) => /\s/.test(s))
+    // A single word is prose too, when it is what a column is called. What is
+    // not prose is punctuation, a number, or a mark drawn instead of a word.
+    .filter((s) => /[a-z]{3}/i.test(s))
     // Paths, addresses and format strings are machinery, not prose.
     .filter((s) => !/^[\w.-]+\/[\w.-]+$/.test(s))
-    .filter((s) => !s.includes('://') && !s.startsWith('--') && !s.includes('${'));
+    .filter((s) => !s.includes('://') && !s.startsWith('--') && !s.includes('${'))
+    // Machinery that reading short runs newly reaches: the arguments this
+    // manager hands to the tools it drives, and the addresses it asks them
+    // about. `@{upstream}..HEAD` is not a sentence anybody sees; it is what one
+    // program says to another. No sentence in this app has ever contained a
+    // brace, an underscore, or a name in shouting capitals, and the surest way
+    // to keep this rule honest is to say so rather than to lower the bar.
+    .filter((s) => !/[{}_]/.test(s))
+    .filter((s) => !/^[A-Z][A-Z0-9.\-/]*$/.test(s))
+    .filter((s) => !(s.includes('/') && !/\s/.test(s)));
 }
 
 /** The same sentence with every allowed program name taken out of it. */

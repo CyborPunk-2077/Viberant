@@ -1448,11 +1448,31 @@ h2:first-of-type { margin-top: 0; }
 .going .acts { display: flex; gap: var(--s2); margin-top: var(--s2); }
 .going span { overflow-wrap: anywhere; }
 
+/*
+ * Held, rather than broken.
+ *
+ * This used to be the same thin line as the ordinary state, in the failure
+ * colour. Across the whole width, under a bar of controls, a one-pixel red rule
+ * does not read as a message about anything — it reads as a divider somebody
+ * coloured by accident, which is exactly what people took it for. It is a
+ * panel now, with the mark down its own left edge, so the colour belongs to the
+ * words rather than to the page.
+ *
+ * Amber and not red: nothing has failed here. Sending is waiting for two facts
+ * to agree, and both are still true.
+ */
 .going.bad {
-  border-top-color: var(--trouble);
+  border: 0;
+  border-left: 2px solid var(--attention);
+  border-radius: 0 var(--r-button) var(--r-button) 0;
+  margin-top: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--raised);
   color: var(--quiet);
 }
-.going.bad b { color: var(--ink); font-weight: var(--w-semi); display: block; }
+.going.bad b { color: var(--ink); font-weight: var(--w-semi); }
+/* The one that heads it stands alone; the names inside sentences stay in them. */
+.going.bad > b { display: block; margin-bottom: var(--s2); }
 
 /* ========================================================================= */
 /* What came back from asking                                                */

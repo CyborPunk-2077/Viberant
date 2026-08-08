@@ -2786,9 +2786,10 @@ async function showWhereItGoes() {
      */
     box.className = 'going bad';
     box.innerHTML = `
-      <span>Project remote <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b></span>
-      <span>Active account <b>${esc(d.session.login)}</b></span>
-      <span>Sending is held until these agree. Nothing has been changed.</span>
+      <b>Sending is held until these two agree.</b>
+      <span>This project goes to <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b></span>
+      <span>You are signed in as <b>${esc(d.session.login)}</b></span>
+      <span>Nothing has been changed, and nothing has been sent anywhere.</span>
       <span class="acts">
         <button class="small" id="going-connect">Connect this project to ${esc(d.session.login)}</button>
         <button class="quiet small" id="going-accounts">Accounts…</button>
@@ -3776,7 +3777,7 @@ SCREENS.ship = async () => {
 
     <div class="factbar">
       <span><b>Project</b>${esc(d.name ?? '')}</span>
-      <span><b>Repository</b>${bind.bound
+      <span><b>On GitHub</b>${bind.bound
     ? `<span class="mono">${esc(bind.owner)}/${esc(bind.repo)}</span>`
     : '<span class="dim">not on GitHub yet</span>'}</span>
       ${bind.branch ? `<span><b>Line</b><span class="mono">${esc(bind.branch)}</span></span>` : ''}
