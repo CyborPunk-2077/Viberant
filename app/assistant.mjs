@@ -319,18 +319,78 @@ async function askModel({ system, message, mostTokens }) {
       action: 'Check you are online, then try again.',
     };
   }
-  if (!out.ok) {
+  if (!out.ok) return whatThatMeant(set, out);
+  return { ok: true, text: out.text, model: set.name };
+}
+
+/**
+ * A refusal, said as the thing that actually happened.
+ *
+ * "Nothing tracks whether your accounts are running low" was written down as a
+ * gap, and the tempting fix is to *guess* — count questions, estimate what they
+ * cost, put a bar on a page. That would be a number this manager made up about
+ * somebody's money, and it would be wrong within a week of any price changing.
+ *
+ * What can be said honestly is what the company itself said, at the moment it
+ * said it. There is no polling and nothing is kept: a refusal for want of
+ * credit reads as a refusal for want of credit, rather than as "could not
+ * answer", which is the sentence that sends somebody looking at their network.
+ */
+export function whatThatMeant(set, out) {
+  const why = String(out.why ?? '');
+  const name = set.name;
+
+  /**
+   * The words decide, and they decide before the number does.
+   *
+   * Being out of credit comes back as 400 at one of them, 429 at another and
+   * **403 at a third** — the same 403 a rejected key gets. Read by status
+   * first, a maxed-out card was reported as a bad key, and the advice was to go
+   * and find a new one: the wrong errand entirely, and the person would come
+   * back with a fresh key and the same refusal.
+   *
+   * So what they said outranks what they returned, everywhere below.
+   */
+  const outOfCredit = /credit|balance|quota|billing|insufficient_quota|exceeded your current/i.test(why);
+  if (!outOfCredit && (out.status === 401 || out.status === 403)) {
     return {
       ok: false,
-      sentence: out.status === 401 || out.status === 403
-        ? `${set.name} would not accept the key on this computer.`
-        : `${set.name} could not answer.`,
-      action: out.status === 401 || out.status === 403
-        ? 'Put a current key in Settings and try again.'
-        : out.why ?? 'Try again in a moment.',
+      sentence: `${name} would not accept the key on this computer.`,
+      action: 'Put a current key in Settings and try again.',
     };
   }
-  return { ok: true, text: out.text, model: set.name };
+
+  if (outOfCredit) {
+    return {
+      ok: false,
+      runningLow: true,
+      sentence: `Your ${name} account has run out of credit.`,
+      action: `Top it up with ${name}, and this will work again straight away. Nothing on this computer has changed.`,
+    };
+  }
+
+  if (out.status === 429) {
+    return {
+      ok: false,
+      tooFast: true,
+      sentence: `${name} is asking you to slow down.`,
+      action: 'Wait a minute and ask again.',
+    };
+  }
+
+  if (out.status >= 500) {
+    return {
+      ok: false,
+      sentence: `${name} is having trouble at their end.`,
+      action: 'Nothing here is wrong. Try again in a few minutes.',
+    };
+  }
+
+  return {
+    ok: false,
+    sentence: `${name} could not answer.`,
+    action: why || 'Try again in a moment.',
+  };
 }
 
 /**

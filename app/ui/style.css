@@ -2590,16 +2590,48 @@ select { cursor: pointer; }
 
 /*
  * With a picture behind it, the app stops painting its own background and the
- * surfaces take a little of it — a little, not a lot. Everything that holds
- * information stays as close to opaque as it was.
+ * surfaces take some of it.
+ *
+ * These numbers were 92 and 88, chosen by eye, and the note beside them said
+ * the scenes were barely visible but that this was the price of being readable.
+ * That turned out to be wrong, and the way to find out was to measure rather
+ * than to argue.
+ *
+ * The worst case the app permits: a pure white star sitting directly under a
+ * panel, at the lowest covering the slider allows, with the faintest text this
+ * design uses on top of it. At 92% that reads at 6.5 to 1. At 84% it reads at
+ * 5.3 to 1. The line for body text is 4.5, so eight points of the picture were
+ * being spent on nothing. At 80% it is 4.8 — still passing, and too close to
+ * the line to give away for decoration.
+ *
+ * So: 84, and the reason is a number rather than a preference. Everything that
+ * holds information still sits on a surface; there is simply more of the room
+ * behind it than there was.
  */
 .has-wall body, .has-wall #frame { background: transparent; }
-.has-wall nav { background: color-mix(in srgb, var(--card) 88%, transparent); }
-.has-wall #top { background: color-mix(in srgb, var(--page) 72%, transparent); }
+.has-wall nav { background: color-mix(in srgb, var(--card) 82%, transparent); }
+.has-wall #top { background: color-mix(in srgb, var(--page) 66%, transparent); }
 .has-wall .card,
 .has-wall .sheetlist,
 .has-wall .tally,
-.has-wall .factbar { background: color-mix(in srgb, var(--card) 92%, transparent); }
+.has-wall .factbar { background: color-mix(in srgb, var(--card) 84%, transparent); }
+
+/*
+ * The one label that could not afford it.
+ *
+ * `--faint` on an opaque card reads at 4.47 to 1, which is the line to two
+ * decimal places — chosen that way on purpose, and fine, right up until
+ * something is put behind it. Any transparency at all pushes it under, and no
+ * opacity that still shows a picture brings it back: the sums say the panel
+ * would have to be the card colour itself.
+ *
+ * So the label takes the next colour up when there is a scene behind it, which
+ * costs a shade of hierarchy on four words and keeps them readable. The
+ * alternative was to leave the rail nearly opaque for the sake of "WORK" and
+ * "OUT INTO THE WORLD", which is a whole edge of the window spent on two
+ * headings nobody reads twice.
+ */
+.has-wall .rail .label-tiny { color: var(--quiet); }
 
 #grains {
   position: fixed;

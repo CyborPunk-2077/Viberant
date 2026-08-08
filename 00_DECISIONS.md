@@ -1580,6 +1580,26 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-139 `[DECIDED]` — What a company said about your account is reported; what your account costs is never invented
+
+**Decision.** When a model refuses, the sentence says the thing that actually happened: out of credit, asking too fast, a key that was not accepted, or trouble at their end. Out of credit says what fixes it and adds that nothing on this computer has changed. There is no polling, nothing is kept, and no count of anything is held anywhere.
+
+**Why not a usage meter.** "Nothing tracks whether your accounts are running low" was written down as a gap, and the obvious fix is to count questions, estimate what each cost and draw a bar. That would be a number this manager made up about somebody's money, and it would be wrong within a week of any price changing. A test now reads `assistant.mjs` and fails on any tally, price or estimate in it, because this is the kind of thing somebody adds later with the best of intentions.
+
+**One real fault found writing it.** Being out of credit comes back as 400 at one company, 429 at another and **403 at a third** — the same 403 a rejected key gets. Read by status first, a maxed-out card was reported as a bad key, and the advice was to go and find a new one: the wrong errand entirely, and the person would come back with a fresh key and the same refusal. What they said now outranks what they returned.
+
+---
+
+### D-140 `[DECIDED]` — How much of a scene shows through is decided by a contrast measurement, not by eye
+
+**Decision.** Panels are 84% opaque over a scene, the rail 82%, the top bar 66%. The rule that fixes those numbers is held by a test: against the worst case the app actually permits — a pure white point in the scene, at the lowest covering the slider allows — the faintest text that sits directly on each surface must clear 4.5 to 1, with margin.
+
+**Why it changed.** They were 92 and 88, picked by eye, and a note beside them said the scenes were barely visible but that this was the price of readability. **It was not the price.** At 92% the faintest readable text sits at 6.5 to 1 against a line of 4.5 — eight points of the picture being spent for nothing. Measured rather than argued, which is the third time in this project that has reversed a belief written down as fact.
+
+**And one thing the measurement found that was already wrong.** `--faint` reads at **4.47 to 1 on an opaque card** — the line, to two decimal places, and deliberate. It follows arithmetically that it can never clear the line with anything at all showing through behind it, at any opacity that still shows a picture: the sums say the panel would have to be the card colour itself. The rail's group labels were `--faint`, so they were under the line at 88% too, before any of this. Not a tuning problem — a colour that cannot afford a background. They take the next colour up when a scene is behind them, which costs a shade of hierarchy on four words.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

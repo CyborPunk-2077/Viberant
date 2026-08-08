@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 355 passing on Windows. The ones added last hold the two decisions
+**Tests:** 368 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -231,6 +231,18 @@ keeps somebody else's artwork and somebody else's licence out of this entirely.
 A test fails on any look that leaves a variable out, because that does not error
 — it silently inherits the look above.
 
+**The scenes actually show now.** The panels were 92% opaque because somebody
+picked 92, and the note beside them said the scenes were barely visible but that
+this was the price of being readable. It was not the price: at 92% the faintest
+readable text sits at 6.5 to 1 against a line of 4.5. They are 84% now, held
+there by a test that checks the worst case the app permits — a white star in the
+scene at the lowest covering the slider allows.
+
+The same measurement found something that was already wrong: `--faint` reads at
+4.47 to 1 on an opaque card, so it can never clear the line with anything behind
+it, at any opacity that still shows a picture. The rail's labels were that
+colour. They take the next one up now. D-140.
+
 **It has an icon of its own.** The same rounded square, violet gradient and V
 that sits at the top of its own rail — generated from about a hundred lines
 rather than shipped as a file, so it can never drift from the mark it copies.
@@ -289,10 +301,6 @@ wrong place to be when the thought arrives.
   everything above and carries it — checked by reading `newer.mjs` and the fixed
   stylesheet out of the packed copy, rather than trusting the build. Run it to
   replace the installed copy.
-- **The scenes are barely visible** on a screen full of opaque panels. That is
-  correct by the readability rule and still worth revisiting: a little more
-  breathing room in the gutters would let them read without putting text on a
-  picture.
 - **Signing an installer.** Until there is a certificate, the update path stops
   at opening the download page, on purpose. Nothing to build here — something to
   buy and keep safe.
@@ -487,7 +495,7 @@ failing in silence.
 
 **~~Still no icon of its own.~~** Done. It wears the same mark as the top of its own rail, drawn by `build/icon.mjs` at seven sizes and made fresh by every build. Checked by extracting the icon back out of the built `Viberant.exe`. D-138.
 
-**It does not know your accounts are running low.** Nothing tracks usage.
+**~~It does not know your accounts are running low.~~** Partly done, and only the honest part. When a company refuses for want of credit, it says so and says what fixes it — no polling, nothing kept, and no counting. A usage meter would be a number this manager made up about your money, and it would be wrong within a week of any price change. D-139.
 
 ---
 
