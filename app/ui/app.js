@@ -2907,6 +2907,42 @@ SCREENS.terminals = async () => {
   }
 };
 
+/**
+ * Vercel's row, which says which of the three things is true.
+ *
+ * Not here at all, here but not signed in, or ready — and the third is one
+ * press. The sign-in happens inside the deploy errand rather than as a separate
+ * chore, so the first time costs a browser window and every time after costs
+ * nothing.
+ */
+function vercelRow(d) {
+  const v = d.vercel ?? {};
+  const canBuild = !!d.look?.frameworkId;
+
+  const state = !v.here ? { s: 'notStarted', word: 'Not installed' }
+    : !v.connected ? { s: 'working', word: 'Not connected' }
+      : { s: 'finished', word: `Connected as ${v.login}` };
+
+  const says = !v.here ? 'Install it once with npm install -g vercel'
+    : !v.connected ? 'The first deploy opens your browser to connect it. After that it is one press.'
+      : canBuild ? `Builds this ${d.look.framework} project itself and gives it an address.`
+        : 'Builds the site itself and gives it an address.';
+
+  return `
+    <div class="trow">
+      <span class="kindmark" aria-hidden="true">${SITE_MARK}</span>
+      <span class="tname">
+        <b>Vercel</b>
+        <span class="where">${esc(says)}</span>
+      </span>
+      <span class="tacts">
+        <span class="state ${state.s}"><span class="pip"></span>${esc(state.word)}</span>
+        <button class="${v.here ? 'go ' : ''}small" data-site="vercel" ${v.here ? '' : 'disabled'}>
+          ${v.connected ? 'Deploy website' : 'Connect and deploy'}</button>
+      </span>
+    </div>`;
+}
+
 /** The mark for a place a website lives: a globe, reduced to two strokes. */
 const SITE_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
   + 'stroke-width="1.3"><circle cx="8" cy="8" r="5.6"/><ellipse cx="8" cy="8" rx="2.4" ry="5.6"/>'
@@ -2965,9 +3001,20 @@ SCREENS.ship = async () => {
     ? `<span class="mono">${esc(bind.owner)}/${esc(bind.repo)}</span>`
     : '<span class="dim">not on GitHub yet</span>'}</span>
       ${bind.branch ? `<span><b>Line</b><span class="mono">${esc(bind.branch)}</span></span>` : ''}
+      ${d.look?.framework ? `<span><b>Built with</b>${esc(d.look.framework)}</span>` : ''}
       <span><b>Unsaved</b>${d.project?.unsaved
     ? `<span class="warn">${d.project.unsaved}</span>` : 'none'}</span>
     </div>
+
+    ${d.deployedTo?.url ? `
+      <div class="said good">
+        <b>${esc(d.name)} is live.</b>
+        <span class="mono">${esc(d.deployedTo.url)}</span>
+        <span class="acts">
+          <button class="small" data-open-live="${esc(d.deployedTo.url)}">Open site</button>
+          <button class="quiet small" data-copy-live="${esc(d.deployedTo.url)}">Copy URL</button>
+        </span>
+      </div>` : ''}
 
     ${d.project?.shared ? '' : `
       <div class="said">
@@ -2978,7 +3025,8 @@ SCREENS.ship = async () => {
 
     <div class="sect"><h2>Website</h2><span class="count">replaced whole, every time</span></div>
     <div class="sheetlist term-cols">
-      ${site.places.map((pl) => `
+      ${vercelRow(d)}
+      ${site.places.filter((pl) => pl.id !== 'vercel').map((pl) => `
         <div class="trow">
           <span class="kindmark" aria-hidden="true">${SITE_MARK}</span>
           <span class="tname">
@@ -3031,6 +3079,15 @@ SCREENS.ship = async () => {
 
   for (const b of document.querySelectorAll('[data-show-built]')) {
     b.onclick = () => post('/reveal', { path: b.dataset.showBuilt });
+  }
+  for (const b of document.querySelectorAll('[data-open-live]')) {
+    b.onclick = () => post('/open-outside', { url: b.dataset.openLive });
+  }
+  for (const b of document.querySelectorAll('[data-copy-live]')) {
+    b.onclick = async () => {
+      await navigator.clipboard?.writeText(b.dataset.copyLive);
+      b.textContent = 'Copied';
+    };
   }
 
   for (const id of ['#dep-publish', '#dep-publish2']) {

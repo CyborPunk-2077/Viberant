@@ -43,6 +43,7 @@ import * as feedback from './feedback.mjs';
 import * as fingerprint from './fingerprint.mjs';
 import * as live from './live.mjs';
 import * as google from './google.mjs';
+import * as providers from './providers.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -840,15 +841,81 @@ const routes = {
     if (!current) return { open: false };
     // Which repository this would act on, said on the page. Deploying to the
     // wrong one is not recoverable by pressing something else afterwards.
-    const [looked, binding] = await Promise.all([
+    const [looked, binding, look, where, vercelState] = await Promise.all([
       deploy.look(current.dir),
       github.bindingOf(current.dir),
+      providers.inspect(current.dir),
+      providers.bindingFor(current.dir),
+      providers.vercel.state(),
     ]);
-    return { open: true, name: current.name, binding, ...looked };
+    return {
+      open: true,
+      name: current.name,
+      dir: current.dir,
+      binding,
+      look,
+      deployedTo: where,
+      vercel: vercelState,
+      ...looked,
+    };
   },
 
   async 'POST /ship/site'({ body }) {
     if (!current) return noProject;
+
+    /*
+     * Vercel goes through the provider, which knows what this project is and
+     * where it deploys. Everything read here comes from `current` at the moment
+     * of the press — the project you are looking at, never the one you were
+     * looking at when the page was drawn.
+     */
+    if (body.place === 'vercel') {
+      const dir = current.dir;
+      const name = current.name;
+      const job = jobs.begin({ what: `Putting ${name} online`, where: dir });
+
+      (async () => {
+        const state = await providers.vercel.state();
+        if (!state.here) {
+          return jobs.end(job, {
+            ok: false,
+            sentence: state.missing,
+            action: `Install it once with ${state.how}, then try again.`,
+          });
+        }
+        if (!state.connected) {
+          const signedIn = await providers.vercel.connect(job, jobs);
+          if (!signedIn.ok) {
+            return jobs.end(job, {
+              ok: false,
+              sentence: 'Vercel was not connected, so nothing was put online.',
+              action: 'Try again and finish the sign-in in your browser.',
+            });
+          }
+        }
+
+        const out = await providers.vercel.deploy(job, jobs, { dir, name });
+        if (!out.ok) return jobs.end(job, out);
+
+        // Remembered against this project, so the next press knows where it went
+        // and project B never inherits project A's site.
+        await providers.bind(dir, { provider: 'vercel', url: out.at, name });
+
+        return jobs.end(job, {
+          ok: true,
+          at: out.at,
+          sentence: `${name} is live at ${out.at}`,
+          action: 'Anyone with the address can see it now.',
+        });
+      })().catch((e) => jobs.end(job, {
+        ok: false,
+        sentence: 'Putting the site online stopped part way through.',
+        action: String(e?.message ?? e),
+      }));
+
+      return { ok: true, job: job.id };
+    }
+
     const job = deploy.putSiteOnline({ dir: current.dir, place: body.place, name: current.name });
     return { ok: true, job: job.id };
   },
