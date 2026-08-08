@@ -1519,6 +1519,20 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-135 `[DECIDED]` — A picture of your own is measured, not hoped about; and the route that serves it can only serve that one
+
+**Decision.** A look called *A picture of your own* takes any picture on this computer. The path is kept and nothing is copied or sent anywhere. When one is chosen, the app reads how light it actually is and covers it by however much the words on top need — and says that it did. On an ordinary visit to Settings a picture that is too bright is *said*, and the slider is left alone.
+
+**Why the measurement.** Every other look here was made dark on purpose. A photograph somebody chose was not, and a bright one puts text on a picture — the one thing the whole background layer is forbidden from doing. "Turn the slider up if it looks bad" leaves somebody to diagnose their own screen. The brightness of an image is a number, so it is read: a 32×32 copy, luminance-weighted, once.
+
+**Why it fixes on choosing and only speaks afterwards.** Choosing a picture is somebody asking for a picture, not asking for an unreadable page, so the manager sets what it takes and says so. Somebody who *later* pulls the slider down has decided; moving it back for them would be the app overruling a person about their own screen, which nothing here is allowed to do.
+
+**The security property, held by a test.** `servePicture` takes no arguments and cannot see the request. The path is read back from the setting, so the route can serve exactly one file — the one already chosen through the picker — and only if its extension is one of a listed set of picture kinds. A wallpaper route that took a path from the page would be a way to read any file on this computer through a browser: not a wallpaper feature, a hole with a wallpaper feature in front of it. Verified by asking for `?path=…/server.mjs` and getting the PNG.
+
+**Considered and rejected.** Copying the chosen picture into the manager's own folder — that is a second copy of somebody's file that they did not ask for and would not know to delete. Reading it in Node to measure it — no image decoder in the standard library, and the browser already has one that is better.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

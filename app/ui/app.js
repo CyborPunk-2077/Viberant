@@ -4419,6 +4419,67 @@ async function drawNewerSettings({ force = false } = {}) {
   });
 }
 
+/**
+ * Whether the chosen picture leaves anything readable, said out loud.
+ *
+ * Waits for the picture to have arrived rather than guessing, and only ever
+ * speaks when there is something to say — a picture that is already dark
+ * enough needs no sentence, and a compliment about it would be noise.
+ */
+function checkPictureReads({ fix = false } = {}) {
+  const judge = async () => {
+    const light = wall.brightnessOfPicture();
+    if (light === null) {
+      // Only worth saying when somebody just asked for it. On an ordinary draw
+      // a picture that is not there yet is a picture still arriving.
+      if (!fix) return;
+      return say({
+        ok: false,
+        sentence: 'That picture could not be read.',
+        action: 'Check it is still where you left it, and choose it again.',
+      }) && draw();
+    }
+
+    // How much has to be over it before text on top of it reads. Worked out
+    // from the picture itself rather than picked: a bright photograph needs
+    // most of it covered and a dark one needs hardly any.
+    const needs = Math.round(Math.min(90, Math.max(20, light * 105)));
+    const now = Number(me.settings?.wallDim ?? 55);
+    if (needs <= now) return;
+
+    /**
+     * Fixed when it was just chosen; only said otherwise.
+     *
+     * Choosing a picture is somebody asking for a picture, not asking for an
+     * unreadable page, so the manager sets what it takes. But somebody who
+     * later pulls the slider down has *decided* — moving it back for them would
+     * be the app overruling a person about their own screen, which nothing here
+     * is allowed to do. So it says it, once, and leaves the slider alone.
+     */
+    if (!fix) {
+      return say({
+        ok: false,
+        sentence: 'The picture behind this is bright enough to make the words on top of it hard to read.',
+        action: `Covering ${needs} in a hundred of it would fix that. The slider below is at ${now}.`,
+      }) && draw();
+    }
+
+    say({
+      ok: false,
+      sentence: 'That picture is bright enough to make the words on top of it hard to read.',
+      action: `It has been covered ${needs} in a hundred to fix that, and the slider below undoes it.`,
+    });
+    await post('/settings', { id: 'wallDim', value: needs });
+    await refreshMe();
+    draw();
+  };
+
+  addEventListener('wall-picture', judge, { once: true });
+  // And in case it was already here, so the answer does not wait on an event
+  // that has already happened.
+  setTimeout(() => { if (wall.brightnessOfPicture() !== null) judge(); }, 400);
+}
+
 SCREENS.settings = async () => {
   const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
@@ -4501,6 +4562,7 @@ SCREENS.settings = async () => {
   drawGitHubSettings();
   drawGoogleSettings();
   drawNewerSettings();
+  if (me.settings?.appearance === 'yours') checkPictureReads();
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.onclick = async () => {
@@ -4532,6 +4594,47 @@ SCREENS.settings = async () => {
       draw();
     };
   }
+  /**
+   * A picture of your own, and the one honest thing that has to happen with it.
+   *
+   * Every other look here was made dark on purpose. A photograph somebody chose
+   * was not, and a bright one puts text on top of a picture, which is the exact
+   * thing the whole background layer is forbidden from doing. So it is measured
+   * rather than hoped about: the picture is read, how light it is comes back as
+   * a number, and if it is too light the app says so and offers the fix instead
+   * of leaving somebody to work out why the words went hard to read.
+   */
+  for (const b of document.querySelectorAll('[data-picture]')) {
+    b.onclick = async () => {
+      const chosen = await post('/choose/file');
+      if (chosen.cancelled) return;
+      if (!chosen.ok) return say(chosen), draw();
+
+      if (!/\.(png|jpe?g|webp|gif|avif|bmp)$/i.test(chosen.path)) {
+        say({
+          ok: false,
+          sentence: 'That file is not a picture this can show.',
+          action: 'Choose a PNG, a JPEG, a WebP or a GIF.',
+        });
+        return draw();
+      }
+
+      await post('/settings', { id: b.dataset.picture, value: chosen.path });
+      await post('/settings', { id: 'appearance', value: 'yours' });
+      await refreshMe();
+      wall.pictureChanged();
+      draw();
+      checkPictureReads({ fix: true });
+    };
+  }
+  $('[data-picture-off]')?.addEventListener('click', async () => {
+    await post('/settings', { id: 'wallPicture', value: '' });
+    await post('/settings', { id: 'appearance', value: 'dark' });
+    await refreshMe();
+    wall.pictureChanged();
+    draw();
+  });
+
   for (const sel of document.querySelectorAll('select[data-choose]')) {
     sel.onchange = async () => {
       say(await post('/settings', { id: sel.dataset.choose, value: sel.value }));
@@ -4635,6 +4738,11 @@ function control(s, terminals) {
   if (s.kind === 'folder') {
     return `<button class="small" data-folder="${esc(s.id)}" data-title="${esc(s.name)}"
       data-value="${esc(s.value ?? '')}">${esc(tail(s.value) || 'Choose…')}</button>`;
+  }
+  if (s.kind === 'picture') {
+    return `<button class="small" data-picture="${esc(s.id)}">${
+  s.value ? esc(tail(s.value)) : 'Choose a picture\u2026'}</button>${
+  s.value ? '<button class="quiet small" data-picture-off="1">Use none</button>' : ''}`;
   }
   if (s.kind === 'secret') {
     // Never carries the value, in or out. The page is only ever told whether

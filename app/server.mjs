@@ -1660,12 +1660,45 @@ async function serveUi(res, name) {
   return res.end(await readFile(path));
 }
 
+/** The kinds of picture a browser will actually draw. */
+const PICTURES = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+};
+
+/**
+ * The one picture somebody chose, and nothing else on this computer.
+ *
+ * **The path never comes from the request.** It is read back from the setting,
+ * so this route can serve exactly one file: the one already chosen through the
+ * picker. A route that took a path from the page would be a way to read any
+ * file on this computer through a browser, which is not a wallpaper feature —
+ * it is a hole with a wallpaper feature in front of it.
+ */
+async function servePicture(res) {
+  const at = await settings.get('wallPicture');
+  const kind = at ? PICTURES[extname(at).toLowerCase()] : null;
+
+  if (!at || !kind || !existsSync(at)) {
+    res.writeHead(404);
+    return res.end();
+  }
+  res.writeHead(200, { 'content-type': kind, 'cache-control': 'no-store' });
+  return res.end(await readFile(at));
+}
+
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, 'http://localhost');
 
     if (url.pathname === '/') return serveUi(res, 'shell.html');
     if (url.pathname.startsWith('/ui/')) return serveUi(res, url.pathname.slice(4));
+    if (url.pathname === '/wall/picture') return servePicture(res);
 
     const route = routes[`${req.method} ${url.pathname}`];
     if (!route) { res.writeHead(404); return res.end(); }

@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 328 passing on Windows. The ones added last hold the two decisions
+**Tests:** 330 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -231,6 +231,19 @@ keeps somebody else's artwork and somebody else's licence out of this entirely.
 A test fails on any look that leaves a variable out, because that does not error
 — it silently inherits the look above.
 
+**A picture of your own, and the honest thing that has to happen with it.**
+Any picture on this computer. Nothing is copied and nothing is sent — the path
+is kept and the file is read where it sits. Every other look here was made dark
+on purpose and a photograph somebody chose was not, so it is measured rather
+than hoped about: how light the picture actually is comes back as a number, and
+a bright one is covered by however much the words on top need, with a sentence
+saying so. Later, if you pull the slider back down, it says the cost once and
+leaves your slider alone. D-135.
+
+The route that serves it takes no arguments and cannot see the request, so it
+can only ever serve the one file already chosen through the picker. Asked for
+with `?path=` pointing at the manager's own source, it returns the picture.
+
 **Asking about a project reached the command palette.** Those four buttons live
 at the bottom of the project page, which is the right place to find them and the
 wrong place to be when the thought arrives.
@@ -244,10 +257,6 @@ wrong place to be when the thought arrives.
 - **Resuming an interrupted transfer.** It fails honestly and retries from the
   start. It does not pick up where it stopped. Per the brief's own priority,
   reliable transfer and honest retry came first and both are done.
-- **No custom wallpaper of your own.** Seventeen looks, four of them scenes, and
-  no way to point at a picture on this computer. Deliberately last: a picture
-  somebody chose is the one thing here that can be unreadable, and the answer to
-  that is more work than the picker.
 - **The scenes are barely visible** on a screen full of opaque panels. That is
   correct by the readability rule and still worth revisiting: a little more
   breathing room in the gutters would let them read without putting text on a

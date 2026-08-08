@@ -82,7 +82,12 @@ describe('a look that promises a picture has one', () => {
       .map((m) => m[1]);
     assert.ok(promised.length >= 8, `only ${promised.length} looks promise a picture`);
 
-    const built = new Set([...page.matchAll(/^ {2}(\w+)\(w, h\)\s*\{/gm)].map((m) => m[1]));
+    // Scenes are written inside the list; the one that draws a chosen picture
+    // is a function of its own, because it has to wait for the file to arrive.
+    const built = new Set([
+      ...[...page.matchAll(/^ {2}(\w+)\(w, h\)\s*\{/gm)].map((m) => m[1]),
+      ...[...page.matchAll(/^function (\w+)\(w, h\)\s*\{/gm)].map((m) => m[1]),
+    ]);
     const known = new Set([...page.matchAll(/^ {2}(\w+): '(\w+)',$/gm)].map((m) => m[1]));
 
     for (const id of promised) {
@@ -91,11 +96,53 @@ describe('a look that promises a picture has one', () => {
     }
   });
 
-  test('no scene reaches for a file, because nothing here is downloaded', () => {
-    // These are drawn rather than shipped, which is what keeps somebody else's
-    // artwork out of this product entirely.
-    for (const way of [/new Image\(/, /\.src\s*=/, /url\(/, /fetch\(/, /import\(/]) {
-      assert.equal(way.test(page), false, `wallpaper.js must not ${way}`);
+  test('no artwork is shipped and none is fetched from anywhere', () => {
+    // Every scene is drawn here, which is what keeps somebody else's pictures
+    // and somebody else's licence out of this product entirely. Exactly one
+    // reads a file, and it is the one the person chose off their own computer.
+    for (const way of [/fetch\(/, /XMLHttpRequest/, /https?:\/\//, /import\(/, /url\(/]) {
+      assert.equal(way.test(page), false, `wallpaper.js must not use ${way}`);
+    }
+
+    const sources = [...page.matchAll(/\.src\s*=\s*[`'"]([^`'"$]*)/g)].map((m) => m[1]);
+    assert.deepEqual(sources, ['/wall/picture?v='],
+      'the only picture it loads is the chosen one, from this computer');
+  });
+});
+
+/**
+ * The route that serves the chosen picture.
+ *
+ * A wallpaper feature that took a path from the page would be a way to read any
+ * file on this computer through a browser. It is not one, and that is a fact
+ * about the code rather than an intention: the path is read back from the
+ * setting, so the route can serve exactly one file.
+ */
+describe('the picture route can only ever serve the one that was chosen', () => {
+  test('it never takes a path from whoever is asking', async () => {
+    const server = await readFile(join(here, '..', 'server.mjs'), 'utf8');
+    const fn = /async function servePicture\(([^)]*)\)\s*\{([\s\S]*?)\n\}/.exec(server);
+    assert.ok(fn, 'servePicture is not there');
+
+    const [, takes, body] = fn;
+    assert.equal(/req|url|body|params|query/.test(takes), false,
+      `servePicture takes ${takes} — it must not be able to see the request`);
+    for (const way of [/searchParams/, /req\./, /body\./, /decodeURI/]) {
+      assert.equal(way.test(body), false, `servePicture must not read ${way}`);
+    }
+    assert.match(body, /settings\.get\('wallPicture'\)/,
+      'the path comes from the setting, and from nowhere else');
+  });
+
+  test('it serves pictures and nothing else', async () => {
+    const server = await readFile(join(here, '..', 'server.mjs'), 'utf8');
+    const list = /const PICTURES = \{([\s\S]*?)\}/.exec(server);
+    assert.ok(list, 'the kinds it will serve are not written down');
+
+    const kinds = [...list[1].matchAll(/'(\.[a-z0-9]+)'/g)].map((m) => m[1]);
+    assert.ok(kinds.length >= 5, `only ${kinds.length} kinds of picture`);
+    for (const bad of ['.env', '.json', '.js', '.mjs', '.txt', '.key', '.pem']) {
+      assert.equal(kinds.includes(bad), false, `${bad} is not a picture`);
     }
   });
 });

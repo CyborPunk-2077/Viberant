@@ -73,8 +73,24 @@ export const KNOWN = [
       { id: 'fire', name: 'Ember', why: 'Warm dark, amber and orange.' },
       { id: 'tactical', name: 'Tactical', why: 'Near-black and one hard orange. Nothing else carries colour.' },
       { id: 'crimson', name: 'Crimson', why: 'Dark plum and magenta.' },
+      { id: 'yours', name: 'A picture of your own', why: 'One you choose, from this computer.', scene: true },
     ],
     fallback: () => 'system',
+  },
+  {
+    /**
+     * A picture of your own.
+     *
+     * The path only. Nothing is copied anywhere and nothing is sent anywhere:
+     * the file stays where you left it, and the manager reads it when it draws.
+     * Delete the picture and the look falls back with a sentence rather than a
+     * blank screen.
+     */
+    id: 'wallPicture',
+    name: 'Which picture',
+    why: 'Any picture on this computer. It is read where it sits — nothing is copied, and nothing about it leaves here.',
+    kind: 'picture',
+    fallback: () => null,
   },
   {
     id: 'wallMotion',

@@ -499,6 +499,59 @@ const SCENES = {
   },
 };
 
+/**
+ * A picture of your own.
+ *
+ * The one scene here that is not drawn, and the only one that can be
+ * unreadable — everything else was made dark on purpose, and a photograph
+ * somebody chose was not. So this is the one that measures itself: after it
+ * loads, `brightnessOfPicture()` reads how light it actually is behind the
+ * page, and the Settings screen says so plainly and offers to fix it.
+ *
+ * Drawn to cover, so it fills the window at any shape without stretching. It
+ * does not move: a photograph that drifts reads as a mistake rather than as
+ * atmosphere, and the four generated scenes already cover anybody who wants
+ * movement.
+ */
+let picture = null;
+let pictureFor = null;
+
+function yours(w, h) {
+  return () => {
+    ink.fillStyle = '#000000';
+    ink.fillRect(0, 0, w, h);
+    if (!picture?.complete || !picture.naturalWidth) return;
+
+    const scale = Math.max(w / picture.naturalWidth, h / picture.naturalHeight);
+    const pw = picture.naturalWidth * scale;
+    const ph = picture.naturalHeight * scale;
+    ink.drawImage(picture, (w - pw) / 2, (h - ph) / 2, pw, ph);
+  };
+}
+
+/**
+ * How light the chosen picture is, from 0 to 1, or null if there is not one.
+ *
+ * Measured off a tiny copy rather than the real thing, because the answer is an
+ * average and an average does not need four million pixels to be right.
+ */
+export function brightnessOfPicture() {
+  if (!picture?.complete || !picture.naturalWidth) return null;
+
+  const small = document.createElement('canvas');
+  small.width = 32;
+  small.height = 32;
+  const pen = small.getContext('2d', { willReadFrequently: true });
+  pen.drawImage(picture, 0, 0, 32, 32);
+
+  let sum = 0;
+  const px = pen.getImageData(0, 0, 32, 32).data;
+  for (let i = 0; i < px.length; i += 4) {
+    sum += (px[i] * 0.2126 + px[i + 1] * 0.7152 + px[i + 2] * 0.0722) / 255;
+  }
+  return sum / (px.length / 4);
+}
+
 /** Points that stay put between frames, so a scene does not boil. */
 function seeded(n, w, h, { r = [0.4, 1], a = [0.3, 0.8] } = {}) {
   const out = [];
@@ -550,14 +603,58 @@ function fit() {
 
 function start(scene, { again = false } = {}) {
   stop();
-  if (!ink || !SCENES[scene]) return;
+  if (!ink) return;
+
+  // A picture is the one scene that is not a function in the list. It has to be
+  // fetched before it can be drawn, so it draws black and repaints when it
+  // arrives, rather than leaving the window empty until it does.
+  if (scene === 'yours') {
+    drifting = yours(size.w, size.h);
+    loadPicture();
+    if (!again) born = performance.now();
+    return paint();
+  }
+
+  if (!SCENES[scene]) return;
   drifting = SCENES[scene](size.w, size.h);
   if (!again) born = performance.now();
   paint();
   if (moving()) frame = requestAnimationFrame(tick);
 }
 
-const moving = () => look.motion && !still() && !document.hidden;
+// A picture never moves. One that drifted would read as a mistake rather than
+// as atmosphere, and the four drawn scenes already serve anybody who wants it.
+const moving = () => look.scene !== 'yours' && look.motion && !still() && !document.hidden;
+
+/**
+ * Fetch the chosen picture, once per version of it.
+ *
+ * `pictureFor` is a moment rather than a path, because the page is never told
+ * where the file is — only that the one behind `/wall/picture` has changed.
+ */
+function loadPicture(afresh = false) {
+  const want = afresh ? Date.now() : (pictureFor ?? 1);
+  if (picture && pictureFor === want) return;
+
+  pictureFor = want;
+  const img = new Image();
+  img.onload = () => {
+    if (pictureFor !== want) return;
+    picture = img;
+    paint();
+    dispatchEvent(new CustomEvent('wall-picture'));
+  };
+  img.onerror = () => {
+    if (pictureFor !== want) return;
+    picture = null;
+    paint();
+    dispatchEvent(new CustomEvent('wall-picture'));
+  };
+  img.src = `/wall/picture?v=${want}`;
+}
+
+/** Read the chosen picture again — it may be a different file now. */
+export const pictureChanged = () => { picture = null; loadPicture(true); };
 
 function paint() {
   if (!drifting) return;
@@ -652,6 +749,7 @@ export const SCENE_FOR = {
   deepfield: 'deepfield',
   horizon: 'horizon',
   mars: 'mars',
+  yours: 'yours',
 };
 
 fit();
