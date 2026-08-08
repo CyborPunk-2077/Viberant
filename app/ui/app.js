@@ -4154,12 +4154,31 @@ SCREENS.settings = async () => {
         <div class="set"></div>
       </div>
       <div class="setting">
+        <div class="about"><b>What is going on in here</b>
+          <span>Which account, which computer, what failed recently. Useful to anybody
+            helping you work out why something is not doing what it should. Keys and
+            passwords are taken out of it before you get it.</span></div>
+        <div class="set"><button class="small" id="diag">Copy it</button></div>
+      </div>
+      <div class="setting">
         <div class="about"><b>Put every setting back</b>
           <span>Only the settings above. Your projects, accounts and history are untouched.</span></div>
         <div class="set"><button class="small danger" id="reset">Put them back</button></div>
       </div>
     </div>`;
   said = null;
+
+  $('#diag').onclick = async () => {
+    const d = await get('/diagnostics');
+    await navigator.clipboard?.writeText(JSON.stringify(d, null, 2));
+    $('#diag').textContent = 'Copied';
+    say({
+      ok: true,
+      sentence: 'That is on your clipboard, ready to paste.',
+      action: 'It says which account and what failed. It carries no keys or passwords.',
+    });
+    setTimeout(() => draw(), 1200);
+  };
 
   drawGitHubSettings();
 

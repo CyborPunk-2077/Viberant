@@ -218,3 +218,33 @@ describe('an answer that is not the shape asked for is refused', () => {
     assert.equal(one.changes[0].becomes, 'new\n');
   });
 });
+
+/**
+ * The one thing designed to be copied out.
+ *
+ * Diagnostics exist to be pasted somewhere else, which makes them the most
+ * likely way a secret leaves this computer by accident. They go through the
+ * same redaction the prompts use — one function, so there is never a second
+ * rule to keep in step with the first.
+ */
+describe('what gets copied out carries no secrets', () => {
+  test('a failed errand with a key in its output is cleaned', async () => {
+    const { withoutSecrets } = await import('../assistant.mjs');
+
+    const lines = [
+      '> npm run build',
+      'ANTHROPIC_API_KEY=sk-ant-api03-REALKEYVALUE00000000',
+      'Authorization: Bearer eyJVERYREALTOKEN',
+      'connecting to postgres://admin:REALPASSWORD@db/app',
+      'Error: build failed with exit code 1',
+    ].join('\n');
+
+    const clean = withoutSecrets(lines);
+    for (const secret of ['sk-ant-api03-REALKEYVALUE00000000', 'eyJVERYREALTOKEN', 'REALPASSWORD']) {
+      assert.equal(clean.includes(secret), false, `leaked ${secret}`);
+    }
+    // And the useful part is intact, or there was no point copying it.
+    assert.match(clean, /build failed with exit code 1/);
+    assert.match(clean, /npm run build/);
+  });
+});

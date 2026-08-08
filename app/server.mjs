@@ -803,6 +803,53 @@ const routes = {
     return { ...out, ...(current ? await routes['GET /project']() : {}) };
   },
 
+  /**
+   * Everything worth telling somebody who is trying to help.
+   *
+   * The one thing in this product designed to be copied out and pasted
+   * somewhere else, which makes it the one thing most likely to carry a secret
+   * out with it. Every line goes through the same redaction the model prompts
+   * use — one function, so there is no second rule to keep in step.
+   */
+  async 'GET /diagnostics'() {
+    const [now, ws, vercelState, ai, all] = await Promise.all([
+      github.session(),
+      workspace.state(),
+      providers.vercel.state(),
+      assistant.ready(),
+      settings.allSafely(),
+    ]);
+
+    const failed = jobs.all().filter((j) => j.ok === false).slice(0, 5).map((j) => ({
+      what: j.what,
+      kind: j.kind,
+      sentence: j.sentence,
+      // The last few lines are what somebody helping actually needs, and are
+      // also the most likely place for a key to be sitting.
+      lines: assistant.withoutSecrets((j.lines ?? []).slice(-8).join('\n')),
+    }));
+
+    return {
+      viberant: VERSION,
+      node: process.version,
+      platform: `${process.platform} ${process.arch}`,
+      manager: 'running',
+      github: {
+        tool: now.tool,
+        signedIn: now.signedIn,
+        account: now.login,
+      },
+      workspace: { joined: ws.joined, account: ws.account, reachable: lan.isOn() },
+      network: { others: lan.around().length, offering: (await lan.offers()).length },
+      deploy: { vercel: vercelState.here ? (vercelState.connected ? 'connected' : 'not connected') : 'not installed' },
+      assistant: ai.ok ? `${ai.name}, set up` : `${ai.name}, no key`,
+      // Whether each is set, never what any of them is (D-81).
+      settings: Object.fromEntries(Object.entries(all).map(([k, v]) => [k, typeof v === 'string' && v.length > 40 ? '[set]' : v])),
+      project: current ? { name: current.name, where: current.dir } : null,
+      recentlyFailed: failed,
+    };
+  },
+
   /** What one project is bound to, for the panel beside the list. */
   async 'GET /project/binding'({ url }) {
     const at = url.searchParams.get('path');
