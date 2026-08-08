@@ -1327,6 +1327,20 @@ Making that panel incremental was right: rebuilding it every second threw away t
 
 ---
 
+### D-118 `[DECIDED]` — One press selects, two opens, and the panel shows only what is known
+
+**Decision.** Selecting a row opens a column beside the work describing it. Opening the thing takes a second press. The panel omits any fact this computer does not have rather than showing it empty.
+
+**Why.** A row that opened a project on one press meant you could not look at one without leaving the list you were looking at it from. Selecting and opening are two intentions and they get two gestures.
+
+**Its own column, not a floating panel.** A panel that covers the thing you selected is a panel you have to close in order to see what you selected. Below 74rem it becomes a drawer instead, because taking three hundred pixels from a table at that width leaves no table.
+
+**Nothing is invented to fill it.** A machine whose address this computer has not been told is a machine with no address line — not one reading "unknown", which costs a row and says nothing. The same rule the rest of the product already follows about not claiming things.
+
+**The audit that followed found a fault this introduced**, which is the argument for running it every time: a 26px mark in a 26px track overlapped the name beside it by six pixels on every row of two tables. A row carries its own padding while its columns come from the table above it, so an item sized to exactly its track finishes inside the next one. The track is wider than the mark now — sizing the container rather than chasing the padding, so it cannot come back when spacing next changes.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

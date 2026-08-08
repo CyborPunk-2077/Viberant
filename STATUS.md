@@ -124,18 +124,26 @@ when the window is hidden, two megabytes. D-117.
 
 ---
 
+**There is something beside the work.** One press on a project selects it and
+shows what this computer actually knows, with its repository once the project
+has been asked; two presses opens it. Its own column above 74rem, a drawer
+below. Two scroll containers, neither moving the other. D-118.
+
 *Left, and stated plainly rather than glossed.*
 
-- **No inspector beside the work.** The shell has room; nothing fills it. This
-  is the largest remaining item from the brief.
-- **Workspace's second polish pass.** It is structurally right and has not had
-  the individual design attention Projects, AI apps, Terminals and Deploy have.
+- **Workspace's second polish pass.** It is structurally right — one canonical
+  list of remote offers, typed rows, transfer progress — and has not had the
+  individual design attention Projects, AI apps, Terminals, Deploy and Settings
+  have had.
 - **Resuming an interrupted transfer.** It fails honestly and retries from the
-  start. It does not pick up where it stopped.
-- **The scenes are barely visible** on a screen full of opaque panels, which is
-  correct by the readability rule and still worth revisiting — a little more
+  start. It does not pick up where it stopped. Per the brief's own priority,
+  reliable transfer and honest retry came first and both are done.
+- **The scenes are barely visible** on a screen full of opaque panels. That is
+  correct by the readability rule and still worth revisiting: a little more
   breathing room in the gutters would let them read without putting text on a
   picture.
+- **The inspector is on Projects only.** Machines and offered items on the
+  Workspace page would suit one and do not have one yet.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
