@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 340 passing on Windows. The ones added last hold the two decisions
+**Tests:** 347 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -231,6 +231,13 @@ keeps somebody else's artwork and somebody else's licence out of this entirely.
 A test fails on any look that leaves a variable out, because that does not error
 — it silently inherits the look above.
 
+**Three companies can be asked, and which one is on screen.** Claude, ChatGPT
+and Gemini, each with its own key box and its own address. A question costs money
+at whichever answers it, so the name of the one about to be asked sits next to
+the buttons that ask — and if the chosen one has no key while another does, the
+page says which one it is asking instead, by name. Being billed by a company you
+did not pick is not a surprise a manager should hand anybody. D-137.
+
 **A transfer that stopped carries on from where it stopped.** Anything over
 about 50 MB keeps what it confirmed, with a ledger beside it naming every file
 that reached its stated size — so the file that was half written when the
@@ -279,7 +286,6 @@ wrong place to be when the thought arrives.
   correct by the readability rule and still worth revisiting: a little more
   breathing room in the gutters would let them read without putting text on a
   picture.
-- **No per-provider choice for asking.** One model, named in Settings.
 - **Signing an installer.** Until there is a certificate, the update path stops
   at opening the download page, on purpose. Nothing to build here — something to
   buy and keep safe.

@@ -75,22 +75,110 @@ export const MODELS = [
       return { ok: true, text: (body.content ?? []).map((c) => c.text ?? '').join('').trim() };
     },
   },
+
+  /**
+   * The two other companies with a key you can buy in five minutes.
+   *
+   * Both take the same shape of request as each other, so they share one `ask`
+   * rather than being written out twice. Neither is a recommendation and
+   * neither is a fallback: the point of having more than one is that somebody
+   * who already pays for one of these does not have to start paying for another
+   * to use this at all.
+   */
+  {
+    id: 'openai',
+    name: 'ChatGPT',
+    keySetting: 'openaiKey',
+    where: 'https://platform.openai.com/api-keys',
+    model: 'gpt-4o',
+    at: 'https://api.openai.com/v1/chat/completions',
+    ask: askLikeOpenAi,
+  },
+  {
+    id: 'gemini',
+    name: 'Gemini',
+    keySetting: 'geminiKey',
+    where: 'https://aistudio.google.com/apikey',
+    model: 'gemini-2.0-flash',
+    at: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+    ask: askLikeOpenAi,
+  },
 ];
 
-/** Which model is set up here, if any. */
+/**
+ * One request shape, used by everything that is not Claude.
+ *
+ * Both of the others answer the same request, so this is written once. The
+ * system message goes as its own turn, which is what that shape calls a system
+ * message, and the answer comes out of the same place in both.
+ */
+async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
+  const res = await fetch(this.at, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: this.model,
+      max_tokens: mostTokens,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: message },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const said = await quiet(() => res.json(), null);
+    return { ok: false, status: res.status, why: said?.error?.message ?? null };
+  }
+  const body = await res.json();
+  return { ok: true, text: String(body.choices?.[0]?.message?.content ?? '').trim() };
+}
+
+/** One by its name, or nothing. */
+export const modelCalled = (id) => MODELS.find((m) => m.id === id) ?? null;
+
+/**
+ * Which model is set up here, if any.
+ *
+ * The chosen one if it has a key. Otherwise whichever does — because somebody
+ * who put in one key and never touched the choice meant that key, and refusing
+ * to use it on the grounds that a menu says otherwise would be obtuse.
+ */
 export async function ready() {
+  const chosen = modelCalled(await settings.get('askWho'));
+  if (chosen && await settings.get(chosen.keySetting)) {
+    return { ok: true, model: chosen, name: chosen.name };
+  }
+
   for (const m of MODELS) {
     const key = await settings.get(m.keySetting);
-    if (key) return { ok: true, model: m, name: m.name };
+    if (key) return { ok: true, model: m, name: m.name, insteadOf: chosen?.name ?? null };
   }
-  const first = MODELS[0];
+
+  const want = chosen ?? MODELS[0];
   return {
     ok: false,
-    name: first.name,
-    where: first.where,
-    setting: first.keySetting,
-    sentence: `Viberant has no key for ${first.name} yet, so it cannot look at anything.`,
+    name: want.name,
+    where: want.where,
+    setting: want.keySetting,
+    sentence: `Viberant has no key for ${want.name} yet, so it cannot look at anything.`,
     action: 'Settings has a box for it. The key stays on this computer.',
+  };
+}
+
+/** Every model, whether each has a key, and which is chosen. Never the keys. */
+export async function whoCanBeAsked() {
+  const chosen = await settings.get('askWho');
+  return {
+    chosen: modelCalled(chosen)?.id ?? MODELS[0].id,
+    models: await Promise.all(MODELS.map(async (m) => ({
+      id: m.id,
+      name: m.name,
+      where: m.where,
+      model: m.model,
+      setting: m.keySetting,
+      // Whether there is one, never what it is (D-81).
+      ready: !!(await settings.get(m.keySetting)),
+    }))),
   };
 }
 

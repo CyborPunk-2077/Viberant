@@ -756,7 +756,7 @@ const routes = {
 
   async 'GET /ai'() {
     const set = await assistant.ready();
-    return { ...set, project: current?.name ?? null };
+    return { ...set, ...(await assistant.whoCanBeAsked()), project: current?.name ?? null };
   },
 
   /** Why did something fail. The most useful question there is. */

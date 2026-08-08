@@ -1554,6 +1554,18 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-137 `[DECIDED]` — Which company is asked is a choice, it is stated on screen, and a key is never used against another company
+
+**Decision.** Claude, ChatGPT and Gemini. Each has its own key box and its own address, the choice lives in Settings, and the name of whichever will be asked is shown next to the buttons that ask. If the chosen one has no key and another does, that one is asked **and the page says so by name**.
+
+**Why a choice and not a fallback order.** A question here costs money at whichever company answers it, which makes this a spending decision rather than a preference. Somebody who already pays for one of these should not have to start paying for another to use this at all. And a manager that quietly asked a company you did not pick would be spending your money without saying so — hence the "not ChatGPT" on screen rather than a silent substitution.
+
+**Why standing in at all, rather than refusing.** Somebody who set exactly one key meant that key. Refusing on the grounds that a menu says otherwise is obtuse. Saying which one is being asked instead costs one phrase and removes the surprise.
+
+**Held by tests**: every model has its own key setting and its own address, no two share either, every one is offered in the Settings choice, every key box is held as a secret, and what the page is told carries names and readiness and never a key (D-81).
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

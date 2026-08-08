@@ -155,9 +155,47 @@ export const KNOWN = [
     fallback: () => '',
   },
   {
+    /**
+     * Which one is asked.
+     *
+     * A choice rather than a fallback order. Somebody who pays for one of these
+     * already should not have to start paying for another to use this at all,
+     * and a manager that quietly asked a different company than the one you
+     * chose would be spending your money without saying so.
+     */
+    id: 'askWho',
+    name: 'Which one to ask',
+    why: 'Whichever you already pay for. The question, and the few files it needs, go to that one and nowhere else.',
+    kind: 'choice',
+    choices: [
+      { id: 'claude', name: 'Claude' },
+      { id: 'openai', name: 'ChatGPT' },
+      { id: 'gemini', name: 'Gemini' },
+    ],
+    fallback: () => 'claude',
+  },
+  {
     id: 'anthropicKey',
     name: 'Key for Claude',
     why: 'Lets this manager ask Claude about a project when something fails. It stays on this computer, in the settings file, and is never sent anywhere but Claude. Get one from console.anthropic.com.',
+    kind: 'secret',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
+    id: 'openaiKey',
+    name: 'Key for ChatGPT',
+    why: 'The same thing for ChatGPT. It stays on this computer, in the settings file, and is never sent anywhere but OpenAI. Get one from platform.openai.com.',
+    kind: 'secret',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
+    id: 'geminiKey',
+    name: 'Key for Gemini',
+    why: 'The same thing for Gemini. It stays on this computer, in the settings file, and is never sent anywhere but Google. Get one from aistudio.google.com.',
     kind: 'secret',
     optional: true,
     longest: 200,

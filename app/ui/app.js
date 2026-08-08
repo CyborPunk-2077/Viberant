@@ -2273,7 +2273,8 @@ async function drawOpenProject() {
     </div>
     ${saidHtml()}
 
-    <div class="sect"><h2>Ask about this project</h2></div>
+    <div class="sect"><h2>Ask about this project</h2>
+      <span class="count" id="ai-who">…</span></div>
     <div class="card">
       <div class="bar" style="margin:0 0 .2rem">
         <button class="small" id="ai-diagnose">Is anything wrong with it?</button>
@@ -2328,6 +2329,28 @@ async function drawOpenProject() {
   $('#msg').onkeydown = (e) => { if (e.key === 'Enter') saveAndSend(); };
   showWhereItGoes();
   $('#more').onclick = () => gitHubSheet(p);
+  /**
+   * Which one is about to be asked, said before anybody asks it.
+   *
+   * A question here costs money at whichever company answers it, so which
+   * company that is belongs on screen next to the button rather than three
+   * pages away in Settings. It also says when the chosen one has no key and
+   * another is standing in, because being charged by a company you did not pick
+   * is a surprise nobody should get from a manager.
+   */
+  get('/ai').then((who) => {
+    const label = $('#ai-who');
+    if (!label) return;
+    label.textContent = who.ok
+      ? (who.insteadOf ? `${who.name}, not ${who.insteadOf}` : who.name)
+      : 'no key yet';
+    label.title = who.ok
+      ? who.insteadOf
+        ? `${who.insteadOf} is chosen in Settings and has no key here, so ${who.name} is being asked instead.`
+        : `Questions go to ${who.name} and nowhere else.`
+      : `${who.sentence} ${who.action}`;
+  });
+
   $('#ai-diagnose').onclick = () => askAssistant('diagnose', '/ai/diagnose');
   $('#ai-review').onclick = () => askAssistant('review', '/ai/review');
   const askIt = () => {
