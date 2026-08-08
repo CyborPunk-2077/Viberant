@@ -99,30 +99,43 @@ the shape of what is coming after a beat (D-94). Measured against the brief:
 rail rows 32px, bar 48px, buttons 36 and 32, radii 6/7/9/12, page title 24px.
 No sideways scroll at 1440, 1000 or 620. Seven screens, no errors.
 
-*Left, and stated plainly rather than glossed. In the order it matters.*
+**Deploy is a tool screen now.** A fact bar saying which project and which
+repository it will act on, two labelled sections of typed rows, and buttons
+called Build installer and Build & publish. A finished errand offers what it
+made — the artifact by name and size with Show in Explorer, a release or a site
+with Open and Copy the address, opened in the computer's browser rather than
+this window. D-114.
 
-**Still functional, and therefore first:**
+**Build never closed the app; the report of it vanished.** `paintJob` rebuilt
+its scaffolding only when the errand changed, but every redraw replaces the
+page — so it wrote each piece into elements that no longer existed. The build
+itself was correct all along, which is worse than it being broken. D-112.
 
-- **Deploy has not been rebuilt.** Its empty state is fixed and its wording is
-  still the old friendly-but-vague set. The reported faults — a website deploy
-  with no verified result and no URL, and the two build buttons appearing to do
-  nothing — have **not** been traced yet. That is the next thing to do.
-- **Settings still has the layout defects** in the GitHub section: narrow
-  column, clipped text, controls running together. Release-blocking and not
-  yet fixed.
-- **Workspace still shows remote offers in more than one place.** One canonical
-  section is decided but not implemented.
+**A website deploy waits for GitHub to say what it built** rather than calling a
+push a success. Three honest answers where there was one assumption. D-113.
+
+**GitHub has a section on Settings** with room to say which account every action
+will use. D-115. **Remote offers appear once**, in the Workspace table. D-116.
+
+**Four scenes exist**, drawn rather than shipped: a star field at three depths,
+a planet limb with light in its air, drifting clouds of colour, and a dark
+workstation lit like product photography. Twelve frames a second, nothing at all
+when the window is hidden, two megabytes. D-117.
+
+---
+
+*Left, and stated plainly rather than glossed.*
+
+- **No inspector beside the work.** The shell has room; nothing fills it. This
+  is the largest remaining item from the brief.
+- **Workspace's second polish pass.** It is structurally right and has not had
+  the individual design attention Projects, AI apps, Terminals and Deploy have.
 - **Resuming an interrupted transfer.** It fails honestly and retries from the
   start. It does not pick up where it stopped.
-
-**Visual, after that:**
-
-- **No background engine at all**, so brightness, dim, blur and motion have
-  nothing to control. Deep Space, Orbital, Nebula and Rig Room are names with
-  no imagery behind them and are deliberately **not** presented as if they had
-  any.
-- **No inspector beside the work.** The shell has room; nothing fills it.
-- **Workspace's second polish pass**, and a final consistency sweep.
+- **The scenes are barely visible** on a screen full of opaque panels, which is
+  correct by the readability rule and still worth revisiting — a little more
+  breathing room in the gutters would let them read without putting text on a
+  picture.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
