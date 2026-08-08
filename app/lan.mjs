@@ -19,7 +19,7 @@
  * something you would uninstall.
  */
 
-import { createServer, get as httpGet } from 'node:http';
+import { createServer, request } from 'node:http';
 import { createSocket } from 'node:dgram';
 import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir, rm, rename } from 'node:fs/promises';
@@ -457,42 +457,60 @@ const alreadyComing = (target) => {
  * headers and again in the parcel itself, how many files and how many bytes are
  * coming; the percentage is measured against that, and so is the verdict.
  */
-async function receiveInto(res, target, { job, jobs, called = null }) {
+async function receiveInto(res, target, { job, jobs, called = null, have = null, forOffer = null }) {
   const busy = alreadyComing(target);
   if (busy) { res.resume(); return busy; }
   arriving.set(resolve(target), called ?? basename(target));
 
   try {
-    return await intoFolder(res, target, { job, jobs });
+    return await intoFolder(res, target, { job, jobs, have, forOffer });
   } finally {
     arriving.delete(resolve(target));
   }
 }
 
-async function intoFolder(res, target, { job, jobs }) {
+async function intoFolder(res, target, { job, jobs, have = null, forOffer = null }) {
+  // What is on the way now, and what the whole folder comes to. They are the
+  // same on a first attempt and different on one that is carrying on.
   const wantFiles = Number(res.headers['x-viberant-files']) || 0;
   const wantBytes = Number(res.headers['x-viberant-bytes']) || 0;
+  const wholeFiles = Number(res.headers['x-viberant-whole-files']) || wantFiles;
+  const wholeBytes = Number(res.headers['x-viberant-whole-bytes']) || wantBytes;
 
-  jobs.step(job, wantBytes
-    ? `Bringing in ${wantFiles} files, ${parcel.inWords(wantBytes)}, to ${target}.`
-    : `Bringing it in to ${target}.`);
+  const held = Object.keys(have?.have ?? {}).length;
+  const heldBytes = Object.values(have?.have ?? {})
+    .reduce((sum, size) => sum + (Number(size) || 0), 0);
+
+  jobs.step(job, held
+    ? `Carrying on from ${held} files already here. ${parcel.inWords(wantBytes)} still to come.`
+    : wantBytes
+      ? `Bringing in ${wantFiles} files, ${parcel.inWords(wantBytes)}, to ${target}.`
+      : `Bringing it in to ${target}.`);
 
   const began = Date.now();
   let fastest = 0;
 
   const out = await parcel.unwrap(res, target, {
+    have,
+    forOffer,
+    // Anything worth waiting for is worth not doing twice. Below that, keeping
+    // a part of it costs a folder on the disk to save a couple of seconds.
+    keep: wholeBytes >= WORTH_KEEPING,
     onProgress: ({ files, bytes }) => {
       const seconds = Math.max((Date.now() - began) / 1000, 0.001);
-      const rate = bytes / seconds;
+      // What this attempt has moved, which is what a speed is about. Counting
+      // the part that was already here would put the rate at a hundred
+      // megabytes a second for the first instant and then have it fall.
+      const rate = Math.max(0, bytes - heldBytes) / seconds;
       if (rate > fastest) fastest = rate;
 
-      const parts = [`${files}${wantFiles ? ` of ${wantFiles}` : ''} files`,
-        `${parcel.inWords(bytes)}${wantBytes ? ` of ${parcel.inWords(wantBytes)}` : ''}`];
+      const parts = [`${files}${wholeFiles ? ` of ${wholeFiles}` : ''} files`,
+        `${parcel.inWords(bytes)}${wholeBytes ? ` of ${parcel.inWords(wholeBytes)}` : ''}`];
 
-      if (wantBytes) parts.push(`${Math.floor((bytes / wantBytes) * 100)}%`);
+      if (wholeBytes) parts.push(`${Math.floor((bytes / wholeBytes) * 100)}%`);
       if (rate > 0) parts.push(`${parcel.inWords(Math.round(rate))} a second`);
-      if (wantBytes && rate > 0 && bytes < wantBytes) {
-        parts.push(`about ${inTime((wantBytes - bytes) / rate)} left`);
+      if (wholeBytes && rate > 0 && bytes < wholeBytes) {
+        parts.push(`about ${inTime((wholeBytes - bytes) / rate)} left`);
       }
       jobs.write(job, parts.join(' · '));
     },
@@ -509,11 +527,18 @@ async function intoFolder(res, target, { job, jobs }) {
   // what landed. This is the third: what the reply's own headers claimed. It
   // costs nothing and it is the one that catches a reply that was cut short by
   // something between the two computers rather than by either of them.
-  if ((wantFiles && out.files !== wantFiles) || (wantBytes && out.bytes !== wantBytes)) {
+  //
+  // Held against **the whole folder**, not against the stream, which is what
+  // makes carrying on from a previous attempt safe: the numbers checked here
+  // are what the far end says the folder comes to, and what is now on this
+  // disk. A transfer that resumed and still came up short fails exactly as one
+  // that never resumed at all.
+  if ((wholeFiles && out.files !== wholeFiles) || (wholeBytes && out.bytes !== wholeBytes)) {
     await rm(out.at, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+    await parcel.forget(target);
     return {
       ok: false,
-      sentence: `Only ${parcel.inWords(out.bytes)} of ${parcel.inWords(wantBytes)} arrived, so nothing was kept.`,
+      sentence: `Only ${parcel.inWords(out.bytes)} of ${parcel.inWords(wholeBytes)} arrived, so nothing was kept.`,
       action: 'Nothing on this computer was changed. Try again when both are settled.',
     };
   }
@@ -580,22 +605,36 @@ async function handle(req, res) {
    * least measured the same way, but at the moment it was offered, which on a
    * project somebody is working in is a different folder by the afternoon.
    */
-  const handOver = async (path, { everything, name }) => {
-    const seen = await parcel.survey(path, { everything });
+  const handOver = async (path, { everything, name, have = null }) => {
+    const whole = await parcel.survey(path, { everything });
 
-    if (seen.unreadable.length) {
+    if (whole.unreadable.length) {
       return say(409, {
         ok: false,
-        sentence: `${seen.unreadable.length} folders inside ${name} could not be read on this computer.`,
+        sentence: `${whole.unreadable.length} folders inside ${name} could not be read on this computer.`,
         action: 'Close anything using that folder, then ask again.',
       });
     }
 
+    // What is left to send, once whatever the asker already has is taken out.
+    const seen = parcel.withoutWhatTheyHave(whole, have);
+
+    /**
+     * Two sets of numbers, and both are needed.
+     *
+     * The plain ones describe **this stream**, which is what the receiver holds
+     * the parcel to. The whole ones describe **the folder**, which is what the
+     * receiver holds the finished result to once it has added back what it was
+     * already keeping. One set could not do both jobs: a stream carrying the
+     * last tenth of a folder is complete and a tenth of a folder is not.
+     */
     res.writeHead(200, {
       'content-type': 'application/octet-stream',
       'x-viberant-files': String(seen.files.length),
       'x-viberant-dirs': String(seen.dirs.length),
       'x-viberant-bytes': String(seen.bytes),
+      'x-viberant-whole-files': String(whole.files.length),
+      'x-viberant-whole-bytes': String(whole.bytes),
       'x-viberant-name': name,
     });
     return parcel.wrap(path, { everything, seen })
@@ -603,17 +642,46 @@ async function handle(req, res) {
       .pipe(res);
   };
 
+  /**
+   * What the asker says it already has, if it said anything.
+   *
+   * Read with a ceiling on it. This is the one place another computer hands
+   * this one a list it chose the length of, and a list with no limit is a way
+   * to fill this computer's memory from across the room — even a computer of
+   * yours, even by accident.
+   */
+  const whatTheyHave = () => new Promise((done) => {
+    if (req.method !== 'POST') return done(null);
+    let text = '';
+    let over = false;
+    req.on('data', (chunk) => {
+      if (over) return;
+      text += chunk;
+      if (text.length > 8 * 1024 * 1024) { over = true; text = ''; }
+    });
+    req.on('end', () => {
+      if (over || !text) return done(null);
+      try {
+        const said = JSON.parse(text);
+        done(said?.have && typeof said.have === 'object' ? said.have : null);
+      } catch { done(null); }
+    });
+    req.on('error', () => done(null));
+  });
+
   // One project by name, for a computer that already has it and wants ours.
   if (url.pathname === '/project') {
     const wanted = url.searchParams.get('name');
     const one = (await whatIHave()).find((p) => p.name === wanted);
     if (!one || !existsSync(one.path)) return say(404, { ok: false });
-    return handOver(one.path, { everything: false, name: one.name });
+    return handOver(one.path, { everything: false, name: one.name, have: await whatTheyHave() });
   }
 
   if (url.pathname === '/parcel') {
     const one = (await offers()).find((o) => o.id === url.searchParams.get('id'));
     if (!one || !existsSync(one.path)) return say(404, { ok: false });
+
+    const have = await whatTheyHave();
 
     // One file travels as a parcel of one, so both ends keep the single format
     // they already know — and the name and every byte of it survive, which is
@@ -633,7 +701,7 @@ async function handle(req, res) {
         .pipe(res);
     }
 
-    return handOver(one.path, { everything: one.everything, name: one.name });
+    return handOver(one.path, { everything: one.everything, name: one.name, have });
   }
 
   return say(404, { ok: false });
@@ -648,22 +716,43 @@ const ANSWER_WITHIN = 6000;
 /** How long something already arriving may go quiet before it is given up on. */
 const SILENCE_FOR = 15000;
 
-function tryOne(peer, address, path) {
+/**
+ * Big enough that starting again would be a real loss.
+ *
+ * Below this, keeping a half-finished folder on the disk to save a couple of
+ * seconds is a worse trade than simply asking again: there is a folder left
+ * lying about, and somebody has to be told about it, for nothing.
+ */
+const WORTH_KEEPING = 50 * 1024 * 1024;
+
+function tryOne(peer, address, path, carrying = null) {
   return new Promise((done) => {
     let settled = false;
     const finish = (value) => { if (!settled) { settled = true; done(value); } };
 
-    const req = httpGet({
+    // A question with a list attached goes as a POST, because the list of files
+    // this computer already has does not fit in an address — on a project of
+    // eight thousand files it is half a megabyte of paths.
+    const body = carrying ? Buffer.from(JSON.stringify(carrying), 'utf8') : null;
+
+    const req = request({
       host: address,
       port: peer.port ?? CARRY_PORT,
       path,
-      headers: { 'x-viberant-pass': pass(me.key, me.account) },
+      method: body ? 'POST' : 'GET',
+      headers: {
+        'x-viberant-pass': pass(me.key, me.account),
+        ...(body ? { 'content-type': 'application/json', 'content-length': String(body.length) } : {}),
+      },
       timeout: SILENCE_FOR,
     }, (res) => {
       clearTimeout(waiting);
       if (res.statusCode !== 200) { res.resume(); return finish(null); }
       finish(res);
     });
+
+    if (body) req.write(body);
+    req.end();
 
     // An address on a network that does not exist does not refuse — it says
     // nothing at all, and this computer waits out its own connect timeout,
@@ -687,10 +776,10 @@ function tryOne(peer, address, path) {
  *
  * Ordering them helps and is still only a guess. Trying them all is the fix.
  */
-async function ask(peer, path) {
+async function ask(peer, path, carrying = null) {
   if (!me) return null;
   for (const address of peer.addresses ?? []) {
-    const res = await tryOne(peer, address, path);
+    const res = await tryOne(peer, address, path, carrying);
     if (!res) continue;
     // Whichever one answered goes first from now on, so the next question does
     // not pay for the same dead addresses again. Written down by name rather
@@ -747,8 +836,26 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     });
   }
 
-  jobs.step(job, `Asking ${peer.name} for it.`);
-  const res = await ask(peer, `/parcel?id=${encodeURIComponent(offerId)}`);
+  /**
+   * What a previous attempt at this same thing already got.
+   *
+   * Looked up before asking, because it changes the question: the sender is
+   * told what is already here and sends only the rest. Keyed to the offer, so a
+   * half-finished folder from something else is never mistaken for a head start
+   * on this one.
+   */
+  const settling = name
+    ? join(resolve(into), name)
+    : join(resolve(into), 'folder');
+  const already = await parcel.whatIsAlreadyHere(settling, { forOffer: offerId });
+  const carriedFiles = Object.keys(already?.have ?? {}).length;
+
+  jobs.step(job, carriedFiles
+    ? `Asking ${peer.name} for the rest of it — ${carriedFiles} files are already here.`
+    : `Asking ${peer.name} for it.`);
+
+  const res = await ask(peer, `/parcel?id=${encodeURIComponent(offerId)}`,
+    already ? { have: already.have } : null);
   if (!res) {
     return jobs.end(job, {
       ok: false,
@@ -769,7 +876,15 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     ? join(resolve(into), `${called}.viberant-arriving`)
     : join(resolve(into), called);
 
-  const out = await receiveInto(res, target, { job, jobs, called });
+  // A file is one file: there is no half of it worth keeping, and a ledger of
+  // one entry is either everything or nothing.
+  const out = await receiveInto(res, target, {
+    job,
+    jobs,
+    called,
+    forOffer: offerId,
+    have: isFile ? null : (target === settling ? already : null),
+  });
   if (!out.ok) return jobs.end(job, out);
 
   if (isFile) {
@@ -789,6 +904,8 @@ export async function take({ machine, offerId, into, name, job, jobs }) {
     ok: true,
     at: out.at,
     sentence: `${name || out.at.split(/[\\/]/).pop()} is on this computer — ${out.files} files, ${parcel.inWords(out.bytes)}.`,
-    action: 'Open it from your projects whenever you are ready.',
+    action: out.carriedOver
+      ? `${out.carriedOver} of them were already here from the last try, so only the rest came over.`
+      : 'Open it from your projects whenever you are ready.',
   });
 }

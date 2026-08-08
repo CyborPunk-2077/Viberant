@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 330 passing on Windows. The ones added last hold the two decisions
+**Tests:** 340 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -231,6 +231,25 @@ keeps somebody else's artwork and somebody else's licence out of this entirely.
 A test fails on any look that leaves a variable out, because that does not error
 — it silently inherits the look above.
 
+**A transfer that stopped carries on from where it stopped.** Anything over
+about 50 MB keeps what it confirmed, with a ledger beside it naming every file
+that reached its stated size — so the file that was half written when the
+network went is asked for again rather than kept. Asking again sends that
+ledger, and the other computer sends only what is missing. A file that changed
+between the two attempts is matched by name *and* size, so it is sent again:
+skipping it would hand somebody a folder that is a mixture of two moments, which
+no count would catch because every count would agree. D-136.
+
+Two faults that were already there came out of building it. `unwrap` piped from
+its source without listening for an error on it, so a reply that died half way
+through its body raised an error nothing was listening to — and that ends the
+whole manager. And a file re-sent because it changed was counted at both its old
+and new size. Neither could be reached by any earlier test, because every one of
+them ended its stream politely.
+
+Measured over a real socket: 1.2 MB cut at 400 KB kept 6 files, the second ask
+carried 15 of 21 files and 840 KB of 1.2 MB, and what landed was byte-identical.
+
 **A picture of your own, and the honest thing that has to happen with it.**
 Any picture on this computer. Nothing is copied and nothing is sent — the path
 is kept and the file is read where it sits. Every other look here was made dark
@@ -256,9 +275,6 @@ wrong place to be when the thought arrives.
   everything above and carries it — checked by reading `newer.mjs` and the fixed
   stylesheet out of the packed copy, rather than trusting the build. Run it to
   replace the installed copy.
-- **Resuming an interrupted transfer.** It fails honestly and retries from the
-  start. It does not pick up where it stopped. Per the brief's own priority,
-  reliable transfer and honest retry came first and both are done.
 - **The scenes are barely visible** on a screen full of opaque panels. That is
   correct by the readability rule and still worth revisiting: a little more
   breathing room in the gutters would let them read without putting text on a

@@ -1535,6 +1535,25 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-136 `[DECIDED]` — A transfer that stopped carries on, and a file is matched by name *and* size
+
+**Decision.** A folder over about 50 MB that stops part way keeps what it confirmed, in the half-built folder it was already using, with a ledger beside it naming every file that reached its stated size. Asking again sends that ledger to the other computer, which sends only what is missing. Below 50 MB nothing is kept — a folder left lying about to save two seconds is a worse trade.
+
+**Why the ledger and not the folder.** The file being written when the network went is on the disk and is *not* in the ledger, so it is asked for again and written over. Trusting what happens to be lying there would keep a truncated file and call the transfer finished, which is the one kind of wrong this whole format exists to refuse.
+
+**Why name and size, never name alone.** A file that changed between the two attempts has the same name and different bytes. Skipping it would hand somebody a folder that is a mixture of two moments — every file present, every count agreeing, and the contents wrong. No count would catch it, because every count would agree.
+
+**Where the checking moved, and where it did not.** The parcel's three-way check is unchanged and is still about **the stream**: the sender was asked for the rest, so the rest is what it promises, sends and is held to. Whether the *folder* is now complete is a different question, asked one level up where both halves are known, against two new headers saying what the whole comes to. Folding them together would have compared a part against a whole and failed every resumed transfer.
+
+**Two real faults found by building it**, both of which existed before and neither of which any earlier test could reach:
+
+1. **`unwrap` piped from its source without listening for an error on it.** `pipe` does not carry an error forward, so a reply that died half way through its body raised an error on a stream nothing was listening to — and an unheard `error` is not a rejected promise, it comes out of the event loop with nobody expecting it and ends the whole manager (D-77). Every earlier test ended its stream politely, which is the one thing a failing transfer never does.
+2. **A file re-sent because it changed was counted twice**, at its old size and its new one, so the total came out larger than the folder. It needs an interruption *and* an edit, in that order, which is why it took a test that did both.
+
+**Measured over a real socket**, not only in process: 1.2 MB cut at 400 KB kept 6 files, the second ask carried 15 of 21 files and 840 KB of 1.2 MB, and what landed was byte-identical to what was sent.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

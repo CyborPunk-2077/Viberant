@@ -36,8 +36,8 @@
  * nothing is read, and a hundred megabytes costs the same as an empty folder.
  */
 
-import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readdir, stat, rm } from 'node:fs/promises';
+import { createReadStream, createWriteStream, existsSync } from 'node:fs';
+import { mkdir, readdir, stat, rm, readFile, writeFile } from 'node:fs/promises';
 import { join, dirname, relative, sep, resolve } from 'node:path';
 import { createGzip, createGunzip } from 'node:zlib';
 import { PassThrough } from 'node:stream';
@@ -175,6 +175,35 @@ export const inWords = (bytes) => (bytes >= 1e9
  * Returns a readable straight away and fills it as it goes, so nothing is ever
  * held whole in memory and a large project starts moving immediately.
  */
+/**
+ * The same survey with what the other end already has taken out of it.
+ *
+ * **Matched on path and size together, never on path alone.** A file that has
+ * changed since the attempt that carried it has the same name and different
+ * bytes, and skipping it would hand somebody a folder that is a mixture of two
+ * moments — every file present, every count agreeing, and the contents wrong.
+ * That is the exact shape of quiet failure this whole format exists to refuse,
+ * so a size that does not match means the file is sent again.
+ *
+ * The folders are all kept. Making one that is already there costs nothing and
+ * saves working out which of them the other end managed to create.
+ */
+export function withoutWhatTheyHave(seen, have) {
+  if (!have || !Object.keys(have).length) return seen;
+
+  const files = seen.files.filter((one) => Number(have[one.path]) !== one.size);
+  return {
+    ...seen,
+    files,
+    bytes: files.reduce((sum, one) => sum + one.size, 0),
+    /** What the other end is keeping, so the reply can say what the whole is. */
+    theirs: {
+      files: seen.files.length - files.length,
+      bytes: seen.bytes - files.reduce((sum, one) => sum + one.size, 0),
+    },
+  };
+}
+
 export function wrap(root, { everything = false, seen = null } = {}) {
   const out = new PassThrough();
   const squashed = createGzip({ level: 6 });
@@ -298,20 +327,106 @@ export function wrapOne(path) {
 // Opening one
 // ---------------------------------------------------------------------------
 
+/** Where a folder is built while it is still arriving, and its ledger. */
+export const halfOf = (into) => `${resolve(into)}.part`;
+export const ledgerOf = (into) => join(halfOf(into), '.viberant-carried.json');
+
+/**
+ * What a previous attempt already got, if it left anything.
+ *
+ * The ledger rather than the folder, and the difference matters: a file that
+ * was half written is on the disk and is not in the ledger, so it is asked for
+ * again and overwritten. Trusting the folder would keep a truncated file and
+ * call the transfer finished, which is the one kind of wrong this must not be.
+ */
+export async function whatIsAlreadyHere(into, { forOffer = null } = {}) {
+  const at = ledgerOf(into);
+  if (!existsSync(at)) return null;
+
+  try {
+    const held = JSON.parse(await readFile(at, 'utf8'));
+    if (!held?.have || typeof held.have !== 'object') return null;
+    // A part folder left over from something else entirely is not a head start,
+    // it is a folder about to be filled with two different things.
+    if (forOffer && held.forOffer && held.forOffer !== forOffer) return null;
+    return held;
+  } catch { return null; }
+}
+
+/** Forget a part-finished folder, and take it off the disk. */
+export async function forget(into) {
+  await rm(halfOf(into), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+    .catch(() => {});
+}
+
 /**
  * Unwrap a stream into a folder.
  *
  * Written beside the folder first and moved into place only once the closing
  * line has arrived, so a transfer that stops half way leaves nothing that looks
  * like a finished project.
+ *
+ * **`have` is what a previous attempt already landed.** With it, the half-built
+ * folder is kept rather than cleared, those files are counted as here from the
+ * start, and the sender has been asked for only the rest. Without it this
+ * behaves exactly as it always did — a fresh folder, from nothing.
+ *
+ * **`keep` decides what happens to a transfer that stops.** Off, the half folder
+ * goes and nothing is left behind, which is right for a first attempt at
+ * something small. On, what arrived stays with a ledger beside it, so the next
+ * attempt can carry on instead of starting again. Either way **nothing that
+ * looks finished is ever left**, because the half folder is never the target.
  */
-export async function unwrap(stream, into, { onProgress } = {}) {
+export async function unwrap(stream, into, {
+  onProgress, have = null, keep = false, forOffer = null,
+} = {}) {
   const target = resolve(into);
-  const half = `${target}.part`;
-  await rm(half, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  const half = halfOf(target);
+
+  if (!have) await rm(half, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await mkdir(half, { recursive: true });
 
-  const loose = stream.pipe(createGunzip());
+  // Everything a previous attempt confirmed. Counted in from the start, so the
+  // numbers this reports are about the whole folder rather than about one go at
+  // it — the person is waiting for a folder, not for an attempt.
+  const carried = new Map(Object.entries(have?.have ?? {}));
+  let alreadyFiles = 0;
+  let alreadyBytes = 0;
+  for (const size of carried.values()) { alreadyFiles += 1; alreadyBytes += Number(size) || 0; }
+
+  /**
+   * A file that was already here and has been sent again.
+   *
+   * It changed since the last attempt, so the sender sent it rather than
+   * trusting the name — and it is no longer part of what was already here, it
+   * is part of what just arrived. Without this it is counted twice, at two
+   * different sizes, and the total comes out larger than the folder. Found by a
+   * test that changed a file between two attempts, which is the only way this
+   * ever shows: it needs an interruption *and* an edit, in that order.
+   */
+  const forgetOldCopyOf = (named) => {
+    if (!carried.has(named)) return;
+    alreadyFiles -= 1;
+    alreadyBytes -= Number(carried.get(named)) || 0;
+  };
+
+  /**
+   * A source that fails, rather than merely stops.
+   *
+   * `pipe` does not carry an error forward. So a reply that dies half way
+   * through its body raised an error on a stream nothing was listening to, and
+   * an unheard `error` is not a rejected promise — it comes out of the event
+   * loop with nobody expecting it, which in this process ends the whole manager
+   * (D-77). The one place that reads it is here, so the listener goes here, and
+   * it is turned into the ordinary answer: it stopped part way through.
+   *
+   * Found by a test that cut a transfer the way a network cuts one. Every
+   * earlier test ended its stream politely, which is the one thing a failing
+   * transfer never does.
+   */
+  const loose = createGunzip();
+  stream.on('error', (e) => loose.destroy(e));
+  stream.pipe(loose);
 
   let holding = Buffer.alloc(0);
   let promised = null;
@@ -322,6 +437,8 @@ export async function unwrap(stream, into, { onProgress } = {}) {
   let dirs = 0;
   let bytes = 0;
   let finished = null;
+  /** What this stream has landed whole, so a next attempt need not ask again. */
+  let landing = null;
 
   /**
    * A disk that would not take it.
@@ -356,6 +473,7 @@ export async function unwrap(stream, into, { onProgress } = {}) {
     const path = safely(half, named);
     if (!path) throw new Error('a file tried to land outside the folder');
     await mkdir(dirname(path), { recursive: true });
+    landing = { path: named, size };
     writing = createWriteStream(path);
     // A disk that fills up, or a name this computer will not accept, used to be
     // nobody's business: the stream was written to and never listened to, so
@@ -366,6 +484,9 @@ export async function unwrap(stream, into, { onProgress } = {}) {
       await new Promise((r) => writing.end(r));
       writing = null;
       files += 1;
+      forgetOldCopyOf(named);
+      carried.set(named, 0);
+      landing = null;
     }
   };
 
@@ -383,8 +504,13 @@ export async function unwrap(stream, into, { onProgress } = {}) {
           await new Promise((r) => writing.end(r));
           writing = null;
           files += 1;
+          if (landing) {
+            forgetOldCopyOf(landing.path);
+            carried.set(landing.path, landing.size);
+          }
+          landing = null;
         }
-        onFile?.({ files, bytes, of: promised });
+        onFile?.({ files: alreadyFiles + files, bytes: alreadyBytes + bytes, of: promised });
         continue;
       }
 
@@ -441,20 +567,63 @@ export async function unwrap(stream, into, { onProgress } = {}) {
   }
 
   if (writing) await new Promise((r) => writing.end(r));
-  onProgress?.({ files, bytes, of: promised });
+  onProgress?.({ files: alreadyFiles + files, bytes: alreadyBytes + bytes, of: promised });
 
   // A write that failed at the very end, after the last chunk was handed over.
   if (refused) finished = null;
 
+  /**
+   * Give up, and decide whether what arrived is worth keeping.
+   *
+   * Keeping it is only ever safe because of the ledger. It lists the files that
+   * reached their stated size and nothing else, so the file that was being
+   * written when the network went is absent from it — it is on the disk, it
+   * will be asked for again, and it will be written over. A folder is never
+   * built out of what merely happens to be lying there.
+   */
   const giveUp = async (sentence, action) => {
+    if (keep && carried.size) {
+      const ledger = {
+        forOffer: forOffer ?? null,
+        have: Object.fromEntries(carried),
+        at: Date.now(),
+      };
+      const wrote = await writeFile(ledgerOf(target), JSON.stringify(ledger), 'utf8')
+        .then(() => true).catch(() => false);
+
+      if (wrote) {
+        return {
+          ok: false,
+          resumable: true,
+          have: carried.size,
+          haveBytes: alreadyBytes + bytes,
+          sentence,
+          action,
+          files: alreadyFiles + files,
+          bytes: alreadyBytes + bytes,
+          promised,
+        };
+      }
+    }
+
     await rm(half, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-    return { ok: false, sentence, action, files, bytes, promised };
+    return {
+      ok: false,
+      sentence,
+      action,
+      files: alreadyFiles + files,
+      bytes: alreadyBytes + bytes,
+      promised,
+    };
   };
 
   if (!finished) {
+    const parts = broke?.message?.includes('outside the folder');
     return giveUp(
-      'The folder stopped arriving part way through, so nothing was kept.',
-      broke?.message?.includes('outside the folder')
+      keep && carried.size && !parts
+        ? `The folder stopped arriving part way through. ${carried.size} files are here and the rest can be asked for again.`
+        : 'The folder stopped arriving part way through, so nothing was kept.',
+      parts
         ? 'That parcel is not one this computer will accept.'
         : 'Check both computers are still on the same network, then try again.',
     );
@@ -467,21 +636,41 @@ export async function unwrap(stream, into, { onProgress } = {}) {
   // the far end says it sent, and what actually landed on this disk. Any two of
   // them agreeing is not enough — a sender that skipped a folder would have a
   // consistent story with itself all the way through.
+  //
+  // All three are about **this stream**, and stay that way when a transfer is
+  // being carried on from a previous attempt: the sender was asked for the
+  // rest, so the rest is what it promised, sent and is held to. Whether the
+  // whole folder is now here is a different question with a different answer,
+  // and it is asked one level up where both halves are known. Folding them
+  // together here would have made this check compare a part against a whole and
+  // fail every resumed transfer.
   const shortOf = (a, b) => a !== undefined && a !== null && a !== b;
 
   if (shortOf(finished.files, files) || shortOf(finished.bytes, bytes)
     || (promised && (shortOf(promised.totalFiles, files) || shortOf(promised.totalBytes, bytes)))) {
-    const wanted = promised?.totalBytes ?? finished.bytes ?? 0;
+    const wanted = (promised?.totalBytes ?? finished.bytes ?? 0) + alreadyBytes;
     return giveUp(
-      `Only ${inWords(bytes)} of ${inWords(wanted)} arrived, so nothing was kept.`,
+      `Only ${inWords(alreadyBytes + bytes)} of ${inWords(wanted)} arrived, so it is not finished.`,
       'Nothing on this computer was changed. Try again when both are settled.',
     );
   }
 
+  // The ledger tracked an arrival. Once it has arrived it is litter, and litter
+  // inside somebody's project is worse than litter beside it.
+  await rm(ledgerOf(target), { force: true }).catch(() => {});
+
   await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await moveIntoPlace(half, target);
 
-  return { ok: true, files, dirs, bytes, at: target, promised };
+  return {
+    ok: true,
+    at: target,
+    dirs,
+    files: alreadyFiles + files,
+    bytes: alreadyBytes + bytes,
+    promised,
+    carriedOver: alreadyFiles,
+  };
 }
 
 /**
