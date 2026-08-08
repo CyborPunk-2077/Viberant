@@ -202,6 +202,32 @@ export const KNOWN = [
     fallback: () => '',
   },
   {
+    /**
+     * Where the small service that introduces computers lives.
+     *
+     * Empty means the one inside this app, which needs no account and costs
+     * nothing and is enough for your own computers on your own network. An
+     * address here points at one somewhere else, which is what lets two
+     * computers on different networks find each other.
+     */
+    id: 'workspaceService',
+    name: 'Where your computers find each other',
+    why: 'Leave this empty and your computers find each other on this network. An address here lets them find each other from anywhere. It never carries your files — only which computers are about.',
+    kind: 'text',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
+    id: 'relayService',
+    name: 'Where to pass through when a direct line is not possible',
+    why: 'Most home connections cannot be reached from outside, so two computers need somewhere to meet. Whatever passes through cannot be read by it — both ends agree a key first.',
+    kind: 'text',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
     id: 'grains',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
