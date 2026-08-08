@@ -997,7 +997,8 @@ function whenItWouldNot(box, r, { kind, where, body }) {
     <div class="fact" id="ai-else"></div>`;
 
   // The one thing to do, named for the thing that actually went wrong.
-  const first = noKey ? { does: 'setup', says: 'Set it up now' }
+  const first = r.noneAtAll ? { does: 'setup', says: 'Connect AI' }
+    : noKey ? { does: 'setup', says: 'Set it up now' }
     : badKey ? { does: 'setup', says: 'Replace the key' }
       : noModel ? { does: 'setup', says: 'Pick another model' }
         : { does: 'retry', says: queued ? 'Try again now' : 'Try again' };
@@ -1006,6 +1007,21 @@ function whenItWouldNot(box, r, { kind, where, body }) {
   acts.innerHTML = `
     <button class="go small" data-ai-do="${first.does}">${esc(first.says)}</button>
     ${noKey ? '' : '<button class="quiet small" data-ai-do="setup">Change which one answers\u2026</button>'}`;
+
+  /*
+    * Which companies there are, said rather than left to be found.
+    *
+    * "Viberant has no key for Claude yet" reads as though Claude were the only
+    * one there is, and sends somebody off to open an account with a company
+    * they may not have chosen. There are three, and any one is enough.
+    */
+  if (r.noneAtAll) {
+    const line = $('#ai-else');
+    if (line) {
+      line.className = 'fact';
+      line.textContent = 'Claude, ChatGPT or Gemini \u2014 whichever you already pay for. Any one is enough.';
+    }
+  }
 
   const again = () => askAssistant(kind, where, body);
 
@@ -1223,6 +1239,10 @@ function wireInspect(which, show) {
 function inspectMachine(m, near, w) {
   if (!m) return inspect(null);
 
+  // Its projects that have been saved and sent, which is the only thing that
+  // can be fetched when the computer itself is not on this network.
+  const onGitHub = (w.projects ?? []).filter((p) => p.from === m.id && p.url);
+
   /**
    * The one you are sitting at needs the opposite sentence.
    *
@@ -1281,15 +1301,57 @@ function inspectMachine(m, near, w) {
       how: near ? 'Direct · this network' : m.hereNow ? 'Notes only' : 'Not reachable',
       good: !!near,
     },
+    /*
+     * What this computer has, reached from this computer.
+     *
+     * There used to be a second list further down the page holding everybody's
+     * projects mixed together — two places to look and two places to keep
+     * right. One place, and it is the computer you pressed.
+     */
     acts: here
       ? [
         { what: 'Rename it', run: () => $('#w-rename')?.click() },
         ...(w.sharingHere ? [] : [{ what: 'Let the others reach it', run: () => $('#w-share-on')?.click() }]),
       ]
-      : near
-        ? [{ what: 'See what it is offering', run: () => peekAt(m.id, w) }]
-        : [],
+      : [
+        ...(near ? [{ what: 'See what it is offering', run: () => peekAt(m.id, w) }] : []),
+        ...(onGitHub.length
+          ? [{ what: `Get a copy from GitHub\u2026 (${onGitHub.length})`, run: () => copiesFrom(m, onGitHub, w) }]
+          : []),
+      ],
   });
+}
+
+/**
+ * Copies of another computer's projects, from GitHub.
+ *
+ * Only what has been saved and sent, and it says so — that gap is exactly how
+ * 1.3 GB arrived as 300 MB and looked like a broken transfer. When the computer
+ * itself is on this network the other way is better, and is offered above this.
+ */
+function copiesFrom(m, projects, w) {
+  sheet({
+    title: `${m.name} \u00b7 copies on GitHub`,
+    body: `
+      <p class="sub">Copies of what has been <b>saved and sent</b> from ${esc(m.name)}.
+        Anything changed there and not yet sent is not in them.</p>
+      <div class="sheetlist">
+        ${projects.map((p) => `
+          <div class="trow">
+            <span class="kindmark" aria-hidden="true">${KIND_MARK.project}</span>
+            <span class="tname">
+              <b>${esc(p.name)}</b>
+              <span class="where">${esc(p.says ?? 'on GitHub')}</span>
+            </span>
+            <span class="tacts">
+              <button class="go small" data-bring='${esc(JSON.stringify(p))}'>Get the copy</button>
+            </span>
+          </div>`).join('')}
+      </div>`,
+    foot: '<button class="quiet" id="copies-no">Never mind</button>',
+  });
+  $('#copies-no').onclick = closeLayer;
+  wireBring(layer, w);
 }
 
 /** What is known about something this computer is offering. */
@@ -2040,18 +2102,45 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
         <div class="walk">
           <div class="here"><button class="quiet small" id="walk-up">↑ up</button><span id="walk-here"></span></div>
           <div class="list" id="walk-box"></div>
+        </div>
+        <label class="field" for="walk-path">Or type where it is</label>
+        <div class="bar" style="margin:0">
+          <input id="walk-path" class="mono" style="flex:1" spellcheck="false"
+            placeholder="D:\\Projects\\something">
+          <button class="small" id="walk-go">Go there</button>
         </div>`,
       foot: `<button class="quiet" id="walk-native">Use the Windows folder chooser</button>
              <button class="quiet" id="walk-no">Never mind</button>
              <button class="go" id="walk-take">${esc(confirm)}</button>`,
       onOpen: async () => {
         $('#walk-no').onclick = () => { closeLayer(); resolve(null); };
+
+        /*
+         * Typing where it is, for anybody who already knows.
+         *
+         * Clicking down to a folder is eleven presses when pasting the path is
+         * one, and somebody who has it in their clipboard should not have to
+         * walk a tree to use it.
+         */
+        const goThere = async () => {
+          const typed = $('#walk-path').value.trim();
+          if (!typed) return;
+          const r = await get(`/browse?at=${encodeURIComponent(typed)}`);
+          if (!r.ok) {
+            $('#walk-box').innerHTML = `<div class="item">${esc(r.sentence ?? 'That folder is not there.')}</div>`;
+            return;
+          }
+          $('#walk-path').value = '';
+          paint(typed);
+        };
+        $('#walk-go').onclick = goThere;
+        $('#walk-path').onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); goThere(); } };
         $('#walk-take').onclick = () => { closeLayer(); resolve(herePath); };
         $('#walk-native').onclick = async () => {
           const button = $('#walk-native');
           button.disabled = true;
           button.textContent = 'Waiting for the chooser…';
-          const r = await post('/browse/choose', { startAt: herePath });
+          const r = await post('/browse/choose', {});
           button.disabled = false;
           button.textContent = 'Use the Windows folder chooser';
           if (r.ok) { closeLayer(); resolve(r.path); return; }
@@ -2726,7 +2815,7 @@ function wireAskPanel() {
     if (!label) return;
     label.textContent = who.ok
       ? (who.insteadOf ? `${who.name}, not ${who.insteadOf}` : `${who.name} \u00b7 ${modelNamed(who, who.using)}`)
-      : 'nothing set up yet';
+      : 'no AI connected yet';
     label.title = who.ok
       ? who.insteadOf
         ? `${who.insteadOf} is chosen and has no key here, so ${who.name} is being asked instead. Press to change it.`
@@ -5254,7 +5343,6 @@ SCREENS.workspace = async () => {
     workingOn: me.currentName ?? null,
   };
   const others = known.filter((m) => !m.you);
-  const theirs = (w.projects ?? []).filter((p) => !p.yours);
   const reachable = others.filter((m) => nearby.has(m.id)).length;
 
   view.innerHTML = `
@@ -5304,7 +5392,11 @@ SCREENS.workspace = async () => {
 
     <div id="team"></div>
 
-    <div class="sect"><h2>Your computers on this network</h2><span class="count">${known.length}</span></div>
+    <div class="sect"><h2>Also signed in to your GitHub account</h2>
+      <span class="count">${known.length}</span></div>
+    <p class="sub" style="margin:-.4rem 0 .7rem">Being on the same account is not being in a
+      workspace. Nobody here can be reached, asked for anything, or told anything until they
+      join one — which is the list above.</p>
     <div class="sheetlist machine-cols">
       <div class="trow tap on-this" data-machine="${esc(mine.id)}">
         <span class="dot ${w.sharingHere ? 'live' : 'off'}"></span>
@@ -5366,37 +5458,10 @@ SCREENS.workspace = async () => {
          Offer a file or a folder and your other computers can take a copy. Nothing moves until one asks.
          <span class="acts"><button class="go" id="w-offer-empty">Offer…</button></span></div>`}
 
-    <div class="sect"><h2>Available from your other computers</h2>
-      <span class="count">${theirs.length}</span></div>
-    ${theirs.length ? `<div class="sheetlist avail-cols">${theirs.map((p) => `
-      <div class="trow">
-        <span class="kindmark" aria-hidden="true">${KIND_MARK.project}</span>
-        <span class="tname">
-          <b>${esc(p.name)}</b>
-          <span class="where">on ${esc(p.fromName)}${p.says ? ` · ${esc(p.says)}` : ''}${
-  p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</span>
-        </span>
-        <span class="chip">${p.kind ? esc(p.kind) : 'Project'}</span>
-        <span class="state ${nearby.has(p.from) ? 'finished' : p.url ? 'working' : 'notStarted'}">
-          <span class="pip"></span>${nearby.has(p.from)
-    ? 'Direct transfer' : p.url ? 'GitHub copy' : 'Out of reach'}</span>
-        <span class="tacts">
-          <button class="small" data-bring='${esc(JSON.stringify(p))}'
-            ${nearby.has(p.from) || p.url ? '' : 'disabled'}
-            data-tip="${nearby.has(p.from)
-    ? `Everything in the folder, straight from ${esc(p.fromName)} across this network`
-    : p.url
-      ? `${esc(p.fromName)} is not on this network. Only work that has been saved and sent to GitHub would come.`
-      : `Ask ${esc(p.fromName)} to offer the folder instead`}">${
-  nearby.has(p.from) ? 'Bring it here' : 'Get the GitHub copy'}</button>
-        </span>
-      </div>`).join('')}</div>`
-    : `<div class="empty"><b>Nothing offered to this computer.</b>
-         Anything your other computers offer shows here.</div>`}
-
-    <div class="sect"><h2>Notes between your computers</h2></div>
+    <div class="sect"><h2>Notes</h2>
+      <span class="count">${(w.said ?? []).length}</span></div>
     <div class="card">
-      <div class="talk" id="talk">
+      <div class="talk short" id="talk">
         ${(w.said ?? []).map((s) => `
           <div class="bubble ${s.you ? 'mine' : ''}">
             <div style="font-size:.74rem;color:var(--faint)">${esc(s.fromName)} · ${ago(s.at)}</div>
@@ -5523,36 +5588,47 @@ SCREENS.workspace = async () => {
       menuAt({ x: e.clientX, y: e.clientY }, items);
     };
   }
-  for (const b of document.querySelectorAll('[data-bring]')) {
+  // Redraw the errand once, without starting a second loop watching it.
+  if (watching) paintJob({ again: !jobTimer });
+  workspaceTimer = setTimeout(() => {
+    if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw({ quietly: true });
+  }, 20000);
+};
+
+/**
+ * Bringing a copy of somebody else's project here.
+ *
+ * Written once and wired wherever those buttons are drawn, which is now the
+ * sheet belonging to the computer they came from rather than a second list of
+ * everybody's projects mixed together.
+ */
+function wireBring(where, w) {
+  for (const b of where.querySelectorAll('[data-bring]')) {
     b.onclick = async () => {
       const entry = JSON.parse(b.dataset.bring);
 
       // Said before it happens, not discovered afterwards. A copy from GitHub
       // carries what has been saved and sent and nothing else, and somebody
       // who wanted the folder deserves to know that is not what they are
-      // getting — that gap is exactly how 1.3 GB arrived as 300 MB.
-      if (!nearby.has(entry.from)) {
-        const anyway = await confirmThat({
-          title: `Bring ${entry.name} from GitHub`,
-          what: `${entry.fromName} is not on this network, so this comes from GitHub.`,
-          why: 'That carries what has been saved and sent — not anything unsaved, and nothing '
-            + 'deliberately left out of what gets saved. For the whole folder, have both computers '
-            + 'on the same network and press this again.',
-          confirm: 'Bring the saved work',
-        });
-        if (!anyway) return;
-      }
+      // getting \u2014 that gap is exactly how 1.3 GB arrived as 300 MB.
+      const anyway = await confirmThat({
+        title: `Bring ${entry.name} from GitHub`,
+        what: `${entry.fromName} is not on this network, so this comes from GitHub.`,
+        why: 'That carries what has been saved and sent \u2014 not anything unsaved, and nothing '
+          + 'deliberately left out of what gets saved. For the whole folder, have both computers '
+          + 'on the same network and ask that computer for it instead.',
+        confirm: 'Bring the saved work',
+      });
+      if (!anyway) return;
 
-      const into = await pickFolder({ title: `Where should ${entry.name} go?`, confirm: 'Put it in here', startAt: w.workFolder });
+      const into = await pickFolder({
+        title: `Where should ${entry.name} go?`,
+        confirm: 'Put it in here',
+        startAt: w?.workFolder,
+      });
       if (!into) return;
 
-      // Acknowledged before anything is asked of the manager, and not
-      // pressable again while it is on its way — two of these into the same
-      // folder is two transfers writing over each other (D-102).
-      b.disabled = true;
-      b.classList.add('working');
-      b.textContent = 'Bringing it…';
-
+      closeLayer();
       const r = await post('/workspace/bring', { entry, into });
       if (r.job) { await watchJob(r.job); return; }
 
@@ -5561,13 +5637,7 @@ SCREENS.workspace = async () => {
       draw();
     };
   }
-
-  // Redraw the errand once, without starting a second loop watching it.
-  if (watching) paintJob({ again: !jobTimer });
-  workspaceTimer = setTimeout(() => {
-    if (at.tab === 'workspace' && !layer.innerHTML && !watching) draw({ quietly: true });
-  }, 20000);
-};
+}
 
 /**
  * Offer one file to the other computers on this network.
@@ -6392,7 +6462,7 @@ SCREENS.settings = async () => {
     line.textContent = who.ok
       ? `${who.name} answers, using ${modelNamed(who, who.using)}.${
         ready.length > 1 ? ` ${ready.length} companies have a key here.` : ''} The key stays on this computer.`
-      : 'Nothing is set up yet, so questions about a project cannot be answered.';
+      : 'No AI is connected yet, so questions about a project cannot be answered.';
   });
 
   // Only the part that is on the page is asked about. The three that reach the

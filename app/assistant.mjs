@@ -282,12 +282,24 @@ export async function ready() {
   }
 
   const want = chosen ?? MODELS[0];
+
+  /*
+   * One of several, rather than none at all.
+   *
+   * Only reachable when the chosen one has no key and neither does any other,
+   * because the loop above takes any that does. Kept apart anyway, because the
+   * two need different sentences and the difference is exactly what was wrong.
+   */
   return {
     ok: false,
     name: want.name,
     where: want.where,
     setting: want.keySetting,
-    sentence: `Viberant has no key for ${want.name} yet, so it cannot look at anything.`,
+    // Named for what is true: nothing is set up. Saying "no key for Claude"
+    // when nothing at all is connected reads as though Claude were the only
+    // one there is, and sends somebody to open an account they may not want.
+    noneAtAll: true,
+    sentence: 'No AI is connected yet, so questions about a project cannot be answered.',
     // Not "there is a box for this somewhere else". Somebody who has just typed
     // a question should not be sent four presses away to be able to ask it.
     action: 'Set one up here — it takes a minute, and the key stays on this computer.',
@@ -414,12 +426,37 @@ export function withoutSecrets(text) {
 // ---------------------------------------------------------------------------
 
 /** Files worth reading to answer a question about how a project is built. */
+/**
+ * The files worth reading about any project, in the order they answer things.
+ *
+ * The ones that say what a project *is* come first, and they were missing
+ * entirely. Asked "what is this project about", the search below matched the
+ * words `project` and `about` against every file in the folder and answered
+ * out of whichever deeply nested one happened to mention them — a correct
+ * description of one file, presented as a description of the whole thing.
+ *
+ * A README is a person explaining their own project. Nothing else here comes
+ * close, and it should have been first from the start.
+ */
 const WORTH_READING = [
+  'README.md', 'README', 'readme.md', 'ARCHITECTURE.md', 'CONTRIBUTING.md',
+  'docs/README.md', 'docs/index.md', 'docs/architecture.md',
   'package.json', 'tsconfig.json', 'vite.config.js', 'vite.config.ts',
   'next.config.js', 'next.config.mjs', 'astro.config.mjs', 'svelte.config.js',
   'nuxt.config.ts', 'vercel.json', 'netlify.toml', 'Dockerfile',
   '.env.example', 'requirements.txt', 'pyproject.toml', 'Cargo.toml',
 ];
+
+/**
+ * Is this somebody asking what the whole thing is?
+ *
+ * A different question from every other one asked here, and it needs the
+ * opposite retrieval: the files that describe the project rather than the files
+ * that mention the words in the question. Searching for `project` and `about`
+ * across a folder finds nothing useful and anchors the answer on whatever it
+ * happened to hit.
+ */
+const ABOUT_THE_WHOLE_THING = /^\s*(what|what's|whats|tell me|explain|describe|give me)\b[^?]{0,60}\b(this|the)?\s*(project|repo|app|application|codebase|thing|it)\b|^\s*(overview|summary|what is it)\b/i;
 
 const MOST_PER_FILE = 6000;
 
@@ -770,13 +807,35 @@ export async function reviewChanges({ dir, diff, files = [] }) {
 /** A question about this project, answered from this project. */
 export async function askAbout({ dir, question }) {
   const context = await contextFor(dir);
-  const found = await lookInside(dir, question);
+  const broad = ABOUT_THE_WHOLE_THING.test(String(question));
+
+  // A broad question is answered from what describes the project. A targeted
+  // one is answered from the files that mention what was asked about. Doing
+  // the second for the first is what produced a careful explanation of one
+  // deeply nested file in answer to "what is this project about".
+  const found = broad ? [] : await lookInside(dir, question);
+
+  const shape = broad
+    ? [
+      '',
+      'This is a broad question about the whole project. Answer it in this order,',
+      'in plain language a person could follow without knowing the codebase:',
+      '  1. what it is, in one sentence',
+      '  2. what it does for whoever uses it',
+      '  3. what it is built with',
+      '  4. roughly how it fits together',
+      'Do not lead with one file. Do not list files unless they matter to the',
+      'shape of the answer. If what you were given does not say enough to answer,',
+      'say which part is missing in one short line at the end and nothing more.',
+    ].join('\n')
+    : '';
 
   return askModel({
     system: VOICE,
-    mostTokens: 1000,
+    mostTokens: broad ? 1300 : 1000,
     message: [
       `Question about this project: ${question}`,
+      shape,
       '',
       asPrompt(context),
       found.length ? `\n--- files that mention what was asked about ---\n${found.map((f) => `${f.name}\n${f.text}`).join('\n\n')}` : '',

@@ -470,7 +470,7 @@ const routes = {
   },
 
   async 'POST /browse/choose'({ body }) {
-    return browse.chooseFolder({ startAt: body.startAt ?? null });
+    return browse.chooseFolder();
   },
 
   // -- AI apps ------------------------------------------------------------

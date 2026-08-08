@@ -1867,7 +1867,33 @@ h2:first-of-type { margin-top: 0; }
   font-size: var(--t-sub);
   overflow-wrap: anywhere;
 }
-.ai-exchange .ai-said { padding-top: var(--s3); }
+/*
+ * A long answer is read by scrolling the page, not trapped in a box.
+ *
+ * It had a height it could exceed and nothing to scroll what that hid, so the
+ * end of a long answer could not be reached at all. Nothing here has a height
+ * now: the answer is as tall as it is and the page scrolls, which is the one
+ * scroll everybody already knows how to use. Only a block of code keeps its
+ * own, sideways, because one long line of it must not widen the whole page.
+ */
+.ai-exchange .ai-said {
+  padding-top: var(--s3);
+  max-height: none;
+  overflow: visible;
+  user-select: text;
+}
+.ai-said pre {
+  overflow-x: auto;
+  max-width: 100%;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-button);
+  background: var(--deep);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  line-height: 1.55;
+}
+.ai-said table { display: block; overflow-x: auto; max-width: 100%; }
 
 .ai-said {
   padding: var(--s4) 0 0;
@@ -2678,6 +2704,8 @@ select { cursor: pointer; }
 /* Notes between computers                                                   */
 /* ========================================================================= */
 
+/* Notes are a panel on the page, not the page. */
+.talk.short { max-height: 13rem; }
 .talk { display: flex; flex-direction: column; gap: var(--s3); max-height: 22rem; overflow-y: auto; padding-right: var(--s1); }
 .talk .bubble {
   align-self: flex-start;

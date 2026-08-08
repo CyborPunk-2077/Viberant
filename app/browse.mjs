@@ -132,7 +132,19 @@ export async function chooseFile({ startAt = null } = {}) {
     };
   }
 
-  const start = startAt ? String(startAt).replace(/'/g, "''") : '';
+  /*
+   * Rooted at the computer, always — never at where you happen to be.
+   *
+   * The fourth argument is the *root* of the tree, not a starting selection,
+   * and passing the current folder made it the top of the world: opened from
+   * Documents, the chooser showed Documents and nothing above it, with no way
+   * to reach another drive. Somebody wanting a folder on D: had to cancel and
+   * find another way in.
+   *
+   * There is no way to ask this chooser to open somewhere and still show
+   * everything, so it shows everything. The path box below it is how somebody
+   * who knows where they are going gets there in one go.
+   */
   const script = `
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -Namespace Native -Name Win -MemberDefinition '
@@ -185,7 +197,7 @@ export async function chooseFile({ startAt = null } = {}) {
  *
  * Anywhere else, and any time this fails, the answer is honest: use the list.
  */
-export async function chooseFolder({ startAt = null } = {}) {
+export async function chooseFolder() {
   if (!WINDOWS) {
     return {
       ok: false,
@@ -206,7 +218,6 @@ export async function chooseFolder({ startAt = null } = {}) {
    * window that is in front as its owner so it opens on top of it. Typing a
    * path into it is allowed too, for anyone who would rather.
    */
-  const start = startAt ? String(startAt).replace(/'/g, "''") : '';
   const script = `
     Add-Type -Namespace Native -Name Win -MemberDefinition '
       [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
@@ -217,7 +228,7 @@ export async function chooseFolder({ startAt = null } = {}) {
     $chosen = $shell.BrowseForFolder(
       [int]$owner, 'Choose a project folder',
       $NEW_STYLE -bor $EDIT_BOX -bor $ONLY_FOLDERS,
-      ${start ? `'${start}'` : '$MY_COMPUTER'})
+      $MY_COMPUTER)
     if ($chosen -ne $null) {
       try { Write-Output $chosen.Self.Path } catch { Write-Output '' }
     }
