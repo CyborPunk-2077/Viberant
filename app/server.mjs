@@ -535,7 +535,7 @@ const routes = {
       };
     }
 
-    const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE });
+    const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE, kind: 'other' });
     (async () => {
       jobs.step(job, `Running ${what.what}. This takes a minute or two.`);
       const out = await jobs.runInto(job, { file: what.file, args: what.args, cwd: HOUSE });
@@ -881,7 +881,7 @@ const routes = {
 
   async 'POST /publish/first'({ body }) {
     if (!current) return noProject;
-    const job = jobs.begin({ what: `Putting ${current.name} on GitHub`, where: current.dir });
+    const job = jobs.begin({ what: `Putting ${current.name} on GitHub`, where: current.dir, kind: 'send', project: current.name });
     firstTimeOnGitHub(job, {
       dir: current.dir,
       name: body.name,
@@ -938,7 +938,7 @@ const routes = {
     if (body.place === 'vercel') {
       const dir = current.dir;
       const name = current.name;
-      const job = jobs.begin({ what: `Putting ${name} online`, where: dir });
+      const job = jobs.begin({ what: `Putting ${name} online`, where: dir, kind: 'deploy', project: name });
 
       (async () => {
         const state = await providers.vercel.state();
@@ -1095,7 +1095,7 @@ const routes = {
           action: 'Pick a different folder to put it in.',
         };
       }
-      const job = jobs.begin({ what: `Bringing ${entry.name} from ${entry.fromName}`, where: target });
+      const job = jobs.begin({ what: `Bringing ${entry.name} from ${entry.fromName}`, where: target, kind: 'transfer', project: entry.name });
       lan.takeProject({ machine: entry.from, name: entry.name, into: target, job, jobs })
         .then((done) => registerIfItArrived(done))
         .catch(() => jobs.end(job, {
@@ -1239,7 +1239,7 @@ const routes = {
   },
 
   async 'POST /live/sync'({ body }) {
-    const job = jobs.begin({ what: `Bringing ${body.name} across`, where: body.path ?? HOUSE });
+    const job = jobs.begin({ what: `Bringing ${body.name} across`, where: body.path ?? HOUSE, kind: 'transfer', project: body.name });
     live.take({ name: body.name, from: body.from, path: body.path, job, jobs })
       .then(async (done) => {
         if (done?.ok && done.at) { current = await open(done.at); await watchProject(done.at); }
@@ -1258,7 +1258,7 @@ const routes = {
 
   async 'POST /local/take'({ body }) {
     const into = body.into ?? (await settings.get('workFolder'));
-    const job = jobs.begin({ what: `Bringing ${body.name} to this computer`, where: into });
+    const job = jobs.begin({ what: `Bringing ${body.name} to this computer`, where: into, kind: 'transfer', project: body.name });
     lan.take({ machine: body.machine, offerId: body.offer, into, name: body.name, job, jobs })
       .then(registerIfItArrived)
       .catch(() => jobs.end(job, {

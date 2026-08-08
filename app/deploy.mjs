@@ -150,7 +150,7 @@ async function installersIn(dir) {
  * it is the point.
  */
 export function putSiteOnline({ dir, place, name }) {
-  const job = jobs.begin({ what: `Putting ${name} online`, where: dir });
+  const job = jobs.begin({ what: `Putting ${name} online`, where: dir, kind: 'deploy', project: name });
   runSite(job, { dir, place }).catch((e) => {
     jobs.end(job, {
       ok: false,
@@ -355,7 +355,7 @@ async function waitForPages(job, dir) {
  * reasons and because plenty of days you want the first without the second.
  */
 export function makeApplication({ dir, name, alsoGiveOut = false, version = null, notes = '' }) {
-  const job = jobs.begin({ what: `Building ${name}`, where: dir });
+  const job = jobs.begin({ what: `Building ${name}`, where: dir, kind: 'build', project: name });
   runApp(job, { dir, alsoGiveOut, version, notes }).catch((e) => {
     jobs.end(job, {
       ok: false,

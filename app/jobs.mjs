@@ -29,6 +29,8 @@ function snapshot(job) {
     id: job.id,
     what: job.what,
     where: job.where,
+    kind: job.kind ?? 'other',
+    project: job.project ?? null,
     started: job.started,
     finished: job.finished,
     running: job.finished === null,
@@ -52,12 +54,24 @@ export function all() {
   return [...jobs.values()].map(snapshot).sort((a, b) => b.started - a.started);
 }
 
+/**
+ * What kind of errand this is.
+ *
+ * Written down rather than read back out of the sentence describing it. The
+ * corner of the screen groups these — one transfer, one build — and grouping by
+ * matching words against "Bringing" is the sort of rule that breaks the day
+ * somebody rewords a sentence.
+ */
+export const KINDS = ['transfer', 'build', 'deploy', 'send', 'other'];
+
 /** Start an errand. Returns straight away with something to watch. */
-export function begin({ what, where }) {
+export function begin({ what, where, kind = 'other', project = null }) {
   const job = {
     id: randomUUID(),
     what,
     where,
+    kind: KINDS.includes(kind) ? kind : 'other',
+    project,
     started: Date.now(),
     finished: null,
     ok: null,

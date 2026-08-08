@@ -457,19 +457,47 @@ function drawTop() {
 
 let moving = [];
 
-/** Errands worth a place in the corner: things carrying bytes somewhere. */
-const isMoving = (j) => j.running && /^Bringing /.test(j.what ?? '');
+/**
+ * Errands worth a place in the corner: anything still running.
+ *
+ * It used to be transfers only, and it recognised one by matching the sentence
+ * against "Bringing" — which is a rule that breaks the day somebody rewords a
+ * sentence, and which left a build or a deploy invisible the moment you walked
+ * away from the page that started it. Every errand says what kind it is now,
+ * written down when it begins.
+ */
+const isMoving = (j) => j.running;
+
+/** What each kind is called in the corner, and the mark for it. */
+const KIND_WORDS = {
+  transfer: { one: 'transfer', many: 'transfers', mark: '↓' },
+  build: { one: 'build', many: 'builds', mark: '⚒' },
+  deploy: { one: 'deploy', many: 'deploys', mark: '↗' },
+  send: { one: 'send', many: 'sends', mark: '↑' },
+  other: { one: 'errand', many: 'errands', mark: '●' },
+};
 
 async function checkMoving() {
   const { jobs: all } = await get('/jobs');
   const now = (all ?? []).filter(isMoving);
 
   // Compared before anything is touched, so a corner that has nothing new to
-  // say does not redraw itself every two seconds (D-68).
-  const before = moving.map((j) => `${j.id}:${j.lines?.length ?? 0}`).join('|');
-  const after = now.map((j) => `${j.id}:${j.lines?.length ?? 0}`).join('|');
+  // say does not redraw itself every two seconds (D-68). The comparison covers
+  // what is shown — which errands, and what each is doing now — because a step
+  // changing is the thing worth repainting for.
+  const shape = (list) => list.map((j) => {
+    const doing = j.steps?.length ? j.steps[j.steps.length - 1].sentence : j.lines?.length ?? 0;
+    return `${j.id}:${j.kind}:${doing}`;
+  }).join('|');
+
+  const before = shape(moving);
+  const after = shape(now);
   moving = now;
-  if (before !== after) paintMoving();
+
+  // Painted whenever what is shown changed, and always when it becomes empty:
+  // the corner disappearing is the one transition that must never be missed,
+  // because what is left behind is a count of things that have finished.
+  if (before !== after || (!now.length && !$('#moving-drop')?.hidden)) paintMoving();
 }
 
 function paintMoving() {
@@ -478,24 +506,66 @@ function paintMoving() {
   drop.hidden = moving.length === 0;
   if (!moving.length) { $('#moving-panel').hidden = true; return; }
 
-  $('#moving-count').textContent = String(moving.length);
+  // Grouped by kind, so "2 transfers · 1 build" rather than "3 things".
+  const byKind = {};
+  for (const j of moving) byKind[j.kind ?? 'other'] = (byKind[j.kind ?? 'other'] ?? 0) + 1;
+  const words = Object.entries(byKind)
+    .map(([kind, n]) => `${KIND_WORDS[kind]?.mark ?? '●'} ${n}`)
+    .join('  ');
+
+  $('#moving-count').textContent = words;
+  $('#moving').dataset.tip = Object.entries(byKind)
+    .map(([kind, n]) => `${n} ${n === 1 ? KIND_WORDS[kind]?.one : KIND_WORDS[kind]?.many}`)
+    .join(', ');
+
   const panel = $('#moving-panel');
   if (panel.hidden) return;
   panel.innerHTML = movingHtml();
+  wireMoving();
 }
 
 const movingHtml = () => `
-  <div class="head">Moving now</div>
+  <div class="head">Happening now</div>
   ${moving.map((j) => `
     <div class="mover">
-      <div class="line1"><b>${esc(j.what.replace(/^Bringing /, ''))}</b></div>
-      <div class="fact mono">${esc(j.lines?.[j.lines.length - 1] ?? 'Getting ready…')}</div>
+      <div class="line1">
+        <b>${esc(j.what)}</b>
+        <span class="chip">${esc(KIND_WORDS[j.kind ?? 'other']?.one ?? 'errand')}</span>
+      </div>
+      <div class="fact mono">${esc(
+    j.steps?.length ? j.steps[j.steps.length - 1].sentence
+      : j.lines?.[j.lines.length - 1] ?? 'Getting ready…',
+  )}</div>
+      <div class="bar" style="margin:.35rem 0 0">
+        <button class="quiet small" data-watch="${esc(j.id)}">Watch it</button>
+      </div>
     </div>`).join('')}`;
+
+/**
+ * Going to an errand takes you to the page that owns it.
+ *
+ * An errand belongs to a screen — a build to Deploy, a transfer to Workspace —
+ * and watching one means being where it is reported, not being shown a copy of
+ * it somewhere else.
+ */
+function wireMoving() {
+  for (const b of $('#moving-panel').querySelectorAll('[data-watch]')) {
+    b.onclick = async () => {
+      const j = moving.find((one) => one.id === b.dataset.watch);
+      closePanels();
+      if (j?.kind === 'transfer') await go('workspace');
+      else if (j?.kind === 'build' || j?.kind === 'deploy') await go('ship');
+      await watchJob(b.dataset.watch);
+      $('#job')?.scrollIntoView({ block: 'nearest' });
+    };
+  }
+}
 
 function openMovingPanel() {
   const panel = $('#moving-panel');
   panel.innerHTML = movingHtml();
   openPanel(panel);
+  wireMoving();
 }
 
 /**
