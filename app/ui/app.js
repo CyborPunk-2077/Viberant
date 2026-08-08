@@ -3772,6 +3772,23 @@ function vercelRow(d) {
   const v = d.vercel ?? {};
   const canBuild = !!d.look?.frameworkId;
 
+  // Nothing to put online. Said before anything is pressed, and the button is
+  // not merely disabled: a disabled button with no reason beside it is the same
+  // as a broken one.
+  if (d.web && d.web.ok === false) {
+    return `
+      <div class="trow">
+        <span class="kindmark quiet" aria-hidden="true">${SITE_MARK}</span>
+        <span class="tname">
+          <b>Vercel</b>
+          <span class="where">${esc(d.web.sentence ?? 'There is no website in this project.')}</span>
+        </span>
+        <span class="tacts">
+          <span class="state notStarted"><span class="pip"></span>Nothing to put online</span>
+        </span>
+      </div>`;
+  }
+
   const state = v.connected && v.reachable === false
     ? { s: 'working', word: `Connected as ${v.login}, out of date` }
     : v.connected ? { s: 'finished', word: `Connected as ${v.login}` }
@@ -3781,8 +3798,9 @@ function vercelRow(d) {
   const says = v.connected
     ? (!v.here
       ? 'Connected, but the command that builds and uploads is not on this computer yet.'
-      : canBuild ? `Builds this ${d.look.framework} project itself and gives it an address.`
-        : 'Builds the site itself and gives it an address.')
+      : `${canBuild ? `Builds this ${d.look.framework} project itself` : 'Builds the site itself'}${
+        d.web?.inside ? `, from the ${d.web.inside} folder inside it,` : ''} and gives it an address${
+        d.slug && d.slug !== d.name ? `, as "${d.slug}"` : ''}.`)
     : v.reachable === false
       ? 'Vercel could not be reached. Nothing here has changed.'
       : 'A token from your Vercel account, made in your browser. It stays on this computer.';

@@ -1679,6 +1679,10 @@ const routes = {
       providers.bindingFor(current.dir),
       providers.vercel.state(),
     ]);
+    // Whether there is a website in here at all, and where. Worked out here so
+    // the page can say so before anybody presses anything, rather than after a
+    // deploy has run for five minutes against a desktop application.
+    const web = await providers.webPartOf(current.dir);
     return {
       open: true,
       name: current.name,
@@ -1687,6 +1691,15 @@ const routes = {
       look,
       deployedTo: where,
       vercel: vercelState,
+      web: {
+        ok: web.ok,
+        root: web.root,
+        inside: web.inside ?? null,
+        kind: web.kind ?? null,
+        sentence: web.sentence ?? null,
+        action: web.action ?? null,
+      },
+      slug: providers.slugFor(current.name),
       ...looked,
     };
   },
@@ -1728,25 +1741,24 @@ const routes = {
         }
 
         const token = await settings.get('vercelToken');
-        const out = await providers.vercel.deploy(job, jobs, { dir, name, token });
+        const out = await providers.vercel.deploy(job, jobs, {
+          dir, name, token, account: state.login,
+        });
         if (!out.ok) return jobs.end(job, out);
 
-        // Remembered against this project by its own path, so the next press
-        // knows where it went and project B never inherits project A's site.
-        await providers.bind(dir, {
-          provider: 'vercel',
-          url: out.at,
-          inspect: out.inspect ?? null,
-          name,
-          account: state.login,
-        });
+        // Everything worth writing down, against this project by its own path,
+        // so the next press goes to the same place and project B never
+        // inherits project A's site.
+        await providers.bind(dir, { ...out.binding, name });
 
         return jobs.end(job, {
           ok: true,
           at: out.at,
           inspect: out.inspect ?? null,
           sentence: `${name} is live at ${out.at}`,
-          action: 'Checked with Vercel: it is serving that address now.',
+          action: out.noFrontPage
+            ? 'Vercel says it is ready, and the address itself shows nothing — this project has no front page, so its pages are at their own names.'
+            : 'Checked with Vercel: it is serving that address now.',
         });
       })().catch((e) => jobs.end(job, {
         ok: false,

@@ -17,7 +17,7 @@
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { platform } from 'node:process';
@@ -227,15 +227,21 @@ export function forgetVercel() { lastVercel = null; }
  *   `{ ok: false, status }`  it answered, and said no
  *   `null`                   it could not be reached at all
  */
-async function askVercel(path, token, { timeout = 15000 } = {}) {
+async function askVercel(path, token, { timeout = 15000, send = null, how = 'GET' } = {}) {
   const stop = AbortSignal.timeout(timeout);
   try {
     const res = await fetch(`${VERCEL_API}${path}`, {
-      headers: { authorization: `Bearer ${token}` },
+      method: send ? 'POST' : how,
+      headers: {
+        authorization: `Bearer ${token}`,
+        ...(send ? { 'content-type': 'application/json' } : {}),
+      },
+      body: send ? JSON.stringify(send) : undefined,
       signal: stop,
     });
-    if (!res.ok) return { ok: false, status: res.status };
-    return { ok: true, body: await res.json() };
+    const body = await quiet(() => res.json(), null);
+    if (!res.ok) return { ok: false, status: res.status, body, why: body?.error?.message ?? null };
+    return { ok: true, body };
   } catch {
     return null;
   }
@@ -260,6 +266,264 @@ async function whoTheCliThinks() {
   // The last non-empty line of what it printed; it puts its own name above.
   const login = String(said.stdout ?? '').split('\n').map((l) => l.trim()).filter(Boolean).pop();
   return login && !/\s/.test(login) ? login : null;
+}
+
+/**
+ * A folder name turned into a name Vercel will accept.
+ *
+ * Vercel takes lower case, digits, dots and hyphens, and nothing else. A folder
+ * called `ValoVault` is refused outright \u2014 and what came back said the name
+ * was invalid, which is true and useless, because nobody named anything: the
+ * folder was called what it was called and this passed it straight through.
+ *
+ * **The folder is never renamed.** Somebody's folder is theirs. This is a name
+ * used at Vercel and written down beside the project, and the two are allowed
+ * to differ.
+ *
+ *   ValoVault        \u2192 valovault
+ *   My Cool App      \u2192 my-cool-app
+ *   Viberant_AI!!!   \u2192 viberant-ai
+ *
+ * Deterministic, so the same folder reaches the same project every time \u2014
+ * which is what stops a second deploy making a second site.
+ */
+export function slugFor(name) {
+  const out = String(name ?? '')
+    .toLowerCase()
+    // Anything Vercel will not take becomes one hyphen, however many there were.
+    .replace(/[^a-z0-9.-]+/g, '-')
+    // A run of separators of any kind is one hyphen. `a--b` and `a.-.b` are
+    // both refused, and both are things ordinary folder names produce.
+    .replace(/[-.]{2,}/g, '-')
+    .replace(/^[-.]+|[-.]+$/g, '')
+    .slice(0, 100)
+    .replace(/[-.]+$/, '');
+
+  // Nothing usable left \u2014 a folder named entirely in a script Vercel does not
+  // take. Something rather than a refusal, and still deterministic.
+  return out || 'project';
+}
+
+/** Is this already a name Vercel would take, exactly as it stands? */
+export const alreadyASlug = (name) => slugFor(name) === String(name ?? '');
+
+// ---------------------------------------------------------------------------
+// Is there a website in here at all
+// ---------------------------------------------------------------------------
+
+/**
+ * Where the website is, if there is one.
+ *
+ * Not every project belongs on a hosting service, and running a deploy against
+ * one that does not is a slow way of finding that out. A desktop application is
+ * the case that matters here: Viberant itself is one, and pointing Vercel at it
+ * produces a confusing failure several minutes later rather than a sentence
+ * straight away.
+ *
+ * Read out of real files, never guessed from a folder's shape. Three answers:
+ *
+ *   the project itself is the website
+ *   the website is a folder inside it, and here it is
+ *   there is no website here, and this says so
+ */
+export async function webPartOf(dir) {
+  const at = resolve(dir);
+  const mine = await inspect(at);
+
+  // A page you could serve, or a framework that makes one. Either is a website.
+  if (mine.frameworkId && mine.frameworkId !== 'static') return { ok: true, root: at, look: mine };
+  if (existsSync(join(at, 'vercel.json'))) return { ok: true, root: at, look: mine };
+  if (mine.frameworkId === 'static') return { ok: true, root: at, look: mine };
+
+  /*
+   * A desktop application with a website inside it.
+   *
+   * Common enough to be worth looking for: the application is the outer folder
+   * and the part people actually visit is `web`, `site`, `www`, `docs` or
+   * `frontend` within it. Only one level down, and only where that folder is
+   * itself a website by the test above \u2014 anything deeper is guessing.
+   */
+  for (const named of ['web', 'site', 'www', 'frontend', 'client', 'docs', 'apps/web', 'packages/web']) {
+    const inside = join(at, ...named.split('/'));
+    if (!existsSync(inside)) continue;
+    const theirs = await inspect(inside);
+    if (theirs.frameworkId) return { ok: true, root: inside, look: theirs, inside: named };
+  }
+
+  /*
+   * Pages with no `index.html` among them.
+   *
+   * A folder of `.html` files is a website — people put exactly this on
+   * Vercel and it serves them at their own names. Requiring `index.html`
+   * refused a real static site for the sake of one filename, which is the kind
+   * of rule that only ever refuses the right thing.
+   */
+  const pages = await quiet(async () => (await readdir(at))
+    .filter((f) => /\.html?$/i.test(f)), []);
+  if (pages.length) {
+    return { ok: true, root: at, look: { ...mine, framework: 'Plain files', frameworkId: 'static', output: '.' } };
+  }
+
+  /*
+   * A desktop application, read from what it actually says.
+   *
+   * Any script that starts Electron counts, whatever it is called — this
+   * project's own is `desktop`, not `electron`, and looking for the name
+   * rather than the thing missed it. So does a dependency on Electron, or the
+   * file that builds an installer.
+   */
+  const runsElectron = Object.values(mine.scripts ?? {}).some((line) => /\belectron\b/.test(String(line)));
+  const desktop = !!(runsElectron
+    || existsSync(join(at, 'electron-builder.yml'))
+    || existsSync(join(at, 'electron-builder.json')));
+
+  return {
+    ok: false,
+    root: null,
+    look: mine,
+    kind: desktop ? 'desktop' : 'nothing',
+    sentence: desktop
+      ? 'This is a desktop application, so there is no website in it to put online.'
+      : 'There is no website in this project to put online.',
+    action: desktop
+      ? 'Build it as an application instead \u2014 that is the other half of this page.'
+      : 'A website needs a page to serve, or something that builds one. Nothing here does either.',
+  };
+}
+
+/**
+ * What a deploy would do, worked out before anything is started.
+ *
+ * Every one of these is a fact about this project, read now, from the project
+ * that is open at the moment of the press. The whole point is that a deploy
+ * carries its own answers rather than asking again half way through, which is
+ * how project B came to inherit project A's site.
+ */
+export async function preflight(dir, name, { token = null, connected = null } = {}) {
+  const at = resolve(dir);
+  const web = await webPartOf(at);
+
+  if (!web.ok) {
+    return {
+      ok: false,
+      trouble: 'NOT_DEPLOYABLE',
+      kind: web.kind,
+      sentence: web.sentence,
+      action: web.action,
+      look: web.look,
+    };
+  }
+
+  const slug = slugFor(name);
+  const bound = await bindingFor(at);
+
+  return {
+    ok: true,
+    projectRoot: at,
+    webRoot: web.root,
+    inside: web.inside ?? null,
+    look: web.look,
+    slug,
+    renamed: slug !== String(name),
+    // What is already written down for this project, so a second deploy goes
+    // to the same place rather than making a second site.
+    bound: bound ?? null,
+    needsToken: !token && !alreadyASlug(name),
+    account: connected ?? null,
+    environment: web.look.environment?.expected ?? [],
+  };
+}
+
+/**
+ * The project at Vercel this folder belongs to \u2014 found, or made.
+ *
+ * Made deliberately rather than left to happen. The tool names a project after
+ * the folder it is run in, which is how `ValoVault` reached Vercel as
+ * `ValoVault` and was refused for having capitals in it. Doing it here means
+ * the name is one Vercel takes, the same one every time, and written down
+ * afterwards so a second deploy finds the first site rather than making a
+ * second one.
+ *
+ * Three outcomes, and the middle one is the one that used to be a raw error
+ * shown to somebody: a name already in use by a project this folder is not
+ * bound to.
+ */
+async function projectAtVercel(token, { slug, bound, framework }) {
+  // Already bound, and still there. The fastest and the commonest path.
+  if (bound?.projectId) {
+    const still = await askVercel(`/v9/projects/${encodeURIComponent(bound.projectId)}`, token);
+    if (still === null) return { ok: false, trouble: 'NETWORK_ERROR' };
+    if (still.ok) return { ok: true, id: still.body.id, name: still.body.name, made: false, reused: true };
+    // Gone from Vercel. Fall through and make it again rather than refusing.
+  }
+
+  const found = await askVercel(`/v9/projects/${encodeURIComponent(slug)}`, token);
+  if (found === null) return { ok: false, trouble: 'NETWORK_ERROR' };
+
+  if (found.ok) {
+    return { ok: true, id: found.body.id, name: found.body.name, made: false, reused: !bound };
+  }
+  if (found.status !== 404) {
+    return {
+      ok: false,
+      trouble: found.status === 401 || found.status === 403 ? 'AUTH_EXPIRED' : 'PROVIDER_FAILED',
+      status: found.status,
+      why: found.why,
+    };
+  }
+
+  const made = await askVercel('/v11/projects', token, {
+    send: { name: slug, ...(framework ? { framework } : {}) },
+  });
+  if (made === null) return { ok: false, trouble: 'NETWORK_ERROR' };
+
+  if (!made.ok) {
+    const why = String(made.why ?? '');
+    if (/name/i.test(why) && /invalid|lower|character/i.test(why)) {
+      return { ok: false, trouble: 'INVALID_PROJECT_NAME', why, slug };
+    }
+    if (made.status === 409 || /already/i.test(why)) {
+      return { ok: false, trouble: 'PROJECT_CONFLICT', why, slug };
+    }
+    if (made.status === 401 || made.status === 403) return { ok: false, trouble: 'AUTH_EXPIRED', why };
+    if (made.status === 429) return { ok: false, trouble: 'RATE_LIMITED', why };
+    return { ok: false, trouble: 'PROVIDER_FAILED', status: made.status, why };
+  }
+
+  return { ok: true, id: made.body.id, name: made.body.name, made: true, reused: false };
+}
+
+/**
+ * Which framework Vercel calls this one.
+ *
+ * Its own names, not ours. Anything not on the list is left unsaid rather than
+ * guessed \u2014 Vercel works it out itself, and a wrong answer here would make it
+ * build the project the wrong way.
+ */
+const VERCEL_CALLS_IT = {
+  next: 'nextjs',
+  nuxt: 'nuxtjs',
+  astro: 'astro',
+  sveltekit: 'sveltekit',
+  remix: 'remix',
+  vite: 'vite',
+  vue: 'vue',
+  cra: 'create-react-app',
+};
+
+/**
+ * Tell the tool which project this folder is, without touching the folder's
+ * own files any more than it already does.
+ *
+ * `.vercel/project.json` is the tool's own note to itself about which project
+ * a folder belongs to \u2014 it writes one anyway on the first deploy. Writing it
+ * here means it writes the right one: the project named properly, rather than
+ * one named after the folder and refused.
+ */
+async function linkFolder(root, { projectId, orgId }) {
+  const at = join(root, '.vercel');
+  await mkdir(at, { recursive: true });
+  await writeFile(join(at, 'project.json'), JSON.stringify({ projectId, orgId }, null, 2), 'utf8');
 }
 
 export const vercel = {
@@ -423,15 +687,84 @@ export const vercel = {
    * The token goes in the surroundings of the process and never in its
    * arguments, so nothing that is written down anywhere contains it.
    */
-  async deploy(job, jobs, { dir, name, token }) {
+  /**
+   * Put it up, and then find out whether it is actually up.
+   *
+   * Four parts, and the first three exist because the fourth used to be the
+   * only one. It ran the tool in the folder and read what it printed. The tool
+   * names a project after the folder it is run in, so `ValoVault` was sent as
+   * `ValoVault` and refused for having capitals \u2014 reported as an invalid
+   * project name, which is true and useless, because nobody named anything.
+   *
+   *   work out what this is, and whether it is a website at all
+   *   find or make the project at Vercel, under a name Vercel takes
+   *   build and upload, from the website's own folder
+   *   ask whether that address is serving anything
+   *
+   * **The last one is the point.** A tool exiting with nothing to complain
+   * about is not a site being online, and reporting it as one is the exact
+   * shape of lie this project exists not to tell.
+   */
+  async deploy(job, jobs, { dir, name, token, account = null }) {
     jobs.step(job, `Reading ${name} and working out what it builds into.`);
-    const look = await inspect(dir);
 
-    jobs.step(job, `Building and uploading ${name} from its own folder.`);
+    const plan = await preflight(dir, name, { token, connected: account });
+    if (!plan.ok) return { ...plan, stage: 'preparing' };
+
+    if (plan.inside) {
+      jobs.step(job, `The website in ${name} is the ${plan.inside} folder, so that is what goes up.`);
+    }
+
+    /*
+     * Naming it properly needs a token, and this is where that is said.
+     *
+     * Without one the tool names the project after the folder, and a folder
+     * whose name Vercel will not take fails several minutes in with a sentence
+     * about an invalid name that nobody caused. Said here, before anything is
+     * built, with the thing to do about it.
+     */
+    if (plan.needsToken) {
+      return {
+        ok: false,
+        stage: 'preparing',
+        trouble: 'INVALID_PROJECT_NAME',
+        sentence: `Vercel will not take "${name}" as a name \u2014 it only takes lower case, digits, dots and hyphens.`,
+        action: `Connect Vercel with a token and this will be put up as "${plan.slug}". Your folder is not renamed.`,
+        needsToken: true,
+        slug: plan.slug,
+      };
+    }
+
+    let linked = null;
+    if (token) {
+      jobs.step(job, plan.bound?.projectId
+        ? `Using the Vercel project this one already goes to.`
+        : `Making sure Vercel has a project called ${plan.slug}.`);
+
+      const at = await projectAtVercel(token, {
+        slug: plan.slug,
+        bound: plan.bound,
+        framework: VERCEL_CALLS_IT[plan.look.frameworkId] ?? null,
+      });
+
+      if (!at.ok) return { ...whatVercelMeant(at, { name, slug: plan.slug }), stage: 'preparing' };
+
+      linked = at;
+      const who = await askVercel('/v2/user', token);
+      const orgId = who?.ok ? (who.body?.user?.id ?? null) : null;
+      if (orgId) await quiet(() => linkFolder(plan.webRoot, { projectId: at.id, orgId }));
+
+      if (at.made) jobs.step(job, `Made a Vercel project called ${at.name}.`);
+      else if (at.reused) jobs.step(job, `Vercel already had a project called ${at.name}, so that is the one used.`);
+    }
+
+    jobs.step(job, `Building and uploading from ${plan.webRoot}.`);
     const out = await jobs.runInto(job, {
       file: WINDOWS ? 'vercel.cmd' : 'vercel',
       args: ['deploy', '--prod', '--yes'],
-      cwd: dir,
+      // The website's own folder, worked out above and never assumed. Not this
+      // process's folder, not the last project, not the one above it.
+      cwd: plan.webRoot,
       // Never an argument. `runInto` writes the arguments into what you can
       // read afterwards, and a token there would be a token in a log.
       env: { VERCEL_TOKEN: token, VERCEL_CLI_BANNER: '0' },
@@ -444,15 +777,16 @@ export const vercel = {
       return {
         ok: false,
         stage: 'building',
-        sentence: `Vercel did not put ${name} online.`,
-        action: 'What it printed is below. A build that failed says why there.',
-        framework: look.framework,
+        ...whatTheBuildSaid(job.lines, { name, environment: plan.environment }),
+        framework: plan.look.framework,
+        slug: plan.slug,
       };
     }
     if (!said.address) {
       return {
         ok: false,
         stage: 'building',
+        trouble: 'PROVIDER_FAILED',
         sentence: 'Vercel finished without giving an address, so there is nothing to open.',
         action: 'Look at what it printed below.',
       };
@@ -466,8 +800,8 @@ export const vercel = {
      *
      * With a token, Vercel's own interface says what state the deployment is
      * in and what the production address for it is, which is not the address
-     * the command printed. Without one — when the command is signed in on
-     * its own and this app has no credential of its own to use — the address
+     * the command printed. Without one \u2014 when the command is signed in on
+     * its own and this app has no credential of its own to use \u2014 the address
      * is fetched until something answers, which is a smaller answer but a true
      * one. Neither of them is "the command exited, so it worked".
      */
@@ -475,14 +809,45 @@ export const vercel = {
       ? await vercel.waitUntilLive(said.id ?? address, token, { onWord: (word) => jobs.step(job, word) })
       : await vercel.waitUntilAnswering(address, { onWord: (word) => jobs.step(job, word) });
 
-    if (!checked.ok) return { ...checked, at: address, inspect: said.inspect, framework: look.framework };
+    if (!checked.ok) {
+      return {
+        ...checked, at: address, inspect: said.inspect, framework: plan.look.framework, slug: plan.slug,
+      };
+    }
+
+    /*
+     * Live, and whether the front door actually opens.
+     *
+     * Vercel saying a deployment is ready is true and is not the whole truth:
+     * a folder of pages with no `index.html` is served perfectly and answers
+     * nothing at all at `/`. Saying "it is live" and handing over an address
+     * that shows a not-found page is the shape of lie this project exists not
+     * to tell, so the address is opened once and the answer said out loud.
+     */
+    const front = await quiet(async () => (await fetch(checked.at ?? address, {
+      redirect: 'follow', signal: AbortSignal.timeout(10000),
+    })).status);
 
     return {
       ok: true,
       at: checked.at ?? address,
+      frontPage: front ?? null,
+      noFrontPage: front === 404,
       inspect: checked.inspect ?? said.inspect ?? null,
       provider: 'vercel',
-      framework: look.framework,
+      framework: plan.look.framework,
+      // Everything worth writing down against this project, so the next press
+      // goes to the same place and project B never inherits project A's site.
+      binding: {
+        provider: 'vercel',
+        projectRoot: plan.projectRoot,
+        webRoot: plan.webRoot,
+        slug: plan.slug,
+        projectId: linked?.id ?? null,
+        account,
+        url: checked.at ?? address,
+        inspect: checked.inspect ?? said.inspect ?? null,
+      },
     };
   },
 
@@ -653,6 +1018,93 @@ export function whatVercelSaid(lines) {
     address: aliased || shortest || clean(told?.url) || null,
     id: told?.id ?? null,
     inspect: told?.inspectorUrl ?? (printedInspect || null),
+  };
+}
+
+/**
+ * A refusal from Vercel's own interface, said as the thing that happened.
+ *
+ * The one that mattered: an invalid project name used to arrive as Vercel's own
+ * sentence about it, which names a rule nobody knew existed and blames a name
+ * nobody chose. It is the folder's name, and the answer is not to rename the
+ * folder.
+ */
+function whatVercelMeant(at, { name, slug }) {
+  const kind = at.trouble;
+
+  if (kind === 'INVALID_PROJECT_NAME') {
+    return {
+      ok: false,
+      trouble: kind,
+      sentence: `Vercel would not accept "${slug}" as a name for this.`,
+      action: 'Rename the project in Viberant to something with only letters, digits and hyphens in it. Your folder is not touched.',
+    };
+  }
+  if (kind === 'PROJECT_CONFLICT') {
+    return {
+      ok: false,
+      trouble: kind,
+      sentence: `There is already something called "${slug}" on your Vercel account, and it is not this project.`,
+      action: `Rename this project in Viberant, or delete that one at Vercel. Nothing here has been changed.`,
+    };
+  }
+  if (kind === 'AUTH_EXPIRED') {
+    return {
+      ok: false,
+      trouble: kind,
+      needsToken: true,
+      sentence: 'The Vercel token on this computer is no longer accepted.',
+      action: 'Connect Vercel again with a new token. Nothing that is already online was touched.',
+    };
+  }
+  if (kind === 'RATE_LIMITED') {
+    return {
+      ok: false,
+      trouble: kind,
+      sentence: 'Vercel is limiting how often it will answer just now.',
+      action: 'Wait a minute and try again. Nothing has been changed.',
+    };
+  }
+  if (kind === 'NETWORK_ERROR') {
+    return {
+      ok: false,
+      trouble: kind,
+      sentence: 'Vercel could not be reached.',
+      action: 'Check you are online, and try again. Nothing has been changed.',
+    };
+  }
+  return {
+    ok: false,
+    trouble: 'PROVIDER_FAILED',
+    sentence: `Vercel would not set ${name} up${at.status ? ` (${at.status})` : ''}.`,
+    action: at.why ? String(at.why).slice(0, 300) : 'Try again in a moment.',
+  };
+}
+
+/**
+ * Why a build failed, out of the four hundred lines it printed.
+ *
+ * One line of a build log matters and it is never the last one. The two that
+ * are worth telling apart by hand are a missing setting \u2014 which is a thing
+ * somebody can fix in a minute and would otherwise read as a broken project \u2014
+ * and everything else, which goes to the log with a sentence saying so.
+ */
+function whatTheBuildSaid(lines, { name, environment = [] }) {
+  const text = lines.slice(-200).join('\n');
+
+  const missing = environment.filter((one) => new RegExp(`\\b${one}\\b`).test(text));
+  if (missing.length && /undefined|not set|missing|required/i.test(text)) {
+    return {
+      trouble: 'ENVIRONMENT_MISSING',
+      sentence: `${name} needs ${missing.length === 1 ? 'a setting' : 'settings'} that Vercel does not have: ${missing.join(', ')}.`,
+      action: 'Add them to the project at Vercel, then try again. Their values never leave this computer through Viberant.',
+    };
+  }
+
+  return {
+    trouble: 'BUILD_FAILED',
+    sentence: `Vercel did not put ${name} online \u2014 the build failed.`,
+    action: 'What it printed is below, and the reason is in it.',
   };
 }
 
