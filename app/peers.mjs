@@ -220,7 +220,7 @@ export function frames() {
  * This function only establishes *who* it is; `members.may` decides what that
  * entitles them to, and the two are deliberately separate.
  */
-export async function greet(socket, { expect = null, mine = null } = {}) {
+export async function greet(socket, { expect = null, mine = null, alreadyRead = null } = {}) {
   const me = mine ?? await device.card();
   const myChallenge = randomBytes(32).toString('base64');
 
@@ -237,6 +237,23 @@ export async function greet(socket, { expect = null, mine = null } = {}) {
   const onData = (chunk) => {
     try { for (const f of reader.take(chunk)) push(f); } catch (e) { broke = e; socket.destroy(); }
   };
+  /**
+   * Whatever the last reader had already taken, handed over rather than put
+   * back on the stream.
+   *
+   * The alternative — detach, `unshift`, and hope the next reader attaches
+   * before anything else arrives — is a window, and it is the window that made
+   * one full test run in three fail. Removing a `data` listener does not stop a
+   * socket reading, so bytes arriving in that gap are emitted to nobody.
+   * Pausing closes it in principle and strands the socket in practice.
+   *
+   * Passing the bytes along removes the window rather than narrowing it, which
+   * is the only version of this that is true regardless of timing.
+   */
+  if (alreadyRead?.length) {
+    try { for (const f of reader.take(Buffer.from(alreadyRead))) push(f); } catch { /* refused below */ }
+  }
+
   socket.on('data', onData);
   socket.on('error', (e) => { broke ??= e; push(null); });
   socket.on('close', () => push(null));
@@ -280,6 +297,21 @@ export async function greet(socket, { expect = null, mine = null } = {}) {
     next(),
     new Promise((r) => setTimeout(() => r(null), ANSWER_WITHIN)),
   ]);
+
+  /**
+   * Handed straight on, and deliberately not paused.
+   *
+   * The rule elsewhere is that a stream given to a later reader must be paused
+   * first — `dialRelay` crosses an `await` before `greet` runs, so it hands its
+   * leftover bytes over explicitly instead. Here there is no gap: every caller
+   * builds a `conversation` on the very next line, in the same tick, and
+   * anything read past the handshake travels in `leftOver`.
+   *
+   * Pausing anyway was tried and it stopped every transfer dead — a socket
+   * paused here and resumed by a listener attached a moment later does not pick
+   * up where it left off reliably. The window this closed did not exist; the
+   * one it opened did.
+   */
   socket.off('data', onData);
   if (!theirProof || broke) return null;
 

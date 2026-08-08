@@ -37,15 +37,15 @@ process.on('message', async (asked) => {
      * not that some special remote path does.
      */
     if (what === 'receive') {
-      const socket = await relay.dialRelay({
+      const joined = await relay.dialRelay({
         host: '127.0.0.1', port: asked.relayPort, ticket: asked.ticket,
       });
-      if (!socket) return say(id, { ok: false, why: 'the relay did not join us' });
+      if (!joined) return say(id, { ok: false, why: 'the relay did not join us' });
 
-      const known = await peers.greet(socket);
+      const known = await peers.greet(joined.socket, { alreadyRead: joined.alreadyRead });
       if (!known) return say(id, { ok: false, why: 'the handshake did not finish' });
 
-      const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+      const peer = peers.conversation(joined.socket, { ...known, kind: peers.RELAY });
 
       const held = asked.resume
         ? await parcel.whatIsAlreadyHere(asked.into, { forOffer: asked.forOffer ?? null })
@@ -74,15 +74,15 @@ process.on('message', async (asked) => {
      * and send only that. The far half of the real thing, in a real process.
      */
     if (what === 'serveSync') {
-      const socket = await relay.dialRelay({
+      const joined = await relay.dialRelay({
         host: '127.0.0.1', port: asked.relayPort, ticket: asked.ticket,
       });
-      if (!socket) return say(id, { ok: false, why: 'the relay did not join us' });
+      if (!joined) return say(id, { ok: false, why: 'the relay did not join us' });
 
-      const known = await peers.greet(socket);
+      const known = await peers.greet(joined.socket, { alreadyRead: joined.alreadyRead });
       if (!known) return say(id, { ok: false, why: 'the handshake did not finish' });
 
-      const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+      const peer = peers.conversation(joined.socket, { ...known, kind: peers.RELAY });
       const post = channelsOf.channels(peer, { odd: true });
 
       post.whenOpened(async (channel) => {

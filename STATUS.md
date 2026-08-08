@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 534 passing on Windows. The ones added last hold the two decisions
+**Tests:** 537 passing on Windows, eight consecutive clean runs. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.

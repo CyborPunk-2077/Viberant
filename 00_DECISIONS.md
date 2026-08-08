@@ -1752,6 +1752,20 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-156 `[DECIDED]` — Bytes already read are handed over, never put back
+
+**Decision.** `dialRelay` returns `{ socket, alreadyRead }`, and `greet` takes `alreadyRead` and feeds it to its own reader. Nothing pushes bytes back onto a socket and hopes the next reader attaches in time.
+
+**Why, and what this cost.** Removing a `data` listener does **not** stop a socket reading. Anything arriving between one reader letting go and the next attaching is emitted to nobody — and what arrives in that gap is always the first thing the connection was opened for. It failed one full test run in three: often enough to be real, rare enough that the honest first report of it was "one unexplained failure I could not reproduce".
+
+**Pausing is not the fix, and this is the part worth writing down.** It looks like the fix and it was tried in all four places. A socket paused in one tick and resumed by a listener attached later does not reliably pick up where it left off: pausing the relay's own pairing stopped it forwarding anything at all, and pausing at the end of `greet` stopped every transfer dead. The window it closed did not exist — `greet` hands to `conversation` on the very next line, in the same tick — and the one it opened did.
+
+So the rule is about the shape of the hand-over rather than about stream state: **where a hand-over crosses an `await`, pass the bytes; where it does not, there is nothing to pass.** Held by tests that read the modules rather than by remembering.
+
+**One more found on the way.** The relay attached its rate counter *before* `pipe`, so the counter started the stream flowing and took the first chunks on its own. It had been wrong from the start and was hidden by the stream already flowing for the wrong reason.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

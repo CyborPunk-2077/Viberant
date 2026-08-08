@@ -103,13 +103,13 @@ async function reachOther(other, dir) {
     const serving = other.ask('serveSync', { relayPort, ticket, dir });
     await new Promise((r) => setTimeout(r, 250 * (go + 1)));
 
-    const socket = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket });
-    if (!socket) continue;
+    const joined = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket });
+    if (!joined) continue;
 
-    const known = await peers.greet(socket);
-    if (!known) { socket.destroy(); continue; }
+    const known = await peers.greet(joined.socket, { alreadyRead: joined.alreadyRead });
+    if (!known) { joined.socket.destroy(); continue; }
 
-    const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+    const peer = peers.conversation(joined.socket, { ...known, kind: peers.RELAY });
     return { peer, post: channelsOf.channels(peer, { odd: false }), serving };
   }
   throw new assert.AssertionError({ message: 'the two computers never connected' });

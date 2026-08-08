@@ -201,13 +201,13 @@ describe('two computers on different networks, meeting through a relay', () => {
     });
     await new Promise((r) => setTimeout(r, 200));
 
-    const socket = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket });
-    assert.ok(socket, 'the relay did not put them together');
+    const joined = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket });
+    assert.ok(joined, 'the relay did not put them together');
 
-    const known = await peers.greet(socket);
+    const known = await peers.greet(joined.socket, { alreadyRead: joined.alreadyRead });
     assert.ok(known, 'the handshake did not finish');
 
-    const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+    const peer = peers.conversation(joined.socket, { ...known, kind: peers.RELAY });
     await peer.pour(parcel.wrap(from, { everything: true }));
 
     const out = await theirs;
@@ -243,8 +243,14 @@ describe('two computers on different networks, meeting through a relay', () => {
     });
     await new Promise((r) => setTimeout(r, 200));
 
-    const cutSocket = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket: cutTicket });
-    const cutKnown = await peers.greet(cutSocket);
+    const cut = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket: cutTicket });
+    assert.ok(cut, 'the relay did not put them together');
+    const cutSocket = cut.socket;
+    const cutKnown = await peers.greet(cutSocket, { alreadyRead: cut.alreadyRead });
+    // Checked rather than spread blindly. A handshake that failed used to reach
+    // `seal` as an undefined key and come out as an error about argument types,
+    // which says nothing about what actually went wrong.
+    assert.ok(cutKnown, 'the handshake did not finish');
     const cutPeer = peers.conversation(cutSocket, { ...cutKnown, kind: peers.RELAY });
 
     /**
@@ -285,9 +291,11 @@ describe('two computers on different networks, meeting through a relay', () => {
     });
     await new Promise((r) => setTimeout(r, 200));
 
-    const socket = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket: goTicket });
-    const known = await peers.greet(socket);
-    const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+    const again = await relayModule.dialRelay({ host: '127.0.0.1', port: relayPort, ticket: goTicket });
+    assert.ok(again, 'the relay did not put them together');
+    const known = await peers.greet(again.socket, { alreadyRead: again.alreadyRead });
+    assert.ok(known, 'the handshake did not finish');
+    const peer = peers.conversation(again.socket, { ...known, kind: peers.RELAY });
     await peer.pour(parcel.wrap(from, { everything: true, seen: rest }));
 
     const out = await secondTry;

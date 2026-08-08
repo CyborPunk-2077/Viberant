@@ -174,12 +174,17 @@ async function oneWay(way, { ws, deviceId, wanted }) {
     const asked = await service.ticketFor({ workspace: ws.id, from: me.deviceId, to: deviceId });
     if (!asked?.ok || !asked.ticket) return null;
 
-    const socket = await relay.dialRelay({ host: where.host, port: where.port, ticket: asked.ticket });
-    if (!socket) return null;
+    const joined = await relay.dialRelay({ host: where.host, port: where.port, ticket: asked.ticket });
+    if (!joined) return null;
 
-    const known = await peers.greet(socket, { expect: deviceId });
-    if (!known) { socket.destroy(); return null; }
-    return peers.conversation(socket, { ...known, kind: peers.RELAY });
+    // The relay hands over what it had already read, so nothing is lost in the
+    // gap between one reader letting go and the next attaching.
+    const known = await peers.greet(joined.socket, {
+      expect: deviceId,
+      alreadyRead: joined.alreadyRead,
+    });
+    if (!known) { joined.socket.destroy(); return null; }
+    return peers.conversation(joined.socket, { ...known, kind: peers.RELAY });
   }
 
   return null;

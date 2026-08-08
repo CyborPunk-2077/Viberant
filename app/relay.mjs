@@ -124,6 +124,19 @@ export function start({ port = RELAY_PORT, host = '0.0.0.0' } = {}) {
          * up — so nothing could ever get through a relay. Anything it has
          * already taken off the wire goes back on before the pipe is joined.
          */
+        /**
+         * Not paused here, and that is the difference worth naming.
+         *
+         * Everywhere else a stream is handed across an `await` to a reader that
+         * attaches later, and it must be paused or what arrives in between is
+         * lost. Here the handover is three statements in one tick — detach,
+         * put back, pipe — with nothing able to run between them, so there is
+         * no window. Pausing anyway leaves the socket stranded: `pipe` resumes
+         * a stream it has just been given, and a stream paused inside its own
+         * data handler in the same tick does not come back.
+         *
+         * Tried, and it stopped the relay forwarding anything at all.
+         */
         socket.off('data', onData);
         already.socket.off('data', already.onData);
         for (const [s, held] of [[socket, reader.rest], [already.socket, already.reader.rest]]) {
@@ -159,6 +172,18 @@ export function start({ port = RELAY_PORT, host = '0.0.0.0' } = {}) {
       let since = Date.now();
       let sent = 0;
 
+      /**
+       * Forwarded first, counted second.
+       *
+       * Attaching a `data` listener starts a paused stream flowing, so a
+       * counter added *before* the pipe takes the first chunks on its own and
+       * they never reach the other side. That is how the first frame of a
+       * handshake vanished the moment the sockets were correctly paused before
+       * being handed over — the bug had been there all along, hidden by the
+       * stream already flowing for the wrong reason.
+       */
+      from.pipe(to);
+
       from.on('data', (chunk) => {
         counted.bytes += chunk.length;
         sent += chunk.length;
@@ -171,8 +196,6 @@ export function start({ port = RELAY_PORT, host = '0.0.0.0' } = {}) {
           setTimeout(() => { since = Date.now(); sent = 0; from.resume(); }, rest).unref?.();
         }
       });
-
-      from.pipe(to);
       from.on('error', () => { a.destroy(); b.destroy(); });
       from.on('close', () => { a.destroy(); b.destroy(); });
     }
@@ -208,6 +231,13 @@ export function start({ port = RELAY_PORT, host = '0.0.0.0' } = {}) {
  * would on a local network — the relay is not part of that conversation and
  * cannot join it.
  */
+/**
+ * Reach a peer through a relay.
+ *
+ * Answers with the socket **and** whatever was already read off it, because a
+ * socket alone is not enough to hand over safely — see the note where it is
+ * gathered. `null` still means it did not happen.
+ */
 export function dialRelay({ host, port = RELAY_PORT, ticket, within = 60000 }) {
   return new Promise((done) => {
     let settled = false;
@@ -239,12 +269,34 @@ export function dialRelay({ host, port = RELAY_PORT, ticket, within = 60000 }) {
          * like nonsense and the connection was closed; swallowed, the handshake
          * simply waited forever for something it had already been given.
          */
+        /**
+         * Stopped before it is let go of, then handed back whole.
+         *
+         * Reading the control frames put this socket into flowing mode, and
+         * taking the listener off does **not** put it back — so everything that
+         * arrived between the relay pairing the two sides and the handshake
+         * attaching its own reader went into nothing. The far end's hello is
+         * exactly what arrives in that window, and under load it arrives there
+         * often enough to fail one run in three.
+         *
+         * The same mistake as `sync.firstLine` and as the relay's own pairing,
+         * which is three times now — a stream handed from one reader to another
+         * must be paused first, every time.
+         */
+        /**
+         * Joined. Everything from here belongs to the other computer.
+         *
+         * What has already been taken off the wire is handed to whoever reads
+         * next, rather than pushed back onto the stream and hoped for. The
+         * relay starts forwarding the moment it pairs two sides, so the peer's
+         * first frame regularly arrives in the same chunk as the word that they
+         * are paired — and a socket with its listener removed keeps reading into
+         * nothing, so putting it back was a race rather than a fix.
+         */
         socket.off('data', onData);
         clearTimeout(waiting);
-        const after = [...got.slice(i + 1).map(framed), reader.rest];
-        const over = Buffer.concat(after);
-        if (over.length) socket.unshift(over);
-        return finish(socket);
+        const alreadyRead = Buffer.concat([...got.slice(i + 1).map(framed), reader.rest]);
+        return finish({ socket, alreadyRead });
       }
     };
 

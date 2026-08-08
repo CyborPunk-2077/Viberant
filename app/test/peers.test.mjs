@@ -180,8 +180,8 @@ describe('a relay carries what it cannot read', () => {
     ]);
     assert.ok(both[0] && both[1], 'the relay did not put them together');
     assert.equal(running.counted.paired >= 1, true);
-    both[0].destroy();
-    both[1].destroy();
+    both[0].socket.destroy();
+    both[1].socket.destroy();
   });
 
   test('a ticket that is not a ticket is refused', async () => {
@@ -208,18 +208,21 @@ describe('a relay carries what it cannot read', () => {
     await new Promise((r) => watcher.listen(0, '127.0.0.1', r));
     const watched = watcher.address().port;
 
-    const [aSocket, bSocket] = await Promise.all([
+    const [a, b] = await Promise.all([
       relayModule.dialRelay({ host: '127.0.0.1', port: watched, ticket }),
       new Promise((r) => setTimeout(r, 60))
         .then(() => relayModule.dialRelay({ host: '127.0.0.1', port: port(), ticket })),
     ]);
-    assert.ok(aSocket && bSocket, 'the relay did not join them');
+    assert.ok(a && b, 'the relay did not join them');
 
-    const [aKnown, bKnown] = await Promise.all([peers.greet(aSocket), peers.greet(bSocket)]);
+    const [aKnown, bKnown] = await Promise.all([
+      peers.greet(a.socket, { alreadyRead: a.alreadyRead }),
+      peers.greet(b.socket, { alreadyRead: b.alreadyRead }),
+    ]);
     assert.ok(aKnown && bKnown, 'the handshake did not survive the relay');
 
-    const sender = peers.conversation(aSocket, { ...aKnown, kind: peers.RELAY });
-    const receiver = peers.conversation(bSocket, { ...bKnown, kind: peers.RELAY });
+    const sender = peers.conversation(a.socket, { ...aKnown, kind: peers.RELAY });
+    const receiver = peers.conversation(b.socket, { ...bKnown, kind: peers.RELAY });
     assert.equal(sender.says, 'Relay');
 
     // The same wrap and the same unwrap a local network uses. One copy.
@@ -276,6 +279,75 @@ describe('what a person is told is not networking', () => {
       for (const jargon of [/STUN/i, /NAT/i, /ICE/i, /candidate/i, /socket/i, /port/i]) {
         assert.equal(jargon.test(said), false, `"${said}" says ${jargon}`);
       }
+    }
+  });
+});
+
+/**
+ * A stream handed from one reader to the next.
+ *
+ * This is the fourth place the same mistake has been made, so it is held by a
+ * test rather than by remembering: reading part of a stream puts it into
+ * flowing mode, and taking the listener off does **not** put it back. Whatever
+ * arrives between one reader letting go and the next attaching goes into
+ * nothing — and in every case here, what arrives in that window is the first
+ * thing the connection was opened for.
+ *
+ * It failed one full test run in three, which is the worst possible frequency:
+ * often enough to be real, rare enough to be dismissed as flakiness.
+ */
+/**
+ * A stream handed from one reader to the next.
+ *
+ * The same mistake was made in four places and failed one full test run in
+ * three — often enough to be real, rare enough to be dismissed as flakiness.
+ * Removing a `data` listener does **not** stop a socket reading, so anything
+ * arriving between one reader letting go and the next attaching is emitted to
+ * nobody. What arrives in that gap is always the first thing the connection was
+ * opened for.
+ *
+ * Pausing looked like the fix and is not: a socket paused in one tick and
+ * resumed by a listener attached later does not reliably pick up where it left
+ * off, and trying it stopped every transfer dead. The answer that is true
+ * regardless of timing is to **hand the bytes over** rather than put them back.
+ */
+describe('a stream handed on hands its bytes over', () => {
+  test('the relay gives the caller what it had already read', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join: j } = await import('node:path');
+    const { fileURLToPath: url } = await import('node:url');
+    const at = dirname(url(import.meta.url));
+
+    const source = await readFile(j(at, '..', 'relay.mjs'), 'utf8');
+    assert.match(source, /return finish\(\{ socket, alreadyRead \}\)/,
+      'dialRelay hands back a bare socket, so whatever it had already read is lost');
+    assert.equal(/socket\.unshift\(/.test(source.slice(source.indexOf('export function dialRelay'))), false,
+      'putting bytes back on a flowing socket is a race, not a hand-over');
+  });
+
+  test('and the handshake accepts them', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join: j } = await import('node:path');
+    const { fileURLToPath: url } = await import('node:url');
+    const at = dirname(url(import.meta.url));
+
+    const source = await readFile(j(at, '..', 'peers.mjs'), 'utf8');
+    assert.match(source, /alreadyRead = null/, 'greet cannot be given bytes already read');
+    assert.match(source, /if \(alreadyRead\?\.length\)/, 'greet ignores them');
+  });
+
+  test('every caller that crosses an await passes them on', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join: j } = await import('node:path');
+    const { fileURLToPath: url } = await import('node:url');
+    const at = dirname(url(import.meta.url));
+
+    // Anywhere that dials a relay and then greets must carry the bytes across.
+    for (const file of ['anywhere.mjs']) {
+      const source = await readFile(j(at, '..', file), 'utf8');
+      if (!source.includes('dialRelay')) continue;
+      assert.match(source, /alreadyRead: joined\.alreadyRead/,
+        `${file} dials a relay and greets without passing on what was already read`);
     }
   });
 });

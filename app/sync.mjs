@@ -380,6 +380,9 @@ function firstLine(channel) {
     const finish = (v) => {
       if (settled) return;
       settled = true;
+      // Paused before letting go, even on the paths where nothing reads next —
+      // the rule is worth keeping uniform rather than reasoned about per case.
+      channel.incoming.pause();
       channel.incoming.off('data', onData);
       done(v);
     };
