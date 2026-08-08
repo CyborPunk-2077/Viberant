@@ -114,6 +114,14 @@ const SURFACES = [
   'settings.mjs',
   'signin.mjs',
   'google.mjs',
+  // Written after the audit existed, and both say things to a person: what a
+  // model refused and why, and whether there is a newer Viberant. A file that
+  // is not in this list is a file where the rule is back to being a discipline.
+  'assistant.mjs',
+  'newer.mjs',
+  'lan.mjs',
+  'parcel.mjs',
+  'providers.mjs',
 ];
 
 describe('nothing a person reads is borrowed from somewhere else', () => {
