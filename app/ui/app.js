@@ -4211,6 +4211,60 @@ async function drawGoogleSettings() {
   }
 }
 
+/**
+ * Whether there is a newer one, and the one step this will not take for you.
+ *
+ * The refusal is on the page rather than only in the code, because a person who
+ * cannot see why a button is missing concludes it is broken. What is missing is
+ * a signature, and saying so out loud is the difference between a limitation
+ * and an explanation.
+ */
+async function drawNewerSettings({ force = false } = {}) {
+  const box = $('#newer-settings');
+  if (!box) return;
+
+  const n = force ? await post('/newer', {}) : await get('/newer');
+  if (!box.isConnected) return;
+
+  const row = (title, why, control) => `
+    <div class="setting">
+      <div class="about"><b>${title}</b><span>${why}</span></div>
+      <div class="set">${control}</div>
+    </div>`;
+
+  box.innerHTML = `
+    ${n.newer ? row(
+    `${esc(n.name)}<span class="chip cool" style="margin-left:.5rem">new</span>`,
+    `${esc(n.sentence)} ${esc(n.action)}`,
+    '<button class="go small" id="newer-get">Get it</button>',
+  ) : row(
+    esc(n.sentence),
+    n.known
+      ? 'Checked against what has been released.'
+      : esc(n.action ?? 'Try again in a moment.'),
+    '<button class="small" id="newer-again">Check again</button>',
+  )}
+
+    ${n.newer && n.whatsNew?.length ? row(
+    'What is new',
+    n.whatsNew.map((l) => esc(l)).join(' · '),
+    '',
+  ) : ''}
+
+    ${row(
+    'It does not install itself',
+    `${esc(n.signing.sentence)} ${esc(n.signing.action)}`,
+    '',
+  )}`;
+
+  $('#newer-again')?.addEventListener('click', () => drawNewerSettings({ force: true }));
+  $('#newer-get')?.addEventListener('click', async () => {
+    if (!n.at) return;
+    say(await post('/open/page', { at: n.at }));
+    draw();
+  });
+}
+
 SCREENS.settings = async () => {
   const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
@@ -4243,6 +4297,12 @@ SCREENS.settings = async () => {
           <div class="about"><b>${esc(s.name)}</b><span>${esc(s.why)}</span></div>
           <div class="set">${control(s, terminals)}</div>
         </div>`).join('')}
+    </div>
+
+    <div class="sect"><h2>Keeping it up to date</h2></div>
+    <div class="card" id="newer-settings">
+      <div class="setting"><div class="about"><b>Checking…</b>
+        <span>Asking whether a newer Viberant has been released.</span></div><div class="set"></div></div>
     </div>
 
     <div class="sect"><h2>This computer</h2></div>
@@ -4286,6 +4346,7 @@ SCREENS.settings = async () => {
 
   drawGitHubSettings();
   drawGoogleSettings();
+  drawNewerSettings();
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.onclick = async () => {

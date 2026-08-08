@@ -45,6 +45,7 @@ import * as live from './live.mjs';
 import * as google from './google.mjs';
 import * as providers from './providers.mjs';
 import * as assistant from './assistant.mjs';
+import * as newer from './newer.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -662,6 +663,21 @@ const routes = {
     }
     signin.openInBrowser(body.at);
     return { ok: true };
+  },
+
+  /**
+   * Whether there is a newer Viberant.
+   *
+   * A read, never a write. The one thing it will not do is install anything —
+   * `newer.mjs` says at length why, and `signing` below carries that sentence
+   * to the page so the reason is on screen rather than in a comment.
+   */
+  async 'GET /newer'() {
+    return { ...(await newer.check(VERSION)), signing: newer.signing() };
+  },
+
+  async 'POST /newer'() {
+    return { ...(await newer.check(VERSION, { force: true })), signing: newer.signing() };
   },
 
   async 'GET /feedback'() {

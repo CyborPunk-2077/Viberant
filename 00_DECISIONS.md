@@ -1479,6 +1479,22 @@ Folding is the only irreversible step in the product, so it is guarded by checks
 
 ---
 
+### D-132 `[LOCKED]` — Viberant checks for a newer version and will not install it, until it is signed
+
+**Decision.** The app asks what has been released, says what is new in the words the release was written in, and opens the page in your browser. It does not download anything and it does not run anything. A test reads `newer.mjs` and asserts there is no way in it to fetch a file, write one, or start any program other than the one command that asks what has been released.
+
+**Why.** An updater that fetches and executes is four lines, and it is the most dangerous four lines anybody can put in a desktop application: whoever can answer that request once — a compromised account, a hijacked address, a network you do not control — runs whatever they like on this computer, as you, forever. The protection against that is not care and it is not HTTPS. It is a signature: the installer is signed with a key only the author holds, and the operating system refuses one signed by anybody else before a byte of it runs.
+
+**That signature does not exist yet.** It needs a certificate bought from a certificate authority, kept where it cannot be copied, and a build that signs with it. Until then there are exactly two honest options — do it properly, or do not do it. Fetching and running unsigned code "for now" is worse than having no updater at all, because it teaches somebody to press a button that will one day be the wrong button.
+
+**Locked**, alongside D-96, D-107 and D-125, because the failure is silent and the damage is not recoverable by pressing something afterwards.
+
+**Considered and rejected.** Checking a hash published beside the file — a hash from the same place as the file proves only that the file arrived intact from whoever put it there. Prompting before running the downloaded installer — the prompt is the part that gets clicked through; the signature is the part that does not. Saying "not implemented" — that tells nobody what is missing or who can supply it, so `signing()` says exactly what has to be true and the page shows it.
+
+**One correction found on the way.** `gh` reports both "no releases yet" and "could not reach GitHub" as a refusal. Reading them as one would have told somebody to check they were online when the truth was that no version exists — wrong advice, confidently, which is the exact failure this product is meant to be better than. They are told apart by what was said.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
