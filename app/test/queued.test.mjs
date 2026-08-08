@@ -138,6 +138,68 @@ describe('the four things that go wrong stay four', () => {
   });
 });
 
+describe('what arrives, and the shapes it arrives in', () => {
+  test('a refusal wrapped in a list is still read', async () => {
+    /*
+     * Google sends a list holding one object where the shape it is copying
+     * sends the object. Read as the object it is not, the reason inside it is
+     * simply not there — so every Gemini refusal arrived with nothing said,
+     * and an account out of allowance came back as "asking too fast", which is
+     * the opposite advice. Invisible from the outside, because both are
+     * refusals and both stop you asking.
+     */
+    const source = await readFile(join(here, '..', 'assistant.mjs'), 'utf8');
+    assert.match(source, /function whatTheySent\(/,
+      'nothing unwraps a refusal that arrives inside a list');
+    assert.match(source, /Array\.isArray\(said\)/);
+
+    // And both ways of asking go through it.
+    const uses = (source.match(/whatTheySent\(/g) ?? []).length;
+    assert.ok(uses >= 3, `only ${uses - 1} of the two ways of asking unwrap what came back`);
+  });
+
+  test('an answer with nothing in it is not an answer', async () => {
+    // The newer models think before they speak, out of the same allowance as
+    // the answer. A short reply can go entirely on thinking and come back with
+    // a `length` on it and no words in it — which used to be rendered as
+    // success, as an empty box, which is worse than a refusal.
+    answersWith({ ok: true, text: '', stoppedBecause: 'length' });
+
+    const out = await assistant.askAbout({ dir: project, question: 'what is here' });
+    assert.equal(out.ok, false, 'an empty answer was reported as an answer');
+    assert.equal(out.emptyAnswer, true);
+    assert.match(out.action, /thinking/);
+  });
+
+  test('and one with something in it is', async () => {
+    answersWith({ ok: true, text: 'VIBERANT_AI_OK', stoppedBecause: 'stop' });
+    const out = await assistant.askAbout({ dir: project, question: 'say the word' });
+    assert.equal(out.ok, true);
+    assert.equal(out.text, 'VIBERANT_AI_OK');
+  });
+
+  test('a model that has been retired says so, rather than blaming the key', async () => {
+    answersWith({
+      ok: false,
+      status: 404,
+      why: 'This model models/gemini-2.5-flash is no longer available to new users.',
+    });
+    const out = await assistant.askAbout({ dir: project, question: 'anything' });
+    assert.equal(out.kind, assistant.TROUBLE.modelUnavailable);
+    assert.match(out.action, /model/i);
+  });
+
+  test('every model this offers is one the company still has', () => {
+    // The version that was written down here answered "no longer available to
+    // new users". A name that moves is the only kind that does not quietly
+    // stop working in six months, and this is installed once.
+    for (const one of assistant.CATALOGUE.gemini.models) {
+      assert.match(one.id, /-latest$/,
+        `${one.id} is a fixed version, which is the kind that gets retired`);
+    }
+  });
+});
+
 describe('a key is not rejected for being asked to wait', () => {
   test('a limit while checking means the key was accepted, so it is kept', async () => {
     // Nothing counts a request it did not recognise. A key that is wrong is

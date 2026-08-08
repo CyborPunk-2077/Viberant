@@ -887,10 +887,37 @@ async function askAssistant(kind, where, body = {}) {
     return;
   }
 
+  /*
+   * An answer, shown as an answer to a question somebody asked.
+   *
+   * It used to be a paragraph on its own with a line under it. Which is fine
+   * for one press of a button and wrong the moment somebody types — there is
+   * nothing on the screen saying what was asked, so an answer that has drifted
+   * off the point looks like a wrong answer rather than a misread question.
+   * The question goes above it, and which company answered goes on top, where
+   * somebody deciding whether to trust it is already looking.
+   */
   box.innerHTML = `
-    <div class="ai-said">${asParagraphs(r.text)}</div>
-    <div class="ai-from">Answered by ${esc(r.model ?? 'the model')}, from this project only.</div>`;
+    <div class="ai-exchange">
+      <div class="ai-head">
+        <span class="who">${esc(r.model ?? 'the model')}${r.using ? ` · ${esc(modelShort(r.using))}` : ''}</span>
+        <span class="rest"></span>
+        <button class="quiet small" id="ai-copy">Copy</button>
+      </div>
+      ${body.question || body.wanted ? `
+        <div class="ai-asked">${esc(body.question ?? body.wanted)}</div>` : ''}
+      <div class="ai-said">${asParagraphs(r.text)}</div>
+      <div class="ai-from">Read only what this question needed, from ${esc(me.currentName ?? 'this project')} and nowhere else.</div>
+    </div>`;
+
+  $('#ai-copy').onclick = async () => {
+    await navigator.clipboard?.writeText(r.text ?? '');
+    $('#ai-copy').textContent = 'Copied';
+  };
 }
+
+/** A model's own name, shortened to the part a person would say out loud. */
+const modelShort = (id) => String(id ?? '').replace(/-latest$/, '').replace(/-\d{8}$/, '');
 
 /**
  * A refusal, and the one or two things there are to do about it.

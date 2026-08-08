@@ -67,12 +67,22 @@ export const CATALOGUE = {
       { id: 'o3-mini', name: 'o3-mini', why: 'Thinks for longer before answering.' },
     ],
   },
+  /*
+   * Google's own moving names, on purpose.
+   *
+   * The ones with a number in them are retired for new accounts without being
+   * removed from anybody's documentation — `gemini-2.5-flash` answers *this
+   * model is no longer available to new users*, and the version that was
+   * written down here answered the same. A name that moves is the only kind
+   * that does not quietly stop working in six months, and this is a manager
+   * somebody installs once.
+   */
   gemini: {
-    default: 'gemini-2.0-flash',
+    default: 'gemini-flash-latest',
     models: [
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', why: 'The balanced one.' },
-      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', why: 'Slower and better at hard problems.' },
-      { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', why: 'Fast and cheap.' },
+      { id: 'gemini-flash-latest', name: 'Gemini Flash', why: 'The balanced one. Google keeps this pointed at their current one.' },
+      { id: 'gemini-pro-latest', name: 'Gemini Pro', why: 'Slower and better at hard problems.' },
+      { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite', why: 'Fast and cheap.' },
     ],
   },
 };
@@ -107,7 +117,7 @@ export const MODELS = [
         }),
       });
       if (!res.ok) {
-        const said = await quiet(() => res.json(), null);
+        const said = whatTheySent(await quiet(() => res.json(), null));
         return {
           ok: false,
           status: res.status,
@@ -116,7 +126,11 @@ export const MODELS = [
         };
       }
       const body = await res.json();
-      return { ok: true, text: (body.content ?? []).map((c) => c.text ?? '').join('').trim() };
+      return {
+        ok: true,
+        text: (body.content ?? []).map((c) => c.text ?? '').join('').trim(),
+        stoppedBecause: body.stop_reason ?? null,
+      };
     },
   },
 
@@ -170,7 +184,7 @@ async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
     }),
   });
   if (!res.ok) {
-    const said = await quiet(() => res.json(), null);
+    const said = whatTheySent(await quiet(() => res.json(), null));
     return {
       ok: false,
       status: res.status,
@@ -178,8 +192,31 @@ async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
       waitFor: howLongToWait(res, said),
     };
   }
+
   const body = await res.json();
-  return { ok: true, text: String(body.choices?.[0]?.message?.content ?? '').trim() };
+  return {
+    ok: true,
+    text: String(body.choices?.[0]?.message?.content ?? '').trim(),
+    // Why it stopped. `length` with nothing in it means the whole allowance
+    // went on thinking and there was none left to answer with, which is a
+    // real answer to give somebody rather than an empty box.
+    stoppedBecause: body.choices?.[0]?.finish_reason ?? null,
+  };
+}
+
+/**
+ * The refusal itself, out of whichever shape it arrived in.
+ *
+ * Google sends a **list holding one object** where the shape it is copying
+ * sends the object. Read as the object it is not, the reason inside it is
+ * simply not there — so every Gemini refusal arrived with nothing said, and
+ * an account out of allowance came back as "asking too fast", which is the
+ * opposite advice. One line, and it was invisible from the outside because
+ * both are still refusals.
+ */
+function whatTheySent(said) {
+  if (Array.isArray(said)) return said.find((one) => one?.error) ?? said[0] ?? null;
+  return said;
 }
 
 /**
@@ -498,9 +535,35 @@ async function askModel({ system, message, mostTokens }) {
         action: 'Check you are online, then try again.',
       };
     }
+    if (out.ok && out.text) {
+      return {
+        ok: true,
+        text: out.text,
+        model: set.name,
+        using: set.using ?? null,
+        waited: waited || null,
+      };
+    }
+
+    /*
+     * It answered, and said nothing.
+     *
+     * The newer models think before they speak, and the thinking comes out of
+     * the same allowance as the answer. Ask for a short reply and the whole
+     * allowance can go on thinking, leaving a reply with a `length` on it and
+     * no words in it. Rendered as success that is an empty box, which is worse
+     * than a refusal because there is nothing to act on.
+     */
     if (out.ok) {
       return {
-        ok: true, text: out.text, model: set.name, using: set.using ?? null, waited: waited || null,
+        ok: false,
+        kind: TROUBLE.unknown,
+        provider: set.model.id,
+        emptyAnswer: true,
+        sentence: `${set.name} answered without saying anything.`,
+        action: out.stoppedBecause === 'length'
+          ? 'It used the whole reply thinking and had none left to answer with. Ask something smaller, or pick a different model for it.'
+          : 'Ask again — this usually passes.',
       };
     }
 

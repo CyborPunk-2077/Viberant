@@ -1746,6 +1746,38 @@ h2:first-of-type { margin-top: 0; }
 .ai-one .field { margin-top: var(--s3); }
 .ai-one .fact { margin-top: var(--s2); }
 
+/*
+ * A question and its answer, together.
+ *
+ * The question is above the answer because an answer alone cannot be judged:
+ * one that has drifted off the point looks like a wrong answer rather than a
+ * misread question. Which company answered is on top, where somebody deciding
+ * whether to trust it is already looking.
+ */
+.ai-exchange { padding: var(--s4) 0 0; min-width: 0; }
+.ai-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding-bottom: var(--s3);
+  border-bottom: 1px solid var(--line-soft);
+}
+.ai-head .who {
+  font-size: var(--t-meta);
+  font-weight: var(--w-mid);
+  color: var(--vibe-b);
+}
+.ai-head .rest { flex: 1 1 auto; }
+.ai-asked {
+  margin: var(--s3) 0 0;
+  padding-left: var(--s3);
+  border-left: 2px solid var(--line);
+  color: var(--quiet);
+  font-size: var(--t-sub);
+  overflow-wrap: anywhere;
+}
+.ai-exchange .ai-said { padding-top: var(--s3); }
+
 .ai-said {
   padding: var(--s4) 0 0;
   font-size: var(--t-sub);
