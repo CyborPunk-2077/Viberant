@@ -791,7 +791,8 @@ const routes = {
   async 'GET /project/binding'({ url }) {
     const at = url.searchParams.get('path');
     if (!at || !existsSync(at)) return { bound: false };
-    return github.bindingOf(at);
+    const [bound, well] = await Promise.all([github.bindingOf(at), providers.health(at)]);
+    return { ...bound, health: well };
   },
 
   async 'POST /publish'({ body }) {

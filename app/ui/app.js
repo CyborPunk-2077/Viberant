@@ -1645,26 +1645,41 @@ async function inspectProject(p) {
     ],
   });
 
-  // The binding, once the project has been asked. Added to what is already on
-  // screen rather than replacing it, so nothing moves when it arrives.
+  // The binding and how the project stands, once it has been asked. Added to
+  // what is already on screen rather than replacing it, so nothing moves.
   const b = await get(`/project/binding?path=${encodeURIComponent(p.path)}`);
   if (inspecting?.name !== p.name) return;
-  if (!b?.bound) return;
 
-  inspect({
-    ...inspecting,
-    facts: [
-      ...facts.slice(0, 1),
-      {
-        label: 'GitHub',
-        mono: true,
-        value: `${b.owner}/${b.repo}`,
-        html: `<a href="${esc(b.url ?? '#')}" target="_blank" rel="noreferrer">${esc(b.owner)}/${esc(b.repo)}</a>`,
-      },
-      { label: 'Line', value: b.branch, mono: true },
-      ...facts.slice(1),
-    ],
-  });
+  const added = [];
+  if (b?.bound) {
+    added.push({
+      label: 'GitHub',
+      mono: true,
+      value: `${b.owner}/${b.repo}`,
+      html: `<a href="${esc(b.url ?? '#')}" target="_blank" rel="noreferrer">${esc(b.owner)}/${esc(b.repo)}</a>`,
+    });
+    if (b.branch) added.push({ label: 'Line', value: b.branch, mono: true });
+  }
+
+  // Only what was actually checked. A tick nobody verified is worse than a
+  // blank line, because it is the thing somebody believes until they press
+  // Build and find out otherwise.
+  const checks = b?.health?.checks ?? [];
+  if (checks.length) {
+    added.push({
+      label: 'How it stands',
+      value: checks.length,
+      html: `<span class="checks">${checks.map((c) => `
+        <span class="check ${c.state}">
+          <span class="pip"></span>
+          <b>${esc(c.name)}</b>
+          <span>${esc(c.says)}</span>
+        </span>`).join('')}</span>`,
+    });
+  }
+
+  if (!added.length) return;
+  inspect({ ...inspecting, facts: [...facts.slice(0, 1), ...added, ...facts.slice(1)] });
 }
 
 /**

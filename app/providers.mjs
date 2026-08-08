@@ -116,6 +116,55 @@ async function environmentNames(dir) {
   return { expected: [...out], hasLocalFile: has };
 }
 
+/**
+ * Whether this project could actually run, said as facts rather than a score.
+ *
+ * Every line is something checked, and anything that cannot be checked is left
+ * out rather than guessed at. A health panel that invents a green tick is worse
+ * than no health panel — it is the thing somebody believes right up until they
+ * press Build.
+ */
+export async function health(dir) {
+  const at = resolve(dir);
+  const look = await inspect(at);
+  const out = [];
+
+  if (look.manager) {
+    const installed = existsSync(join(at, 'node_modules'));
+    out.push({
+      name: 'Dependencies',
+      state: installed ? 'good' : 'missing',
+      says: installed ? 'Installed' : `Not installed — run ${look.install}`,
+    });
+  }
+
+  if (look.hasPackage) {
+    const runtime = await quiet(async () => (await run('node', ['--version'])).stdout.trim(), null);
+    if (runtime) out.push({ name: 'Node', state: 'good', says: runtime.replace(/^v/, '') });
+  }
+
+  out.push({
+    name: 'Build',
+    state: look.build ? 'good' : 'missing',
+    says: look.build ? look.build : 'This project does not say how to build itself',
+  });
+
+  const expected = look.environment.expected ?? [];
+  if (expected.length) {
+    out.push({
+      name: 'Environment',
+      state: look.environment.hasLocalFile ? 'good' : 'missing',
+      // The names, because the names are the useful half and the values must
+      // never be read (D-123).
+      says: look.environment.hasLocalFile
+        ? `${expected.length} expected, and a local file is here`
+        : `${expected.length} expected and no local file: ${expected.join(', ')}`,
+    });
+  }
+
+  return { framework: look.framework, checks: out };
+}
+
 // ---------------------------------------------------------------------------
 // Which place, and which project it is bound to
 // ---------------------------------------------------------------------------

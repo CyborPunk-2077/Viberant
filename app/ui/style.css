@@ -441,6 +441,37 @@ main {
 .insp-fact dd.mono { font-family: var(--mono); font-size: var(--t-meta); color: var(--quiet); }
 .insp-fact dd.dim { color: var(--dim); }
 
+/*
+ * How a project stands: one line per thing actually checked.
+ *
+ * Not a score and not a percentage. Every line names what was looked at and
+ * what was found, so a green one is a fact rather than an impression.
+ */
+.checks { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s1); }
+.check {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: var(--s3);
+  row-gap: 0;
+  min-width: 0;
+}
+.check .pip {
+  width: 5px; height: 5px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  align-self: center;
+}
+.check.good .pip { background: var(--live); }
+.check.missing .pip { background: var(--attention); }
+.check b { font-size: var(--t-sub); font-weight: var(--w-mid); color: var(--ink); }
+.check span:last-child {
+  grid-column: 2;
+  font-size: var(--t-tiny);
+  color: var(--faint);
+  overflow-wrap: anywhere;
+}
+
 .insp-acts { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s5); }
 .insp-acts button { width: 100%; justify-content: flex-start; }
 
