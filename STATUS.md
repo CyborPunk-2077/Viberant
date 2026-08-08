@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 472 in the app and 107 in core — 579 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 503 in the app and 107 in core — 610 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,90 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## Vercel works, end to end, and it was checked by doing it
+
+**Connecting no longer waits on a browser.** It used to start Vercel's own
+sign-in as a background command and wait. That command wants a terminal —
+somewhere to print the address it needs you to visit, and something to read your
+answer from — and inside an app it has neither, so it waited forever and all
+anybody saw was a spinner. Three ways to be connected now: a token pasted here
+and checked against Vercel before it is kept, the command being signed in on
+this computer already, or not connected. Not connected means not connected: a
+revoked token reads as revoked, and being unable to ask is its own third state.
+D-162.
+
+**A deploy is checked rather than assumed.** The address is asked about until
+Vercel says ready, or fetched until something answers when there is no token to
+ask with. Deployment protection replying 401 counts — that is a site that is
+up and asking who you are. D-163.
+
+**Verified by doing it twice:** a page deployed through the app, live at
+`viberant-deploy-check.vercel.app`, fetched back at 200 with the right content
+in it, with Open the website, Copy the address and See it on Vercel all on the
+result.
+
+Two faults found by doing it rather than by reading it. The address was matched
+together with the quotation mark printed after it, so the check threw on
+something that was not an address, silently, once every three seconds for five
+minutes, and reported that nothing was being served about a site that had been
+live the whole time. And the address of the deployment was carried through an
+errand by being spread in — an errand only carries fields it knows the names
+of, in two separate places, and it was named in neither.
+
+## A queue is not a bill
+
+Adding a good Gemini key and asking one question came back as though the key
+were wrong. Google says *Quota exceeded for quota metric* when a free allowance
+of so many questions a minute runs out, which refills on its own in seconds.
+Read as being about money, it sent somebody off to top up an account that was
+fine. Money is now decided by the words that are only ever about money.
+Everything else at 429 is a queue, and the sentence says the key is fine,
+because that is the thing somebody is about to doubt. D-164.
+
+Every refusal says which of seven things it was, and the page draws four of them
+differently because they need four different things from a person. The question
+is kept in all of them. A short wait is taken rather than reported; a long one
+is reported rather than waited on. Another company with a key here is offered by
+name and never switched to quietly.
+
+And a key is no longer refused for being asked to wait — nothing counts a
+request it did not recognise, so a limit is proof the key was accepted, which is
+the whole reason a good key could not be added.
+
+## The errand you opened to read used to close itself
+
+Look at it on Activity opened the detail and closed it six hundred milliseconds
+later. One path served two purposes: when an errand finishes, the screen that
+started it is redrawn so what changed underneath appears — and opening a
+*finished* errand went down that same path, redrawing over the top of the thing
+just opened. A watch now remembers whether it ever saw the errand running.
+D-165.
+
+Activity is a real operational screen: filters for the kinds that have actually
+happened here, columns for what it was and which project and when, the one being
+read marked in the list, the detail in a fixed place rather than a popover.
+
+## The shell
+
+The numbers each screen is about are at the top of it as cards. The one graphic
+is drawn into the card reporting a live connection and nowhere else, behind the
+text rather than over it, absent when nothing is connected. Whether your other
+computers can reach this one is in the bar across the top, because it is true of
+the whole app. Settings is eight places with a column down the side rather than
+one long document. Sand from the pointer is removed. D-167.
+
+Found doing it: a settings page whose own navigation did nothing on seven parts
+out of eight, because the first control that only exists on one part threw and
+stopped every line after it. The way between parts is wired first now. D-166.
+
+Measured at 1280, 1366, 1440, 1920 and 2560 across every screen: nothing runs
+off the right, nothing is cut without a sign, no two controls overlap, no text
+under ten and a half pixels, and no line in a colour that means something it
+does not mean. Every overlay opens inside the window, stays open, and survives a
+press on its own content.
 
 ---
 

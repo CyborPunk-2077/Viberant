@@ -1170,6 +1170,65 @@ h2:first-of-type { margin-top: 0; }
 .has-wall .rail .label-tiny { color: var(--quiet); }
 
 /*
+ * Settings, as places rather than as one long document.
+ *
+ * It was thirty-odd rows in one column: who you are signed in as, then which
+ * company answers, then eight about colour, then two about a Google
+ * application, then the network, then diagnostics. Nobody reads that. They
+ * scroll it, fail to find the one they came for, and scroll past it twice.
+ *
+ * A column of places down the left and one part on the right. Under sixty
+ * characters of width the column lies down and becomes a row of chips, because
+ * two columns inside a narrow window leaves neither of them usable.
+ */
+.settingsplaces {
+  display: grid;
+  grid-template-columns: 12.5rem minmax(0, 1fr);
+  gap: var(--s6);
+  align-items: start;
+}
+.settingsplaces > nav {
+  position: sticky;
+  top: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.settingsplaces > nav button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  border: 1px solid transparent;
+  border-radius: var(--r-button);
+  background: none;
+  color: var(--dim);
+  font-size: var(--t-sub);
+  font-weight: var(--w-mid);
+  cursor: pointer;
+}
+.settingsplaces > nav button:hover { color: var(--ink); background: var(--raised); }
+.settingsplaces > nav button.on {
+  color: var(--ink);
+  background: var(--vibe-wash);
+  border-color: color-mix(in oklab, var(--vibe-b) 26%, transparent);
+}
+.settingsplaces > .part { min-width: 0; }
+.settingsplaces > .part > .sect:first-child { margin-top: 0; }
+
+@media (max-width: 60rem) {
+  .settingsplaces { grid-template-columns: minmax(0, 1fr); gap: var(--s4); }
+  .settingsplaces > nav {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--s2);
+  }
+  .settingsplaces > nav button { width: auto; border-color: var(--line); }
+}
+
+/*
  * One fact about the whole app, in the corner of the bar across the top.
  *
  * It is up here rather than on a screen because it is true everywhere: nothing

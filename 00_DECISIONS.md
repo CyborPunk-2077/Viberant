@@ -1817,6 +1817,65 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-162 `[DECIDED]` — Vercel is connected by a token, not by waiting on a browser
+
+**Decision.** Three ways to be connected, in order: a token pasted here and checked against Vercel before it is kept; the command being signed in on this computer already; or not connected. The token reaches the tool through the surroundings of the process, never as an argument.
+
+**Why the old way could not work.** It started Vercel's own sign-in as a background command and waited. That command wants a terminal — somewhere to print the address it needs you to visit, and something to read your answer from. Inside an app it has neither, so it waited forever and all anybody saw was a spinner, sometimes with the browser half having plainly succeeded. Increasing a timeout would not have touched it.
+
+**Not connected now means not connected.** Being unable to ask is a third state, and a token that has been revoked reads as revoked rather than as fine — an expired credential drawn as connected is the failure that costs somebody an afternoon.
+
+**Arguments are written down and surroundings are not.** `runInto` records the command it ran, so a token in the argument list is a token in a log.
+
+---
+
+### D-163 `[LOCKED]` — A command exiting is not a site being online
+
+**Decision.** After a deploy, the address is asked about until Vercel says ready — or, when there is no token to ask with, fetched until something answers. Deployment protection replying 401 counts, because that is a site that is up and asking who you are. Only the two states Vercel serves while there is nothing to serve fail this.
+
+**Why.** It is the same rule as everywhere else in this project, applied to the one place people care about most. Two bugs have already been caught here: saying a save failed when it succeeded, and saying work was sent without knowing.
+
+**Found by actually doing it.** The address was matched together with the quotation mark printed after it. The check then threw on something that was not an address, silently, once every three seconds for five minutes, and reported that nothing was being served about a site that had been live the whole time. And the address of the deployment was carried through an errand by being spread in — an errand only carries fields it knows the names of, in two separate places, and it was named in neither.
+
+---
+
+### D-164 `[DECIDED]` — Money and a queue both say "quota", and they need opposite things
+
+**Decision.** A refusal is about money only when the words are ones that are only ever about money — credit, balance, billing, a plan. Everything else at 429 is a queue. Every refusal carries which of seven things it was.
+
+**Why.** Google says *Quota exceeded for quota metric* when a free allowance of so many questions a minute runs out, which refills on its own in seconds. Read as money, somebody with a working key and a fine account was told to go and top it up. It was the first thing that happened after adding a Gemini key, every time.
+
+**And a key is no longer refused for being asked to wait.** Nothing counts a request it did not recognise, so a limit of either kind is proof the key was accepted. Refusing to keep it on those grounds made a good key impossible to add at all.
+
+**Waiting is bounded and only ever after being told how long.** A one-second wait is taken rather than reported; four minutes is reported rather than waited on. Three attempts, never a loop deciding for itself. Another company that has a key here is offered by name and never switched to quietly — that would be spending money at a company nobody chose.
+
+---
+
+### D-165 `[DECIDED]` — A redraw belongs to an errand you watched, not to one you opened
+
+**Decision.** A watch remembers whether it ever saw the errand running, and only the screen that watched one finish is redrawn.
+
+**Why.** Opening a finished errand to read it went down the same path as watching one finish: it painted, found the errand over, and six hundred milliseconds later redrew the page — throwing away the detail it had just written and putting nothing back. From the outside, Look at it did nothing. Nothing had changed underneath, because nothing had happened.
+
+---
+
+### D-166 `[DECIDED]` — The way between the parts of a page is wired before anything else
+
+**Decision.** On a page drawn in parts, the navigation between them is wired first.
+
+**Why.** Everything below reaches for a control that exists on one part only. The first one that was not written to tolerate its absence threw, which stopped every line after it — including the navigation. A settings page whose own navigation did nothing, on every part except the one that happened to carry that control.
+
+---
+
+### D-167 `[DECIDED]` — The numbers a screen is about go at the top of it, and sand is not a feature
+
+**Decision.** Each screen opens with the three or four numbers it is actually about, as cards. The one graphic is drawn into the card reporting a live connection and nowhere else; it fades out before the text starts and is absent when nothing is connected.
+
+**And the sand from the pointer is removed, not switched off.** On a screen full of work it was a diagonal trail of particles across whatever you were reading. It meant nothing, marked nothing, and was the first thing anybody asked to have taken away. Kept as a setting it would have stayed on for everybody who already had it.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

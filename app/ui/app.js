@@ -2619,11 +2619,12 @@ SCREENS.ask = async () => {
   view.innerHTML = `
     <div class="pagehead">
       <div class="grow">
-        <h1>Ask</h1>
+        <h1>AI Assistant</h1>
         <p class="sub">Questions about the project that is open, answered by whichever company
           you already pay for. The question and the few files it needs go to that one and
           nowhere else \u2014 never the whole folder, and never another project.</p>
       </div>
+      <div class="acts"><button class="quiet" id="ai-pick">Which one answers\u2026</button></div>
     </div>
     ${saidHtml()}
 
@@ -2651,6 +2652,7 @@ SCREENS.ask = async () => {
   said = null;
 
   $('#ask-pick')?.addEventListener('click', () => go('projects'));
+  $('#ai-pick').onclick = () => setUpAi();
   if (p?.name) wireAskPanel();
 };
 
@@ -6051,44 +6053,46 @@ SCREENS.activity = async () => {
 /** What a kind of errand is called, in words. */
 const kindCalled = (id) => JOB_KINDS.find((k) => k.id === id)?.name ?? id ?? 'Other';
 
+/** Which part of Settings is being looked at. Kept between redraws. */
+let settingsPlace = 'accounts';
+
 SCREENS.settings = async () => {
   const [{ settings, parts, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
   /**
-   * One part of the page, and only if anything belongs on it.
+   * The parts of this page, in the order somebody would go looking.
    *
-   * The whole list used to be one card in the order the settings happened to
-   * be written in — what this computer is called, then where projects go, then
-   * eight about colour, then two about a Google application, then three keys.
-   * Nobody reads that. They scan it, fail to find the one they came for, and
-   * scroll past it twice.
+   * Two of them are not lists of settings at all — who you are signed in as,
+   * and what is written down — so they are named here rather than derived from
+   * the settings themselves. The rest come from the manager, which is the one
+   * place that decides what belongs with what.
    */
-  const part = (one) => {
-    const mine = settings.filter((s) => s.where === one.id);
-    if (!mine.length) return '';
+  const places = [
+    { id: 'accounts', name: 'Accounts', why: 'Who this computer acts as, on GitHub and on Google.' },
+    { id: 'asking', name: 'AI', why: 'Which company answers questions about your projects, and the key that pays for it.' },
+    ...parts.map((one) => ({ ...one, id: one.id === 'look' ? 'look' : one.id })),
+    { id: 'updates', name: 'Updates', why: 'Whether there is a newer Viberant, and why it will not install itself.' },
+    { id: 'advanced', name: 'Advanced', why: 'What is written down, and what to do when something is wrong.' },
+  ];
+
+  if (!places.some((one) => one.id === settingsPlace)) settingsPlace = places[0].id;
+  const here = places.find((one) => one.id === settingsPlace);
+
+  /** One part of the page, drawn from the settings that belong on it. */
+  const rows = (id) => {
+    const ours = settings.filter((one) => one.where === id);
+    if (!ours.length) return '';
     return `
-      <div class="sect"><h2>${esc(one.name)}</h2></div>
-      ${one.why ? `<p class="sub" style="margin:-.4rem 0 .7rem">${esc(one.why)}</p>` : ''}
       <div class="card">
-        ${mine.map((s) => `
+        ${ours.map((one) => `
           <div class="setting">
-            <div class="about"><b>${esc(s.name)}</b><span>${esc(s.why)}</span></div>
-            <div class="set">${control(s, terminals)}</div>
+            <div class="about"><b>${esc(one.name)}</b><span>${esc(one.why)}</span></div>
+            <div class="set">${control(one, terminals)}</div>
           </div>`).join('')}
       </div>`;
   };
 
-  view.innerHTML = `
-    <div class="pagehead">
-      <div class="grow">
-        <h1>Settings</h1>
-        <p class="sub">Everything here changes how the manager behaves, never what it tells
-          you is true.</p>
-      </div>
-    </div>
-    ${saidHtml()}
-
-    <div class="sect"><h2>Who you are signed in as</h2></div>
+  const accounts = `
     <div class="card" id="gh-settings">
       <div class="setting"><div class="about"><b>GitHub</b>
         <span>Reading who this computer is signed in as…</span></div><div class="set"></div></div>
@@ -6096,26 +6100,24 @@ SCREENS.settings = async () => {
     <div class="card" id="google-settings" style="margin-top:.6rem">
       <div class="setting"><div class="about"><b>Google</b>
         <span>Reading…</span></div><div class="set"></div></div>
-    </div>
+    </div>`;
 
-    <div class="sect"><h2>Asking about your projects</h2></div>
+  const asking = `
     <div class="card">
       <div class="setting">
         <div class="about"><b>Which one answers, and which of its models</b>
-          <span id="ai-here">Reading\u2026</span></div>
-        <div class="set"><button class="small" id="ai-setup-here">Set it up\u2026</button></div>
+          <span id="ai-here">Reading…</span></div>
+        <div class="set"><button class="small" id="ai-setup-here">Set it up…</button></div>
       </div>
-    </div>
+    </div>`;
 
-    ${parts.map(part).join('')}
-
-    <div class="sect"><h2>Keeping it up to date</h2></div>
+  const updates = `
     <div class="card" id="newer-settings">
       <div class="setting"><div class="about"><b>Checking…</b>
         <span>Asking whether a newer Viberant has been released.</span></div><div class="set"></div></div>
-    </div>
+    </div>`;
 
-    <div class="sect"><h2>What is written down, and what to do when something is wrong</h2></div>
+  const advanced = `
     <div class="card">
       <div class="setting">
         <div class="about"><b>Everything the manager has written down</b>
@@ -6140,9 +6142,50 @@ SCREENS.settings = async () => {
         <div class="set"><button class="small danger" id="reset">Put them back</button></div>
       </div>
     </div>`;
+
+  const body = settingsPlace === 'accounts' ? accounts
+    : settingsPlace === 'asking' ? asking
+      : settingsPlace === 'updates' ? updates
+        : settingsPlace === 'advanced' ? advanced
+          : rows(settingsPlace);
+
+  view.innerHTML = `
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Settings</h1>
+        <p class="sub">Everything here changes how the manager behaves, never what it tells
+          you is true.</p>
+      </div>
+    </div>
+    ${saidHtml()}
+
+    <div class="settingsplaces">
+      <nav aria-label="Parts of settings">
+        ${places.map((one) => `
+          <button class="${one.id === settingsPlace ? 'on' : ''}" data-place="${esc(one.id)}">${esc(one.name)}</button>`).join('')}
+      </nav>
+      <div class="part">
+        <div class="sect"><h2>${esc(here.name)}</h2></div>
+        ${here.why ? `<p class="sub" style="margin:-.4rem 0 .7rem">${esc(here.why)}</p>` : ''}
+        ${body}
+      </div>
+    </div>`;
   said = null;
 
-  $('#diag').onclick = async () => {
+  /*
+   * The way between the parts is wired first, and on purpose.
+   *
+   * Everything below reaches for a control that only exists on one part, and
+   * the first one that was not optional threw — which stopped every line
+   * after it, including this loop. From the outside: a settings page whose own
+   * navigation did nothing, on every part except the one that happened to have
+   * that control. Wired first, so nothing further down can strand it.
+   */
+  for (const b of document.querySelectorAll('[data-place]')) {
+    b.onclick = () => { settingsPlace = b.dataset.place; draw(); };
+  }
+
+  $('#diag')?.addEventListener('click', async () => {
     const d = await get('/diagnostics');
     await navigator.clipboard?.writeText(JSON.stringify(d, null, 2));
     $('#diag').textContent = 'Copied';
@@ -6152,7 +6195,7 @@ SCREENS.settings = async () => {
       action: 'It says which account and what failed. It carries no keys or passwords.',
     });
     setTimeout(() => draw(), 1200);
-  };
+  });
 
   /**
    * One place to set this up, and it is the one that checks the key.
@@ -6163,7 +6206,7 @@ SCREENS.settings = async () => {
    * one that could not tell you it had failed. This is the same dialog somebody
    * gets when they try to ask a question with nothing set up.
    */
-  $('#ai-setup-here').onclick = () => setUpAi();
+  $('#ai-setup-here')?.addEventListener('click', () => setUpAi());
   get('/ai').then((who) => {
     const line = $('#ai-here');
     if (!line) return;
@@ -6174,9 +6217,10 @@ SCREENS.settings = async () => {
       : 'Nothing is set up yet, so questions about a project cannot be answered.';
   });
 
-  drawGitHubSettings();
-  drawGoogleSettings();
-  drawNewerSettings();
+  // Only the part that is on the page is asked about. The three that reach the
+  // network used to be asked on every draw, whichever part you were looking at.
+  if (settingsPlace === 'accounts') { drawGitHubSettings(); drawGoogleSettings(); }
+  if (settingsPlace === 'updates') drawNewerSettings();
   if (me.settings?.appearance === 'yours') checkPictureReads();
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
@@ -6288,8 +6332,8 @@ SCREENS.settings = async () => {
     };
   }
 
-  $('#open-record').onclick = async () => { say(await post('/settings/openRecord')); draw(); };
-  $('#reset').onclick = async () => {
+  $('#open-record')?.addEventListener('click', async () => { say(await post('/settings/openRecord')); draw(); });
+  $('#reset')?.addEventListener('click', async () => {
     const sure = await confirmThat({
       title: 'Put every setting back',
       what: 'Every setting goes back to how it started.',
@@ -6301,7 +6345,7 @@ SCREENS.settings = async () => {
     say(await post('/settings/reset'));
     await refreshMe();
     draw();
-  };
+  });
 };
 
 function control(s, terminals) {
