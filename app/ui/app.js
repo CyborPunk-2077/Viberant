@@ -633,6 +633,94 @@ async function go(tab, { keepSaid = false } = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Asking about this project
+//
+// Every one of these answers a specific question and is shown as a state
+// rather than as a conversation: what it is doing, then what it found. There is
+// no text box waiting for anything and no history to scroll — the question was
+// the button you pressed.
+// ---------------------------------------------------------------------------
+
+/** The steps an errand of this kind goes through, said the same way each time. */
+const AI_STEPS = {
+  explain: ['Reading what it printed', 'Reading the project', 'Working out why'],
+  diagnose: ['Reading the project', 'Looking for what would stop it'],
+  review: ['Reading what you changed', 'Looking it over'],
+  ask: ['Reading the project', 'Looking for what you asked about', 'Answering'],
+};
+
+let asking = null;
+
+/**
+ * Ask, and show it happening.
+ *
+ * The states are shown because these take a few seconds and a blank panel for
+ * a few seconds is indistinguishable from one that is broken. They are also the
+ * honest account of what it is doing — reading the project is a real step, and
+ * saying so is how somebody knows what was looked at.
+ */
+async function askAssistant(kind, where, body = {}) {
+  const box = $('#ai-out');
+  if (!box) return;
+
+  asking = kind;
+  const steps = AI_STEPS[kind] ?? ['Working'];
+  let at = 0;
+
+  const paint = () => {
+    if (asking !== kind) return;
+    box.innerHTML = `
+      <div class="ai-state">
+        <span class="spin"></span>
+        <span>${esc(steps[Math.min(at, steps.length - 1)])}…</span>
+      </div>`;
+  };
+  paint();
+  const moving = setInterval(() => { at += 1; paint(); }, 1400);
+
+  const r = await post(where, body);
+  clearInterval(moving);
+  if (asking !== kind) return;
+  asking = null;
+
+  if (!r.ok) {
+    box.innerHTML = `
+      <div class="ai-state bad">
+        <b>${esc(r.sentence ?? 'That could not be answered.')}</b>
+        ${r.action ? `<span>${esc(r.action)}</span>` : ''}
+      </div>`;
+    if (r.setting) {
+      box.insertAdjacentHTML('beforeend',
+        '<div class="bar" style="margin:.6rem 0 0"><button class="small" id="ai-setup">Settings</button></div>');
+      $('#ai-setup').onclick = () => go('settings');
+    }
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="ai-said">${asParagraphs(r.text)}</div>
+    <div class="ai-from">Answered by ${esc(r.model ?? 'the model')}, from this project only.</div>`;
+}
+
+/**
+ * What came back, as paragraphs and lists rather than one block.
+ *
+ * Deliberately not a Markdown renderer. Three things are recognised — a blank
+ * line, a numbered point, a bullet — because that is what these answers
+ * actually contain, and anything more is a rendering engine nobody asked for.
+ */
+function asParagraphs(text) {
+  return String(text ?? '').split(/\n{2,}/).map((para) => {
+    const lines = para.split('\n').filter((l) => l.trim());
+    const listed = lines.length > 1 && lines.every((l) => /^\s*(?:[-*•]|\d+[.)])\s/.test(l));
+    if (listed) {
+      return `<ul>${lines.map((l) => `<li>${esc(l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, ''))}</li>`).join('')}</ul>`;
+    }
+    return `<p>${esc(para.trim())}</p>`;
+  }).join('');
+}
+
+// ---------------------------------------------------------------------------
 // The thing beside the work
 //
 // Open only when something is selected, and closed by selecting nothing. It
@@ -1909,7 +1997,23 @@ async function drawOpenProject() {
     </div>
     ${saidHtml()}
 
-    <h2>Open this project in</h2>
+    <div class="sect"><h2>Ask about this project</h2></div>
+    <div class="card">
+      <div class="bar" style="margin:0 0 .2rem">
+        <button class="small" id="ai-diagnose">Is anything wrong with it?</button>
+        <button class="small" id="ai-review" ${p.situation?.unsaved ? '' : 'disabled'}
+          data-tip="${p.situation?.unsaved ? 'Look over what you have changed but not saved'
+    : 'Nothing unsaved to look at'}">Look over my changes</button>
+        <label class="find" style="flex:1;min-width:12rem">
+          <span class="mark" aria-hidden="true">?</span>
+          <input id="ai-q" placeholder="Where is signing in handled?" aria-label="Ask about this project">
+        </label>
+        <button class="small" id="ai-ask">Ask</button>
+      </div>
+      <div id="ai-out"></div>
+    </div>
+
+    <div class="sect"><h2>Open this project in</h2></div>
     <div class="bar">
       <button id="to-apps">Choose an AI app →</button>
       <button id="to-terms">Open a terminal here →</button>
@@ -1946,6 +2050,15 @@ async function drawOpenProject() {
   $('#msg').onkeydown = (e) => { if (e.key === 'Enter') saveAndSend(); };
   showWhereItGoes();
   $('#more').onclick = () => gitHubSheet(p);
+  $('#ai-diagnose').onclick = () => askAssistant('diagnose', '/ai/diagnose');
+  $('#ai-review').onclick = () => askAssistant('review', '/ai/review');
+  const askIt = () => {
+    const q = $('#ai-q').value.trim();
+    if (q) askAssistant('ask', '/ai/ask', { question: q });
+  };
+  $('#ai-ask').onclick = askIt;
+  $('#ai-q').onkeydown = (e) => { if (e.key === 'Enter') askIt(); };
+
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');
   $('#to-ship').onclick = () => go('ship');
@@ -3209,6 +3322,7 @@ async function paintJob({ again = true } = {}) {
         </div>
         <p class="note" id="job-does" style="color:var(--quiet);margin:0 0 .7rem;display:none"></p>
         <div class="bar" id="job-made" style="margin:0 0 .7rem;display:none"></div>
+        <div id="job-ask" style="margin:0 0 .7rem;display:none"></div>
         <ul class="steps" id="job-steps"></ul>
         <details id="job-more">
           <summary style="cursor:pointer;color:var(--quiet);font-size:var(--t-sub)">What it printed</summary>
@@ -3269,6 +3383,24 @@ async function paintJob({ again = true } = {}) {
     for (const b of madeBox.querySelectorAll('[data-show-out]')) {
       b.onclick = () => post('/reveal', { path: b.dataset.showOut });
     }
+  }
+
+  /*
+   * Something failed and there are four hundred lines underneath saying why, of
+   * which one matters. This is the single most useful place in the product to
+   * be able to ask — the question is already obvious, the context is already
+   * here, and nobody has to describe the problem to anything.
+   */
+  const ask = $('#job-ask');
+  if (ask) {
+    const worthAsking = j.ok === false && (j.lines?.length ?? 0) > 0;
+    ask.innerHTML = worthAsking
+      ? '<button class="small" id="job-why">Ask why this failed</button><div id="ai-out"></div>'
+      : '';
+    ask.style.display = worthAsking ? '' : 'none';
+    $('#job-why')?.addEventListener('click', () => {
+      askAssistant('explain', '/ai/explain', { job: watching });
+    });
   }
 
   // Appended rather than rewritten, and only the lines that are new. A log that

@@ -496,6 +496,25 @@ export function webAddress(remote) {
 }
 
 /** What is different right now, in words a person can act on. */
+/**
+ * The changes themselves, for anything that has to read them rather than count
+ * them.
+ *
+ * Capped, because a diff of a folder somebody has just added is the folder. The
+ * cap is on what is read, not on what is reported: the count comes from the
+ * summary above and is right regardless.
+ */
+export async function changesInFull(dir, { most = 200_000 } = {}) {
+  if (!existsSync(join(dir, '.git'))) return { ok: true, diff: '', files: [] };
+
+  const named = await quiet(() => git(dir, 'diff', 'HEAD', '--name-only'));
+  const files = named ? named.stdout.split('\n').map((l) => l.trim()).filter(Boolean) : [];
+
+  const out = await quiet(() => git(dir, 'diff', 'HEAD', '--unified=3'));
+  const diff = out ? out.stdout.slice(0, most) : '';
+  return { ok: true, diff, files, clipped: !!out && out.stdout.length > most };
+}
+
 export async function whatChanged(dir) {
   if (!existsSync(join(dir, '.git'))) return { ok: true, changes: [] };
   const status = await quiet(() => git(dir, 'status', '--porcelain'));

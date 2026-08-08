@@ -44,6 +44,7 @@ import * as fingerprint from './fingerprint.mjs';
 import * as live from './live.mjs';
 import * as google from './google.mjs';
 import * as providers from './providers.mjs';
+import * as assistant from './assistant.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -719,6 +720,71 @@ const routes = {
       };
     }
     return github.connectTo(going.binding.gitRoot ?? current.dir, { name, session: going.session });
+  },
+
+  // -- asking a model about this project ----------------------------------
+  //
+  // Reading is free and changing is not, and that line is drawn here: every
+  // route below reads, except the last one, which is reached only by pressing
+  // something that says what it will change.
+
+  async 'GET /ai'() {
+    const set = await assistant.ready();
+    return { ...set, project: current?.name ?? null };
+  },
+
+  /** Why did something fail. The most useful question there is. */
+  async 'POST /ai/explain'({ body }) {
+    if (!current) return noProject;
+    const job = jobs.get(body?.job);
+    if (!job) return { ok: false, sentence: 'That errand is no longer being kept.', action: 'Run it again.' };
+    return assistant.explainFailure({
+      dir: current.dir,
+      what: job.what ?? 'Something',
+      lines: job.lines ?? [],
+    });
+  },
+
+  /** Is anything obviously wrong with this project. */
+  async 'POST /ai/diagnose'() {
+    if (!current) return noProject;
+    return assistant.diagnose({ dir: current.dir });
+  },
+
+  /** What have I changed, and is any of it a mistake. */
+  async 'POST /ai/review'() {
+    if (!current) return noProject;
+    const changed = await github.changesInFull(current.dir);
+    if (!changed?.diff?.trim()) {
+      return { ok: false, sentence: 'There is nothing unsaved to look at.', action: 'Change something first.' };
+    }
+    return assistant.reviewChanges({
+      dir: current.dir,
+      diff: changed.diff,
+      files: changed.files ?? [],
+    });
+  },
+
+  /** A question about this project. */
+  async 'POST /ai/ask'({ body }) {
+    if (!current) return noProject;
+    const question = String(body?.question ?? '').trim();
+    if (question.length < 3) {
+      return { ok: false, sentence: 'There was no question.', action: 'Type one first.' };
+    }
+    return assistant.askAbout({ dir: current.dir, question });
+  },
+
+  /**
+   * Do what was suggested.
+   *
+   * Its own route, reached only from a screen that has already shown every file
+   * it would change. Nothing above this line can reach it.
+   */
+  async 'POST /ai/apply'({ body }) {
+    const out = await assistant.apply(String(body?.id ?? ''));
+    projects.forgetSituations();
+    return { ...out, ...(current ? await routes['GET /project']() : {}) };
   },
 
   /** What one project is bound to, for the panel beside the list. */

@@ -134,6 +134,15 @@ export const KNOWN = [
     fallback: () => '',
   },
   {
+    id: 'anthropicKey',
+    name: 'Key for Claude',
+    why: 'Lets this manager ask Claude about a project when something fails. It stays on this computer, in the settings file, and is never sent anywhere but Claude. Get one from console.anthropic.com.',
+    kind: 'secret',
+    optional: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
     id: 'grains',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',

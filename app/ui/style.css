@@ -1302,6 +1302,55 @@ h2:first-of-type { margin-top: 0; }
 }
 .going.bad b { color: var(--ink); font-weight: var(--w-semi); display: block; }
 
+/* ========================================================================= */
+/* What came back from asking                                                */
+/*                                                                           */
+/* A state while it works, then an answer. Not a chat: there is no history,   */
+/* no bubbles, and no sender — the question was the button that was pressed.  */
+/* ========================================================================= */
+
+.ai-state {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s4) 0 0;
+  font-size: var(--t-sub);
+  color: var(--quiet);
+  min-width: 0;
+}
+.ai-state.bad { flex-direction: column; align-items: flex-start; gap: 2px; }
+.ai-state.bad b { color: var(--ink); font-weight: var(--w-mid); }
+.ai-state.bad span { color: var(--quiet); }
+
+.ai-said {
+  padding: var(--s4) 0 0;
+  font-size: var(--t-sub);
+  line-height: 1.62;
+  color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ai-said p { margin: 0 0 var(--s3); }
+.ai-said p:last-child { margin-bottom: 0; }
+.ai-said ul { margin: 0 0 var(--s3); padding-left: var(--s5); }
+.ai-said li { margin-bottom: var(--s1); }
+.ai-said code {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  padding: 1px var(--s1);
+  border-radius: var(--r-button);
+  background: var(--raised);
+}
+
+/* Where it came from, said quietly and always. */
+.ai-from {
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--t-tiny);
+  color: var(--dim);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Nothing here yet                                                           */
 /* ------------------------------------------------------------------------- */
