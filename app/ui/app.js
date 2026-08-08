@@ -893,21 +893,7 @@ async function askAssistant(kind, where, body = {}) {
   if (asking !== kind) return;
   asking = null;
 
-  if (!r.ok) {
-    box.innerHTML = `
-      <div class="ai-state bad">
-        <b>${esc(r.sentence ?? 'That could not be answered.')}</b>
-        ${r.action ? `<span>${esc(r.action)}</span>` : ''}
-      </div>`;
-    if (r.setting) {
-      box.insertAdjacentHTML('beforeend',
-        '<div class="bar" style="margin:.6rem 0 0"><button class="go small" id="ai-setup">Set it up now</button></div>');
-      // The question is kept and asked again the moment there is something to
-      // ask it of. Nobody should have to type it twice.
-      $('#ai-setup').onclick = () => setUpAi(() => askAssistant(kind, where, body));
-    }
-    return;
-  }
+  if (!r.ok) return whenItWouldNot(box, r, { kind, where, body });
 
   if (r.proposal) return showProposal(box, r);
 
@@ -923,6 +909,81 @@ async function askAssistant(kind, where, body = {}) {
   box.innerHTML = `
     <div class="ai-said">${asParagraphs(r.text)}</div>
     <div class="ai-from">Answered by ${esc(r.model ?? 'the model')}, from this project only.</div>`;
+}
+
+/**
+ * A refusal, and the one or two things there are to do about it.
+ *
+ * Four different things go wrong here and they need four different things from
+ * a person: a key that is not there, a key that is not accepted, a queue that
+ * passes on its own, and an account with nothing left on it. Drawn the same
+ * way, three of those send somebody off to fix the fourth.
+ *
+ * **The question is kept, in every one of them.** That is the part that matters
+ * more than the wording: whatever was typed is still on the screen, and Try
+ * again asks the same question rather than making anybody remember it.
+ */
+function whenItWouldNot(box, r, { kind, where, body }) {
+  const queued = r.kind === 'RATE_LIMITED';
+  const noKey = !!r.setting;
+  const badKey = r.kind === 'AUTH_INVALID';
+  const noModel = r.kind === 'MODEL_UNAVAILABLE';
+
+  box.innerHTML = `
+    <div class="ai-state bad">
+      <b>${esc(r.sentence ?? 'That could not be answered.')}</b>
+      ${r.action ? `<span>${esc(r.action)}</span>` : ''}
+      ${r.waited ? `<span>It waited ${esc(String(r.waited))} seconds and asked again, and got the same answer.</span>` : ''}
+    </div>
+    <div class="bar" style="margin:.6rem 0 0" id="ai-what-now"></div>
+    <div class="fact" id="ai-else"></div>`;
+
+  // The one thing to do, named for the thing that actually went wrong.
+  const first = noKey ? { does: 'setup', says: 'Set it up now' }
+    : badKey ? { does: 'setup', says: 'Replace the key' }
+      : noModel ? { does: 'setup', says: 'Pick another model' }
+        : { does: 'retry', says: queued ? 'Try again now' : 'Try again' };
+
+  const acts = $('#ai-what-now');
+  acts.innerHTML = `
+    <button class="go small" data-ai-do="${first.does}">${esc(first.says)}</button>
+    ${noKey ? '' : '<button class="quiet small" data-ai-do="setup">Change which one answers\u2026</button>'}`;
+
+  const again = () => askAssistant(kind, where, body);
+
+  for (const b of acts.querySelectorAll('[data-ai-do]')) {
+    b.onclick = () => (b.dataset.aiDo === 'setup' ? setUpAi(again) : again());
+  }
+
+  /*
+   * Somebody else who could answer this, offered but never taken.
+   *
+   * Quietly asking a different company would be spending money at a company
+   * nobody chose, which is the one thing the choice of company exists to
+   * prevent. So it is a button with a name on it.
+   */
+  if (queued || badKey || r.kind === 'QUOTA_EXCEEDED' || r.kind === 'PROVIDER_UNAVAILABLE') {
+    get('/ai').then((who) => {
+      const line = $('#ai-else');
+      if (!line || !line.isConnected) return;
+
+      const others = (who.models ?? []).filter((m) => m.ready && m.id !== r.provider);
+      if (!others.length) return;
+
+      line.className = 'bar';
+      line.style.marginTop = '.4rem';
+      line.innerHTML = others.map((m) => `
+        <button class="quiet small" data-ask-instead="${esc(m.id)}">Ask ${esc(m.name)} instead</button>`).join('');
+
+      for (const b of line.querySelectorAll('[data-ask-instead]')) {
+        b.onclick = async () => {
+          const out = await post('/ai/choose', { provider: b.dataset.askInstead });
+          if (!out.ok) return say(out) && draw();
+          again();
+        };
+      }
+    });
+  }
 }
 
 /**

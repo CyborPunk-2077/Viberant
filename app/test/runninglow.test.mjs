@@ -41,11 +41,10 @@ describe('a refusal is said as the thing that actually happened', () => {
   test('out of credit reads as out of credit, and says what fixes it', async () => {
     const { whatThatMeant } = await import('../assistant.mjs');
 
-    // The wording each of them actually uses.
+    // The wording each of them actually uses, when it is actually about money.
     const ways = [
       { status: 400, why: 'Your credit balance is too low to access the Anthropic API' },
       { status: 429, why: 'You exceeded your current quota, please check your plan and billing details' },
-      { status: 429, why: 'Quota exceeded for quota metric' },
       { status: 403, why: 'billing_hard_limit_reached' },
     ];
 
@@ -58,6 +57,36 @@ describe('a refusal is said as the thing that actually happened', () => {
       assert.match(said.action, /Nothing on this computer has changed/,
         'because the first thing somebody does is start looking for what they broke');
     }
+  });
+
+  /**
+   * The reversal. This line used to be in the list above.
+   *
+   * `Quota exceeded for quota metric` is what Google says when a free allowance
+   * of so many questions a minute runs out — which refills on its own, in
+   * seconds, with nothing wrong with the account and nothing wrong with the
+   * key. Reading the word `quota` as being about money sent somebody with a
+   * perfectly good Gemini key off to top up an account that was fine. It was
+   * the first thing that happened after adding a key, every time.
+   *
+   * So: the words that are only ever about money decide that it is about money.
+   * Everything else at 429 is a queue, and a queue passes.
+   */
+  test('a free allowance running out is a queue, not a bill', async () => {
+    const { whatThatMeant, TROUBLE } = await import('../assistant.mjs');
+    const said = whatThatMeant(asked, { status: 429, why: 'Quota exceeded for quota metric: generate_content_free_tier_requests' });
+
+    assert.equal(said.kind, TROUBLE.rateLimited);
+    assert.notEqual(said.runningLow, true,
+      'somebody with a working key was told to go and buy more of something they already had');
+    assert.match(said.action, /your key is fine/i);
+  });
+
+  test('and how long they asked for is carried through when they said', async () => {
+    const { whatThatMeant } = await import('../assistant.mjs');
+    const said = whatThatMeant(asked, { status: 429, why: 'rate limit', waitFor: 7 });
+    assert.equal(said.waitFor, 7);
+    assert.match(said.action, /7 seconds/);
   });
 
   test('asking too fast is a different sentence, because it needs a different thing', async () => {

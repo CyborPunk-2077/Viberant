@@ -108,7 +108,12 @@ export const MODELS = [
       });
       if (!res.ok) {
         const said = await quiet(() => res.json(), null);
-        return { ok: false, status: res.status, why: said?.error?.message ?? null };
+        return {
+          ok: false,
+          status: res.status,
+          why: said?.error?.message ?? null,
+          waitFor: howLongToWait(res, said),
+        };
       }
       const body = await res.json();
       return { ok: true, text: (body.content ?? []).map((c) => c.text ?? '').join('').trim() };
@@ -166,10 +171,37 @@ async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
   });
   if (!res.ok) {
     const said = await quiet(() => res.json(), null);
-    return { ok: false, status: res.status, why: said?.error?.message ?? null };
+    return {
+      ok: false,
+      status: res.status,
+      why: said?.error?.message ?? null,
+      waitFor: howLongToWait(res, said),
+    };
   }
   const body = await res.json();
   return { ok: true, text: String(body.choices?.[0]?.message?.content ?? '').trim() };
+}
+
+/**
+ * How long they asked you to wait, in seconds, if they said.
+ *
+ * Two places to look, because they do not agree. The header is the one every
+ * company sends; Google also buries one in the body, in a shape of its own,
+ * and does not always send the header. Anything longer than five minutes is
+ * treated as "they are not telling you anything useful" — nobody is going to
+ * sit here for that, and pretending to count it down would be theatre.
+ */
+function howLongToWait(res, said) {
+  const header = Number(res.headers?.get?.('retry-after'));
+  if (Number.isFinite(header) && header > 0) return Math.min(header, 300);
+
+  const buried = (said?.error?.details ?? []).find((d) => String(d['@type'] ?? '').includes('RetryInfo'));
+  const written = String(buried?.retryDelay ?? '').match(/^([\d.]+)s?$/);
+  if (written) {
+    const secs = Number(written[1]);
+    if (Number.isFinite(secs) && secs > 0) return Math.min(Math.ceil(secs), 300);
+  }
+  return null;
 }
 
 /** One by its name, or nothing. */
@@ -271,11 +303,39 @@ export async function checkKey(providerId, key) {
   if (!out) {
     return {
       ok: false,
+      kind: TROUBLE.networkError,
       sentence: `${m.name} could not be reached to check that key.`,
       action: 'Check you are online, and try again.',
     };
   }
-  if (!out.ok) return whatThatMeant(m, out);
+
+  if (!out.ok) {
+    const meant = whatThatMeant({ ...m, model: m }, out);
+
+    /*
+     * Being told to slow down, or being out of allowance, means the key worked.
+     *
+     * Nothing counts a request it did not recognise. A key that is wrong is
+     * refused before anybody's allowance is looked at — so a limit, of either
+     * kind, is proof the key was accepted. Refusing to keep it on those grounds
+     * is what made a good Gemini key impossible to add at all: the check ran,
+     * hit the free allowance, and reported it as a key that would not work.
+     */
+    if (meant.kind === TROUBLE.rateLimited || meant.kind === TROUBLE.quotaExceeded) {
+      return {
+        ok: true,
+        name: m.name,
+        limited: true,
+        kind: meant.kind,
+        sentence: `That key works — ${m.name} accepted it.`,
+        action: meant.kind === TROUBLE.rateLimited
+          ? `${m.name} is limiting how often it answers just now, which is why the check could not finish. The key is kept.`
+          : `${m.name} says there is no allowance left on that account. The key is kept and will work when there is.`,
+      };
+    }
+
+    return meant;
+  }
 
   return { ok: true, sentence: `That key works. ${m.name} is ready.`, name: m.name };
 }
@@ -408,17 +468,55 @@ async function askModel({ system, message, mostTokens }) {
   if (!set.ok) return set;
 
   const key = await settings.get(set.model.keySetting);
-  const out = await quiet(() => set.model.ask({ key, system, message, mostTokens }));
 
-  if (!out) {
-    return {
-      ok: false,
-      sentence: `${set.name} could not be reached.`,
-      action: 'Check you are online, then try again.',
-    };
+  /*
+   * Waiting out a short queue, at most twice, and never for long.
+   *
+   * A rate limit that clears in four seconds is not worth reporting to
+   * somebody, and a manager that reports it has made them press a button to do
+   * what it could have done itself. A rate limit that clears in three minutes
+   * is worth reporting, because nobody is sitting there for three minutes.
+   *
+   * Twice, bounded, and only ever after being told to wait — never a loop
+   * that decides for itself how often to try. Retrying hard against something
+   * that has asked you to stop is how an account gets cut off entirely.
+   */
+  const MOST_TRIES = 3;
+  const LONGEST_WORTH_WAITING = 15;
+  let waited = 0;
+  let last = null;
+
+  for (let tries = 0; tries < MOST_TRIES; tries += 1) {
+    const out = await quiet(() => set.model.ask({ key, system, message, mostTokens }));
+
+    if (!out) {
+      return {
+        ok: false,
+        kind: TROUBLE.networkError,
+        provider: set.model.id,
+        sentence: `${set.name} could not be reached.`,
+        action: 'Check you are online, then try again.',
+      };
+    }
+    if (out.ok) {
+      return {
+        ok: true, text: out.text, model: set.name, using: set.using ?? null, waited: waited || null,
+      };
+    }
+
+    last = whatThatMeant(set, out);
+    if (last.kind !== TROUBLE.rateLimited) return last;
+
+    const askedFor = last.waitFor ?? 5;
+    if (askedFor > LONGEST_WORTH_WAITING || tries === MOST_TRIES - 1) break;
+
+    await new Promise((r) => setTimeout(r, askedFor * 1000));
+    waited += askedFor;
   }
-  if (!out.ok) return whatThatMeant(set, out);
-  return { ok: true, text: out.text, model: set.name };
+
+  // Waited what it asked for and it is still saying no, so it goes to the
+  // person — with the question kept, which is the whole point.
+  return { ...last, waited: waited || null, triedFor: waited || null };
 }
 
 /**
@@ -434,9 +532,20 @@ async function askModel({ system, message, mostTokens }) {
  * credit reads as a refusal for want of credit, rather than as "could not
  * answer", which is the sentence that sends somebody looking at their network.
  */
+export const TROUBLE = {
+  authInvalid: 'AUTH_INVALID',
+  rateLimited: 'RATE_LIMITED',
+  quotaExceeded: 'QUOTA_EXCEEDED',
+  modelUnavailable: 'MODEL_UNAVAILABLE',
+  providerUnavailable: 'PROVIDER_UNAVAILABLE',
+  networkError: 'NETWORK_ERROR',
+  unknown: 'UNKNOWN',
+};
+
 export function whatThatMeant(set, out) {
   const why = String(out.why ?? '');
   const name = set.name;
+  const waitFor = out.waitFor ?? null;
 
   /**
    * The words decide, and they decide before the number does.
@@ -449,10 +558,39 @@ export function whatThatMeant(set, out) {
    *
    * So what they said outranks what they returned, everywhere below.
    */
-  const outOfCredit = /credit|balance|quota|billing|insufficient_quota|exceeded your current/i.test(why);
-  if (!outOfCredit && (out.status === 401 || out.status === 403)) {
+  /*
+   * Money, or a queue. Both of them say "quota" and they need opposite things.
+   *
+   * This used to read the word `quota` as being about money, and for one of
+   * these three companies that is wrong nearly every time. Google's message
+   * for a free allowance of so many questions a minute — which refills on its
+   * own, in seconds — is *Quota exceeded for quota metric*. Read as money,
+   * somebody with a working key and nothing wrong with their account is told to
+   * go and top it up, which does not help and costs them their afternoon. It is
+   * exactly what was happening to Gemini, on the first question after a key was
+   * added.
+   *
+   * So money is decided by the words that are only ever about money — credit,
+   * balance, billing, a plan — and everything else at 429 is a queue.
+   */
+  const aboutMoney = /credit|balance|billing|insufficient_quota|plan and billing|hard[_ ]limit/i.test(why);
+
+  if (aboutMoney) {
     return {
       ok: false,
+      kind: TROUBLE.quotaExceeded,
+      runningLow: true,
+      provider: set.model?.id ?? set.id ?? null,
+      sentence: `Your ${name} account has run out of credit.`,
+      action: `Top it up with ${name}, and this will work again straight away. Nothing on this computer has changed, and your key is fine.`,
+    };
+  }
+
+  if (out.status === 401 || out.status === 403) {
+    return {
+      ok: false,
+      kind: TROUBLE.authInvalid,
+      provider: set.model?.id ?? set.id ?? null,
       sentence: `${name} would not accept the key on this computer.`,
       // Where the key goes is on the screen that says this, so it says "here"
       // rather than naming somewhere else to go and look.
@@ -460,27 +598,35 @@ export function whatThatMeant(set, out) {
     };
   }
 
-  if (outOfCredit) {
-    return {
-      ok: false,
-      runningLow: true,
-      sentence: `Your ${name} account has run out of credit.`,
-      action: `Top it up with ${name}, and this will work again straight away. Nothing on this computer has changed.`,
-    };
-  }
-
   if (out.status === 429) {
     return {
       ok: false,
+      kind: TROUBLE.rateLimited,
       tooFast: true,
-      sentence: `${name} is asking you to slow down.`,
-      action: 'Wait a minute and ask again.',
+      provider: set.model?.id ?? set.id ?? null,
+      waitFor,
+      sentence: `${name} is limiting how often it will answer.`,
+      action: waitFor
+        ? `It asked for ${waitFor} second${waitFor === 1 ? '' : 's'}. Your question is still here.`
+        : 'Wait a minute and ask again. Your question is still here, and your key is fine.',
+    };
+  }
+
+  if (out.status === 404 || /model|not found|does not exist|unsupported/i.test(why)) {
+    return {
+      ok: false,
+      kind: TROUBLE.modelUnavailable,
+      provider: set.model?.id ?? set.id ?? null,
+      sentence: `${name} does not offer the model this is set to use.`,
+      action: 'Pick another model for it, and ask again.',
     };
   }
 
   if (out.status >= 500) {
     return {
       ok: false,
+      kind: TROUBLE.providerUnavailable,
+      provider: set.model?.id ?? set.id ?? null,
       sentence: `${name} is having trouble at their end.`,
       action: 'Nothing here is wrong. Try again in a few minutes.',
     };
@@ -488,6 +634,8 @@ export function whatThatMeant(set, out) {
 
   return {
     ok: false,
+    kind: TROUBLE.unknown,
+    provider: set.model?.id ?? set.id ?? null,
     sentence: `${name} could not answer.`,
     action: why || 'Try again in a moment.',
   };
