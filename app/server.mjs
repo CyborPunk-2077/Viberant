@@ -640,8 +640,18 @@ const routes = {
     return { ok: true, signin: google.state(), google: await google.who() };
   },
 
-  async 'POST /google/signout'() {
-    return google.signOut();
+  async 'POST /google/signout'({ body }) {
+    return google.signOut(body?.name ?? null);
+  },
+
+  /** Every Google name on this computer, and which is in use. */
+  async 'GET /google'() {
+    return google.accounts();
+  },
+
+  /** Use a different Google name. Touches nothing about where work goes. */
+  async 'POST /google/switch'({ body }) {
+    return google.switchTo(String(body?.name ?? ''));
   },
 
   async 'POST /open/page'({ body }) {

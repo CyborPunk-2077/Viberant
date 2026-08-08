@@ -4113,6 +4113,74 @@ async function drawGitHubSettings() {
   }
 }
 
+/**
+ * The Google names on this computer.
+ *
+ * Its own section, well away from GitHub, because the two are constantly
+ * confused and only one of them decides anything. The sentence here says which
+ * is which, once, rather than leaving somebody to work it out from where the
+ * buttons happen to be.
+ */
+async function drawGoogleSettings() {
+  const box = $('#google-settings');
+  if (!box) return;
+
+  const g = await get('/google');
+  if (!box.isConnected) return;
+
+  const row = (title, why, control) => `
+    <div class="setting">
+      <div class="about"><b>${title}</b><span>${why}</span></div>
+      <div class="set">${control}</div>
+    </div>`;
+
+  const others = (g.accounts ?? []).filter((a) => !a.active);
+  const now = (g.accounts ?? []).find((a) => a.active);
+
+  box.innerHTML = `
+    ${now ? row(
+    `<span class="who-now"><span class="dot live"></span>${esc(now.name)}</span>`,
+    'A name on this computer, and something for your other computers to know you '
+      + 'by. It decides nothing about where your work goes — that is GitHub, above.',
+    `<button class="small" data-goog-out="${esc(now.name)}">Sign out</button>`,
+  ) : row(
+    'Not signed in',
+    'Optional. Everything here works without it, and it never affects where your work goes.',
+    '<button class="small" id="goog-in">Sign in with Google</button>',
+  )}
+
+    ${others.length ? row(
+    'Also signed in here',
+    'Switching changes the name on this computer and nothing else.',
+    others.map((a) => `<button class="small" data-goog-use="${esc(a.name)}">Use ${esc(a.name)}</button>`
+      + `<button class="quiet small" data-goog-out="${esc(a.name)}">Sign out</button>`).join(''),
+  ) : ''}
+
+    ${now ? row(
+    'Another account',
+    'A work address and a personal one can both be here. Signing in to a second no '
+      + 'longer signs you out of the first.',
+    '<button class="small" id="goog-add">Add an account</button>',
+  ) : ''}`;
+
+  $('#goog-in')?.addEventListener('click', () => signInToGoogle({}));
+  $('#goog-add')?.addEventListener('click', () => signInToGoogle({}));
+  for (const b of box.querySelectorAll('[data-goog-use]')) {
+    b.onclick = async () => {
+      say(await post('/google/switch', { name: b.dataset.googUse }));
+      await refreshMe();
+      draw();
+    };
+  }
+  for (const b of box.querySelectorAll('[data-goog-out]')) {
+    b.onclick = async () => {
+      say(await post('/google/signout', { name: b.dataset.googOut }));
+      await refreshMe();
+      draw();
+    };
+  }
+}
+
 SCREENS.settings = async () => {
   const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
@@ -4130,6 +4198,12 @@ SCREENS.settings = async () => {
     <div class="card" id="gh-settings">
       <div class="setting"><div class="about"><b>Account</b>
         <span>Reading who this computer is signed in as…</span></div><div class="set"></div></div>
+    </div>
+
+    <div class="sect"><h2>Google</h2></div>
+    <div class="card" id="google-settings">
+      <div class="setting"><div class="about"><b>Accounts</b>
+        <span>Reading…</span></div><div class="set"></div></div>
     </div>
 
     <div class="sect"><h2>This manager</h2></div>
@@ -4181,6 +4255,7 @@ SCREENS.settings = async () => {
   };
 
   drawGitHubSettings();
+  drawGoogleSettings();
 
   for (const b of document.querySelectorAll('[data-toggle]')) {
     b.onclick = async () => {

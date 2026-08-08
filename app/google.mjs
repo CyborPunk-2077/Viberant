@@ -30,6 +30,8 @@ import { HOUSE } from './projects.mjs';
 
 const WHO = join(HOUSE, 'google.json');
 
+const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
+
 const DEVICE_CODE = 'https://oauth2.googleapis.com/device/code';
 const TOKEN = 'https://oauth2.googleapis.com/token';
 const PERSON = 'https://openidconnect.googleapis.com/v1/userinfo';
@@ -51,16 +53,96 @@ export const state = () => (going
   }
   : null);
 
-/** Who Google says you are, if anybody. */
-export async function who() {
-  if (!existsSync(WHO)) return null;
-  try { return JSON.parse(await readFile(WHO, 'utf8')); } catch { return null; }
+/**
+ * The Google accounts on this computer, and which one is in use.
+ *
+ * A list rather than one account, kept in the shape GitHub already uses — a
+ * person with a work address and a personal one has two, and the file holding
+ * exactly one meant signing in to the second silently replaced the first.
+ *
+ * Deliberately separate from GitHub in every respect. **Nothing here decides
+ * anything about where work goes**: Google is a name on this computer, and no
+ * version-control operation may ever read it (D-52, D-82).
+ */
+async function kept() {
+  if (!existsSync(WHO)) return { accounts: [], active: null };
+  const held = await quiet(async () => JSON.parse(await readFile(WHO, 'utf8')));
+  if (!held) return { accounts: [], active: null };
+
+  // The file used to hold one account on its own. Anybody upgrading has one,
+  // and it becomes the first of a list rather than being thrown away.
+  if (Array.isArray(held.accounts)) return held;
+  return { accounts: [held], active: held.email ?? held.name ?? null };
 }
 
-export async function signOut() {
-  await rm(WHO, { force: true });
+async function keep(state) {
+  await mkdir(HOUSE, { recursive: true });
+  await writeFile(WHO, JSON.stringify(state, null, 2), 'utf8');
+}
+
+const nameOf = (a) => a?.email ?? a?.name ?? null;
+
+/** Who Google says you are, if anybody. The one in use. */
+export async function who() {
+  const { accounts, active } = await kept();
+  if (!accounts.length) return null;
+  return accounts.find((a) => nameOf(a) === active) ?? accounts[0];
+}
+
+/** Every Google account here, and which is in use. */
+export async function accounts() {
+  const { accounts: all, active } = await kept();
+  return {
+    accounts: all.map((a) => ({
+      name: nameOf(a),
+      picture: a.picture ?? null,
+      active: nameOf(a) === active,
+    })),
+    active,
+  };
+}
+
+/** Use a different one. Changes a name on this computer and nothing else. */
+export async function switchTo(name) {
+  const state = await kept();
+  if (!state.accounts.some((a) => nameOf(a) === name)) {
+    return { ok: false, sentence: 'That account is not signed in here.', action: 'Sign in to it first.' };
+  }
+  state.active = name;
+  await keep(state);
+  return { ok: true, sentence: `${name} is the Google name on this computer now.` };
+}
+
+/**
+ * Sign one out, or all of them.
+ *
+ * Signing out the one in use hands the position to whichever is left rather
+ * than leaving none in use with accounts still here — a state where the app
+ * would say "not signed in" while holding two accounts.
+ */
+export async function signOut(name = null) {
+  const state = await kept();
+  if (!name || state.accounts.length <= 1) {
+    await rm(WHO, { force: true });
+    going = null;
+    return { ok: true, sentence: 'Signed out of Google on this computer.' };
+  }
+
+  state.accounts = state.accounts.filter((a) => nameOf(a) !== name);
+  if (state.active === name) state.active = nameOf(state.accounts[0]);
+  await keep(state);
   going = null;
-  return { ok: true, sentence: 'Signed out of Google on this computer.' };
+  return { ok: true, sentence: `${name} is signed out on this computer.` };
+}
+
+/** Remember one, alongside any already here, and make it the one in use. */
+export async function remember(account) {
+  const state = await kept();
+  const name = nameOf(account);
+  state.accounts = [account, ...state.accounts.filter((a) => nameOf(a) !== name)];
+  state.active = name;
+  await keep(state);
+  return account;
 }
 
 /**
@@ -137,13 +219,14 @@ async function start(mine, { clientId, clientSecret }) {
 
     if (got?.access_token) {
       const person = await person_(got.access_token);
-      await mkdir(HOUSE, { recursive: true });
-      await writeFile(WHO, JSON.stringify({
+      // Added to whatever is already here rather than replacing it. Signing in
+      // to a second account used to sign you out of the first, silently.
+      await remember({
         email: person?.email ?? null,
         name: person?.name ?? null,
         picture: person?.picture ?? null,
         at: Date.now(),
-      }, null, 2), 'utf8');
+      });
 
       return settle(mine, {
         ok: true,

@@ -228,3 +228,53 @@ describe('nothing decides an account from a name in the source', () => {
       'the old name read like somebody account and is gone');
   });
 });
+
+/**
+ * Google is a name, and names decide nothing.
+ *
+ * The two are constantly confused, and confusing them here would be expensive:
+ * a Google address quietly influencing where a project sends is the same fault
+ * as the one that started all of this, wearing a different hat.
+ */
+describe('a Google account cannot influence where work goes', () => {
+  test('nothing that decides a destination reads the Google module at all', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join: j } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    // The files that choose an account, a remote, or a place to deploy.
+    for (const file of ['github.mjs', 'projects.mjs', 'workspace.mjs', 'providers.mjs', 'deploy.mjs']) {
+      const text = await readFile(j(here, '..', file), 'utf8');
+      assert.equal(/from '\.\/google\.mjs'/.test(text), false,
+        `${file} must not be able to read a Google account`);
+    }
+  });
+
+  test('several accounts can be here, and one is in use', async () => {
+    const google = await import('../google.mjs');
+
+    await google.remember({ email: 'work@example.com', name: 'Work' });
+    await google.remember({ email: 'personal@example.com', name: 'Personal' });
+
+    const listed = await google.accounts();
+    assert.deepEqual(listed.accounts.map((a) => a.name).sort(),
+      ['personal@example.com', 'work@example.com'],
+      'signing in to a second must not sign out the first');
+    assert.equal(listed.active, 'personal@example.com', 'the newest is the one in use');
+
+    assert.equal((await google.switchTo('work@example.com')).ok, true);
+    assert.equal((await google.who()).email, 'work@example.com');
+  });
+
+  test('signing one out leaves the other in use rather than nobody', async () => {
+    const google = await import('../google.mjs');
+    const out = await google.signOut('work@example.com');
+    assert.equal(out.ok, true);
+
+    const listed = await google.accounts();
+    assert.deepEqual(listed.accounts.map((a) => a.name), ['personal@example.com']);
+    assert.equal(listed.active, 'personal@example.com',
+      'never "not signed in" while an account is still here');
+  });
+});
