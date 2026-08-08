@@ -97,6 +97,61 @@ function shortPath(path) {
 let said = null;
 const say = (r) => { said = r && r.sentence ? r : null; return r; };
 
+/**
+ * The three or four numbers a screen is actually about.
+ *
+ * Each one is a mark, a number and what it counts. `tone` is only ever the
+ * truth about that number — `live` when something genuinely is, `warn` when
+ * something genuinely wants attention — never a way of making a card look
+ * important.
+ *
+ * @param {Array<{mark: string, big: string|number, what: string, tone?: string,
+ *   signal?: boolean}>} ones
+ */
+function summary(ones) {
+  const shown = ones.filter(Boolean);
+  if (!shown.length) return '';
+
+  return `
+    <div class="summary">
+      ${shown.map((one) => `
+        <div class="one ${esc(one.tone ?? '')}">
+          ${one.signal ? SIGNAL : ''}
+          <span class="mark" aria-hidden="true">${one.mark}</span>
+          <span class="said">
+            <span class="big">${esc(String(one.big))}</span>
+            <span class="what">${one.pip ? '<span class="pip"></span>' : ''}${esc(one.what)}</span>
+          </span>
+        </div>`).join('')}
+    </div>`;
+}
+
+/**
+ * A line that means something is connected, drawn rather than fetched.
+ *
+ * Three strokes at different depths, the nearest one brighter. It appears only
+ * on a card that is reporting a live connection — not as decoration, and
+ * never over a word.
+ */
+const SIGNAL = `
+  <svg class="signal" viewBox="0 0 200 90" preserveAspectRatio="none" aria-hidden="true"
+    fill="none" stroke="var(--vibe-b)" stroke-linecap="round">
+    <path d="M0 62 C 40 62, 52 22, 84 22 S 132 62, 200 40" stroke-width="1" opacity=".35"/>
+    <path d="M0 70 C 46 70, 58 34, 96 34 S 146 66, 200 52" stroke-width="1.2" opacity=".55"/>
+    <path d="M0 78 C 52 78, 66 46, 108 46 S 158 72, 200 64" stroke-width="1.4" opacity=".8"/>
+  </svg>`;
+
+/** The marks the summary cards use. Two strokes each, no more. */
+const SUM_MARK = {
+  computers: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.4" y="2.6" width="9" height="6.4" rx="1.2"/><rect x="7.6" y="7" width="7" height="6.4" rx="1.2"/></svg>',
+  folder: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M1.8 12.4V4a1 1 0 0 1 1-1h3l1.4 1.6h5a1 1 0 0 1 1 1v6.8a1 1 0 0 1-1 1H2.8a1 1 0 0 1-1-1Z"/></svg>',
+  pulse: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8h3l2-4.5L9.5 12 11.5 8H15"/></svg>',
+  running: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6"/><path d="M8 4.4V8l2.4 1.6" stroke-linecap="round"/></svg>',
+  done: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.4 6.4 11.6 13 4.8"/></svg>',
+  project: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="2.4" width="12" height="11.2" rx="1.6"/><path d="M2 6.2h12"/></svg>',
+  world: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="5.8"/><ellipse cx="8" cy="8" rx="2.5" ry="5.8"/><path d="M2.4 8h11.2"/></svg>',
+};
+
 function saidHtml() {
   if (!said) return '';
   const tone = said.ok === false ? 'bad' : said.ok === true ? 'good' : '';
@@ -110,7 +165,7 @@ function saidHtml() {
 
 const TABS = [
   { id: 'projects', name: 'Projects', glyph: '◳' },
-  { id: 'ask', name: 'Ask', glyph: '◇' },
+  { id: 'ask', name: 'AI Assistant', glyph: '◇' },
   { id: 'apps', name: 'AI apps', glyph: '✦' },
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
   { id: 'workspace', name: 'Workspace', glyph: '⌸' },
@@ -131,8 +186,8 @@ const TABS = [
  */
 const GROUPS = [
   { name: 'Work', places: ['projects', 'ask', 'apps', 'terminals'] },
-  { name: 'Out into the world', places: ['workspace', 'activity', 'ship'] },
-  { name: 'This computer', places: ['settings'] },
+  { name: 'Workspace', places: ['workspace', 'activity', 'ship'] },
+  { name: 'System', places: ['settings'] },
 ];
 
 /** The two behind the icons at the far end, out of the way of the daily five. */
@@ -442,11 +497,47 @@ function drawTop() {
         <span id="moving-count" class="mono"></span>
       </button>
       <div class="panel" hidden id="moving-panel"></div>
-    </div>`;
+    </div>
+    <button class="statepill" id="reachpill" hidden></button>`;
 
   $('#seek').onclick = openPalette;
   $('#moving').onclick = (e) => { e.stopPropagation(); openMovingPanel(); };
   paintMoving();
+  paintReach();
+}
+
+/**
+ * Whether the other computers can reach this one, said in the corner.
+ *
+ * It belongs up here because it is true of the whole app rather than of one
+ * screen: nothing that involves another computer works while it is off, and
+ * finding that out by pressing something and having it fail is the wrong order.
+ * Pressing it goes to the place where it can be changed.
+ *
+ * Absent, not empty, when this computer is in no workspace at all — a state
+ * about a thing you are not part of is noise.
+ */
+async function paintReach() {
+  const pill = $('#reachpill');
+  if (!pill) return;
+
+  const w = await get('/workspace').catch(() => null);
+  if (!pill.isConnected) return;
+
+  if (!w?.joined) { pill.hidden = true; return; }
+
+  const near = (w.around ?? []).length;
+  const on = !!w.sharingHere;
+
+  pill.hidden = false;
+  pill.className = `statepill ${on ? 'live' : 'warn'}`;
+  pill.innerHTML = `<span class="pip"></span><span>${esc(on
+    ? (near ? `${near} computer${near === 1 ? '' : 's'} here` : 'Reachable')
+    : 'Not reachable')}</span>`;
+  pill.title = on
+    ? 'Your other computers can find this one and ask it for what it offers.'
+    : 'Your other computers cannot reach this one. Press to see why.';
+  pill.onclick = () => go('workspace');
 }
 
 // ---------------------------------------------------------------------------
@@ -577,116 +668,6 @@ function openMovingPanel() {
   panel.innerHTML = movingHtml();
   openPanel(panel);
   wireMoving();
-}
-
-/**
- * Sand falling from the pointer.
- *
- * Grains are shed while the pointer moves, then fall the whole height of the
- * window under gravity, drifting a little on the way. Drawn on one canvas at
- * the screen's real pixel density, so on a sharp display they are sharp rather
- * than four soft blobs.
- *
- * The loop runs only while grains exist, so a still pointer costs nothing at
- * all. Off under reduced motion, and there is a switch in Settings.
- *
- * It carries no meaning. It never marks anything, never points at anything and
- * never indicates state — which is what keeps it decoration rather than a
- * notification, and is the only rule it has to obey.
- */
-function shedGrains() {
-  const canvas = $('#grains');
-  if (!canvas || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-  const ink = canvas.getContext('2d', { alpha: true });
-  const grains = [];
-  const MOST = 900;
-  let running = false;
-  let lastX = null;
-  let lastY = null;
-  let scale = 1;
-
-  const fit = () => {
-    // The real density of the screen, so a grain is a grain and not a smudge.
-    scale = Math.min(devicePixelRatio || 1, 3);
-    canvas.width = Math.round(innerWidth * scale);
-    canvas.height = Math.round(innerHeight * scale);
-    canvas.style.width = `${innerWidth}px`;
-    canvas.style.height = `${innerHeight}px`;
-    ink.setTransform(scale, 0, 0, scale, 0, 0);
-  };
-  fit();
-  addEventListener('resize', fit, { passive: true });
-
-  const tint = () => {
-    const style = getComputedStyle(document.documentElement);
-    return [
-      style.getPropertyValue('--vibe-b').trim() || '#22d3ee',
-      style.getPropertyValue('--vibe-a').trim() || '#8b5cf6',
-    ];
-  };
-
-  addEventListener('pointermove', (e) => {
-    if (me.settings && me.settings.grains === false) return;
-
-    const moved = lastX === null ? 0 : Math.hypot(e.clientX - lastX, e.clientY - lastY);
-    lastX = e.clientX;
-    lastY = e.clientY;
-
-    // A slow drag sheds a trickle, a flick sheds a handful.
-    const many = Math.min(9, 1 + Math.round(moved / 4));
-    const colours = tint();
-
-    for (let i = 0; i < many && grains.length < MOST; i++) {
-      grains.push({
-        x: e.clientX + (Math.random() - 0.5) * 10,
-        y: e.clientY + (Math.random() - 0.5) * 10,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: Math.random() * 0.35,
-        // Sub-pixel sizes are what make it read as sand rather than as dots.
-        r: 0.35 + Math.random() * 0.75,
-        spin: (Math.random() - 0.5) * 0.05,
-        drift: 0.3 + Math.random() * 0.7,
-        life: 1,
-        // Long enough to reach the bottom of the window from anywhere in it.
-        fade: 0.0016 + Math.random() * 0.0022,
-        colour: colours[Math.random() < 0.72 ? 0 : 1],
-      });
-    }
-    if (!running) { running = true; requestAnimationFrame(fall); }
-  }, { passive: true });
-
-  let drifted = 0;
-
-  function fall() {
-    ink.clearRect(0, 0, innerWidth, innerHeight);
-    drifted += 0.012;
-
-    for (let i = grains.length - 1; i >= 0; i--) {
-      const g = grains[i];
-
-      g.vy += 0.033;
-      g.vx += Math.sin(drifted + g.y * 0.012) * 0.006 * g.drift;
-      g.vx *= 0.995;
-      g.x += g.vx;
-      g.y += g.vy;
-      g.life -= g.fade;
-
-      // Gone when it leaves the window or finally fades, whichever is first —
-      // so a grain shed at the top is still visible at the bottom.
-      if (g.life <= 0 || g.y > innerHeight + 4) { grains.splice(i, 1); continue; }
-
-      ink.globalAlpha = Math.min(1, g.life) * 0.75;
-      ink.fillStyle = g.colour;
-      ink.beginPath();
-      ink.arc(g.x, g.y, g.r, 0, Math.PI * 2);
-      ink.fill();
-    }
-    ink.globalAlpha = 1;
-
-    if (grains.length) requestAnimationFrame(fall);
-    else { running = false; ink.clearRect(0, 0, innerWidth, innerHeight); }
-  }
 }
 
 const SCREENS = {};
@@ -1973,6 +1954,10 @@ SCREENS.projects = async () => {
 
   const d = await get('/projects');
   const busy = d.projects.filter((p) => p.unsaved).length;
+  // Counted from what each project actually says about itself, rather than
+  // from a field that would have to be kept in step with it.
+  const onGitHub = d.projects.filter((p) => /copy on GitHub/.test(p.reach ?? '')).length;
+  const waiting = d.projects.filter((p) => (p.toSend ?? 0) > 0).length;
 
   view.innerHTML = `
     <div class="pagehead">
@@ -1986,6 +1971,21 @@ SCREENS.projects = async () => {
       </div>
     </div>
     ${saidHtml()}
+
+    ${d.projects.length ? summary([
+    { mark: SUM_MARK.project, big: d.projects.length, what: 'on this computer' },
+    {
+      mark: SUM_MARK.pulse,
+      big: busy,
+      what: busy === 1 ? 'has work not saved yet' : 'have work not saved yet',
+      tone: busy ? 'warn' : '',
+    },
+    {
+      mark: SUM_MARK.world,
+      big: onGitHub,
+      what: waiting ? `have a copy on GitHub, ${waiting} behind it` : 'have a copy on GitHub',
+    },
+  ]) : ''}
 
     ${d.projects.length ? `
       <div class="sect">
@@ -3928,6 +3928,30 @@ SCREENS.ship = async () => {
     </div>
     ${saidHtml()}
 
+    ${summary([
+    {
+      mark: SUM_MARK.world,
+      big: d.deployedTo?.url ? 'Online' : 'Not online yet',
+      what: d.deployedTo?.url ? String(d.deployedTo.url).replace(/^https?:\/\//, '') : 'nothing has been put up from here',
+      tone: d.deployedTo?.url ? 'live' : '',
+      pip: !!d.deployedTo?.url,
+      signal: !!d.deployedTo?.url,
+    },
+    {
+      // What it actually is, and when that is nothing in particular, said as
+      // nothing in particular rather than as a guess with a name on it.
+      mark: SUM_MARK.project,
+      big: d.look?.framework ?? (d.look?.hasPackage ? 'No framework' : 'Plain files'),
+      what: d.look?.build ? `builds with ${d.look.build}` : 'this project does not say how to build itself',
+    },
+    {
+      mark: SUM_MARK.pulse,
+      big: d.project?.unsaved ?? 0,
+      what: (d.project?.unsaved ?? 0) === 1 ? 'change not saved yet' : 'changes not saved yet',
+      tone: (d.project?.unsaved ?? 0) ? 'warn' : '',
+    },
+  ])}
+
     <div class="factbar">
       <span><b>Project</b>${esc(d.name ?? '')}</span>
       <span><b>On GitHub</b>${bind.bound
@@ -5089,16 +5113,29 @@ SCREENS.workspace = async () => {
       <span>${esc(w.trouble.action ?? '')}</span>
       <span>Until this is fixed, your other computers cannot see this one at all.</span></div>` : ''}
 
-    <div class="tally">
-      <div class="one"><b>${known.length}</b><span>computer${known.length === 1 ? '' : 's'} in all</span></div>
-      <div class="one ${reachable ? '' : 'warn'}"><b>${reachable}</b><span>reachable on this network</span></div>
-      <div class="one"><b>${(w.offers ?? []).length}</b><span>folder${(w.offers ?? []).length === 1 ? '' : 's'} you are offering</span></div>
-      <div class="grow"></div>
-      <div class="one">
-        <b style="font-size:1rem;line-height:2">${w.sharingHere ? '● on' : '○ off'}</b>
-        <span>this computer can be reached</span>
-      </div>
-    </div>
+    ${summary([
+    {
+      mark: SUM_MARK.computers,
+      big: known.length,
+      what: `computer${known.length === 1 ? '' : 's'} in all`,
+      tone: reachable ? 'live' : '',
+    },
+    {
+      mark: SUM_MARK.folder,
+      big: (w.offers ?? []).length,
+      what: `folder${(w.offers ?? []).length === 1 ? '' : 's'} you are offering`,
+    },
+    {
+      mark: SUM_MARK.pulse,
+      big: w.sharingHere ? 'Reachable' : 'Not reachable',
+      what: w.sharingHere
+        ? `this computer${reachable ? `, and ${reachable} of yours` : ''}`
+        : 'your other computers cannot ask this one',
+      tone: w.sharingHere ? 'live' : 'warn',
+      pip: w.sharingHere,
+      signal: w.sharingHere && reachable > 0,
+    },
+  ])}
 
     <div id="team"></div>
 
@@ -5838,6 +5875,28 @@ SCREENS.activity = async () => {
       <div class="acts"><button class="quiet" id="act-again">Look again</button></div>
     </div>
     ${saidHtml()}
+
+    ${summary([
+    {
+      mark: SUM_MARK.running,
+      big: running.length,
+      what: running.length === 1 ? 'errand running' : 'errands running',
+      tone: running.length ? 'live' : '',
+      pip: running.length > 0,
+      signal: running.length > 0,
+    },
+    {
+      mark: SUM_MARK.computers,
+      big: (sessions.sessions ?? []).filter((one) => one.running).length,
+      what: 'being run here by another computer',
+    },
+    {
+      mark: SUM_MARK.done,
+      big: over.filter((j) => j.ok).length,
+      what: `finished well, of ${over.length} lately`,
+      tone: over.some((j) => j.ok === false) ? 'warn' : '',
+    },
+  ])}
 
     <div id="job"></div>
 
@@ -6871,7 +6930,6 @@ function asAsked() {
 
 const start = async () => {
   const wanted = asAsked();
-  shedGrains();
   await refreshMe();
   if (wanted.look) {
     document.documentElement.dataset.theme = wanted.look;

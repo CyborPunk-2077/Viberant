@@ -120,7 +120,7 @@
   --ease: cubic-bezier(.2, .8, .3, 1);
 
   /* -- measurements ------------------------------------------------------- */
-  --rail:  236px;
+  --rail:  220px;
   --top:   48px;
   /*
    * Two widths, because there are two kinds of screen here and one number
@@ -1065,6 +1065,141 @@ h2:first-of-type { margin-top: 0; }
 /* A compact strip rather than four oversized boxes. The numbers are set in    */
 /* the other face because they are numbers.                                    */
 /* ------------------------------------------------------------------------- */
+
+/*
+ * The three or four numbers a screen is actually about, at the top of it.
+ *
+ * A row of small labelled numbers packed into one strip reads as a status bar:
+ * something you glance past. Given a card each, with the mark for the thing
+ * they count, they read as the summary of the screen — which is what they
+ * are, and what everybody looks at first.
+ *
+ * They shrink to two across, then one, rather than wrapping into an uneven
+ * shape. A row of three where the third has dropped underneath looks like
+ * something went wrong.
+ */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--s4);
+  margin: 0 0 var(--s5);
+}
+.summary .one {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--card);
+  min-width: 0;
+  overflow: hidden;
+}
+.summary .mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--r-button);
+  border: 1px solid var(--line);
+  background: var(--raised);
+  color: var(--dim);
+}
+.summary .one.live .mark { color: var(--live); border-color: color-mix(in oklab, var(--live) 34%, var(--line)); }
+.summary .one.warn .mark { color: var(--attention); border-color: color-mix(in oklab, var(--attention) 34%, var(--line)); }
+.summary .one.vibe .mark { color: var(--vibe-b); border-color: color-mix(in oklab, var(--vibe-b) 34%, var(--line)); }
+
+.summary .said { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.summary .big {
+  font-size: 1.35rem;
+  font-weight: var(--w-semi);
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.summary .one.warn .big { color: var(--attention); }
+.summary .what { font-size: var(--t-meta); color: var(--faint); }
+.summary .what .pip {
+  display: inline-block;
+  width: 6px; height: 6px;
+  margin-right: var(--s1);
+  border-radius: 50%;
+  background: var(--live);
+  vertical-align: middle;
+}
+
+/*
+ * The one graphic on the page, and only where something is genuinely happening.
+ *
+ * Drawn into the card that reports a live connection and nowhere else. It never
+ * crosses a word: it is behind the right-hand third, fading out before the text
+ * begins, so it is atmosphere rather than decoration over content.
+ */
+.summary .one .signal {
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 62%;
+  pointer-events: none;
+  opacity: .5;
+  mask-image: linear-gradient(to right, transparent, #000 55%);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 55%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .summary .one .signal { display: none; }
+}
+
+/*
+ * The one label that could not afford it.
+ *
+ * `--faint` on an opaque card reads at 4.47 to 1, which is the line to two
+ * decimal places — chosen that way on purpose, and fine, right up until
+ * something is put behind it. Any transparency at all pushes it under, and no
+ * opacity that still shows a picture brings it back: the sums say the panel
+ * would have to be the card colour itself.
+ *
+ * So the label takes the next colour up when there is a scene behind it, which
+ * costs a shade of hierarchy on three words and keeps them readable. The
+ * alternative was to leave the rail nearly opaque for the sake of "WORK" and
+ * "WORKSPACE", which is a whole edge of the window spent on three headings
+ * nobody reads twice.
+ */
+.has-wall .rail .label-tiny { color: var(--quiet); }
+
+/*
+ * One fact about the whole app, in the corner of the bar across the top.
+ *
+ * It is up here rather than on a screen because it is true everywhere: nothing
+ * involving another computer works while it is off, and finding that out by
+ * pressing something and watching it fail is the wrong order to learn it in.
+ */
+.statepill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s2);
+  height: 26px;
+  padding: 0 var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--raised);
+  color: var(--dim);
+  font-size: var(--t-meta);
+  font-weight: var(--w-mid);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.statepill:hover { color: var(--ink); border-color: var(--line-strong); }
+.statepill .pip { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.statepill.live .pip { background: var(--live); }
+.statepill.warn { color: var(--attention); border-color: color-mix(in oklab, var(--attention) 30%, var(--line)); }
+.statepill.warn .pip { background: var(--attention); }
+@media (max-width: 62rem) {
+  .statepill span:not(.pip) { display: none; }
+  .statepill { padding: 0 var(--s2); }
+}
 
 .tally, .facts {
   display: flex;
@@ -2724,30 +2859,6 @@ select { cursor: pointer; }
 .has-wall .tally,
 .has-wall .factbar { background: color-mix(in srgb, var(--card) 84%, transparent); }
 
-/*
- * The one label that could not afford it.
- *
- * `--faint` on an opaque card reads at 4.47 to 1, which is the line to two
- * decimal places — chosen that way on purpose, and fine, right up until
- * something is put behind it. Any transparency at all pushes it under, and no
- * opacity that still shows a picture brings it back: the sums say the panel
- * would have to be the card colour itself.
- *
- * So the label takes the next colour up when there is a scene behind it, which
- * costs a shade of hierarchy on four words and keeps them readable. The
- * alternative was to leave the rail nearly opaque for the sake of "WORK" and
- * "OUT INTO THE WORLD", which is a whole edge of the window spent on two
- * headings nobody reads twice.
- */
-.has-wall .rail .label-tiny { color: var(--quiet); }
-
-#grains {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-@media (prefers-reduced-motion: reduce) { #grains { display: none; } }
 
 /* ------------------------------------------------------------------------- */
 /* Your computers, wherever they are                                          */

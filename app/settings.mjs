@@ -325,14 +325,6 @@ export const KNOWN = [
     fallback: () => '',
   },
   {
-    id: 'grains',
-    where: 'look',
-    name: 'Sand from the pointer',
-    why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
-    kind: 'yesNo',
-    fallback: () => true,
-  },
-  {
     id: 'watchFolder',
     where: 'computer',
     name: 'Notice when a folder changes',

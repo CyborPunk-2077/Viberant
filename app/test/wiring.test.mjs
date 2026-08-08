@@ -119,7 +119,6 @@ describe('the page defines everything its way in depends on', () => {
     'function confirmThat(',
     'function pickFolder(',
     'function identitySheet(',
-    'function shedGrains(',
     'function drawNav(',
     'function keysSheet(',
     'async function firstTimeSheet(',
