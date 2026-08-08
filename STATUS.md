@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 347 passing on Windows. The ones added last hold the two decisions
+**Tests:** 355 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -230,6 +230,13 @@ Horizon, Mars Horizon, and Tactical. Generated here rather than shipped, which
 keeps somebody else's artwork and somebody else's licence out of this entirely.
 A test fails on any look that leaves a variable out, because that does not error
 — it silently inherits the look above.
+
+**It has an icon of its own.** The same rounded square, violet gradient and V
+that sits at the top of its own rail — generated from about a hundred lines
+rather than shipped as a file, so it can never drift from the mark it copies.
+The small sizes are drawn heavier rather than scaled, because at 16 pixels a
+scaled stroke is 1.3 pixels wide and nearly disappears, and 16 pixels is where
+an icon lives. D-138.
 
 **Three companies can be asked, and which one is on screen.** Claude, ChatGPT
 and Gemini, each with its own key box and its own address. A question costs money
@@ -478,7 +485,7 @@ failing in silence.
 
 **~~Nothing prunes the shared workspace.~~** Done. It prunes computers not heard from in ninety days, trims what was said, and folds its whole history back into one save past five hundred. D-131.
 
-**Still no icon of its own.** It wears Electron's default. That needs a drawing, not code.
+**~~Still no icon of its own.~~** Done. It wears the same mark as the top of its own rail, drawn by `build/icon.mjs` at seven sizes and made fresh by every build. Checked by extracting the icon back out of the built `Viberant.exe`. D-138.
 
 **It does not know your accounts are running low.** Nothing tracks usage.
 

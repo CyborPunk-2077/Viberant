@@ -1566,6 +1566,20 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-138 `[DECIDED]` — The icon is the mark the app already wears, generated rather than shipped
+
+**Decision.** `build/icon.mjs` draws the rounded square with the violet gradient and the V — the same mark as the top of the rail and the opening — at seven sizes, and writes a real `.ico`. The build runs it before packaging. The window and the tray both wear it.
+
+**Why generated.** The note said this needed a drawing rather than code. It needed a drawing; it did not need a drawing *program*. The mark already existed, so the icon is that mark, and it cannot drift from it — nothing here is a second version of the logo that somebody has to remember to update. It costs about a hundred lines: PNG is a signature and four chunks, and an ICO entry may hold a whole PNG, which every Windows since Vista understands.
+
+**Why the small sizes are drawn rather than scaled.** Scaling the 256 straight down puts the V's stroke at 1.3 pixels in a 16-pixel icon and it nearly disappears — which is exactly where an icon spends its life, in a taskbar and a title bar. Below 48 the stroke thickens, the corners round less, and the square grows into its space.
+
+**How the number was picked, and a test that was worth nothing.** The first test asked only that the V be more than a twentieth of the picture at 16px. The badly scaled version passes that too — 6.0% against a threshold of 5% — so it proved nothing, and that was found by deliberately putting the fault back and watching it pass. The rule that separates them is the honest one: **a mark drawn smaller must not get lighter.** The letter must take up at least as much of the mark at 16 pixels as at 256. Scaled: 6.0% against 8.7%, fails. Drawn: 10.3%, passes.
+
+**Verified against the built executable**, not only against the file: the icon extracted from `Viberant.exe` is violet in the middle, transparent in the corners, and has the V in it.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
