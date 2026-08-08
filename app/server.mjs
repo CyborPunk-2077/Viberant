@@ -58,6 +58,7 @@ import * as channelsOf from './channels.mjs';
 import * as artifacts from './artifacts.mjs';
 import * as previewing from './preview.mjs';
 import * as carried from './carried.mjs';
+import * as activity from './activity.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -741,7 +742,10 @@ const routes = {
       owner: (await github.session())?.login || me.displayName,
       device: me,
     });
-    if (out.ok) await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+    if (out.ok) {
+      await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+      await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
+    }
     return { ...out, ...(await anywhere.around()) };
   },
 
@@ -782,7 +786,10 @@ const routes = {
       person: (await github.session())?.login || me.displayName,
       device: me,
     });
-    if (out.ok) await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+    if (out.ok) {
+      await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+      await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
+    }
     return { ...out, ...(await anywhere.around()) };
   },
 
@@ -798,8 +805,14 @@ const routes = {
         action: null,
       };
     }
-    return { ...(await membersOf.allow(ws, body?.device, body?.capability, body?.yes)),
-      ...(await anywhere.around()) };
+    const out = await membersOf.allow(ws, body?.device, body?.capability, body?.yes);
+    if (out.ok && body?.yes) {
+      await activity.remember('allowed', {
+        who: ws.devices?.[body.device]?.displayName ?? 'a computer',
+        what: { remoteTerminal: 'open a terminal', remoteRun: 'run things', remoteBuild: 'build' }[body.capability] ?? body.capability,
+      });
+    }
+    return { ...out, ...(await anywhere.around()) };
   },
 
   async 'POST /team/revoke'({ body }) {
@@ -808,7 +821,10 @@ const routes = {
     if (!ws || !membersOf.may(ws, me.deviceId, 'manageMembers')) {
       return { ok: false, sentence: 'Only whoever owns this workspace can do that.', action: null };
     }
-    return { ...(await membersOf.revoke(ws, body?.what)), ...(await anywhere.around()) };
+    const gone = ws.devices?.[body?.what]?.displayName ?? body?.what;
+    const out = await membersOf.revoke(ws, body?.what);
+    if (out.ok) await activity.remember('revoked', { who: gone });
+    return { ...out, ...(await anywhere.around()) };
   },
 
   // -- doing something on a computer of yours --------------------------------
@@ -1001,6 +1017,63 @@ const routes = {
   /** How much has gone which way. Numbers only, and none of them leave here. */
   async 'GET /carried'() {
     return { ok: true, ...(await carried.sofar()) };
+  },
+
+  /**
+   * Bring the changed part of a project from another computer.
+   *
+   * An errand rather than a request, because on a large project this takes
+   * minutes and nobody should have to stay on the page for it.
+   */
+  async 'POST /sync/bring'({ body }) {
+    const found = await anywhere.reach(body?.device);
+    if (!found.ok) return found;
+
+    const into = body?.path || current?.dir;
+    if (!into) {
+      found.peer.close();
+      return { ok: false, sentence: 'No project chosen.', action: 'Open one first.' };
+    }
+
+    const job = jobs.begin({
+      what: `Bringing changes from ${found.peer.who.displayName}`,
+      where: into,
+      kind: 'sync',
+      project: current?.name ?? null,
+    });
+
+    (async () => {
+      try {
+        const post = channelsOf.channels(found.peer, { odd: false });
+        const channel = await post.start(`sync:${body?.offer ?? ''}`);
+
+        const out = await syncing.bring({
+          channel,
+          into,
+          snapshotWith: snapshots.before,
+          onProgress: (text) => jobs.write(job, text),
+        });
+        found.peer.close();
+        jobs.end(job, out);
+        activity.remember(out.ok ? 'synced' : 'sync failed', {
+          who: found.peer.who.displayName, what: current?.name ?? into,
+        });
+      } catch (e) {
+        found.peer.close();
+        jobs.end(job, {
+          ok: false,
+          sentence: 'The changes did not come over.',
+          action: 'Try again when both computers are settled.',
+        });
+      }
+    })();
+
+    return { ok: true, job: job.id, sentence: 'Bringing over what changed.' };
+  },
+
+  /** What has happened in this workspace, as facts rather than a feed. */
+  async 'GET /team/activity'() {
+    return { ok: true, activity: await activity.recently() };
   },
 
   async 'GET /feedback'() {
@@ -2143,6 +2216,18 @@ anywhere.whenSomebodyArrives((peer) => {
         return channel.fail('that computer is not allowed to build here');
       }
       return void artifacts.send(current?.dir ?? '', channel);
+    }
+
+    if (channel.what.startsWith('sync:')) {
+      // Sending the changed part of a project is sending a project, so it needs
+      // the same permission — a sync is not a smaller thing than a transfer.
+      if (!membersOf.may(ws, from, 'seeOffered')) {
+        return channel.fail('that computer is not allowed to see what is offered here');
+      }
+      const wanted = channel.what.slice('sync:'.length);
+      const one = (await lan.offers()).find((o) => o.id === wanted);
+      if (!one) return channel.fail('that project is not offered from this computer');
+      return void syncing.serve({ channel, dir: one.path, everything: one.everything });
     }
 
     if (channel.what.startsWith('preview:')) {

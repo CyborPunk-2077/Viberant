@@ -1724,6 +1724,34 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-153 `[LOCKED]` — A sync merges into the folder; it never replaces it
+
+**Decision.** When a parcel is deliberately *not* the whole project — which is exactly what a sync is — what arrives is moved into the folder rather than swapped in place of it. And the folder that results is held against what the far end said the whole project comes to, before the sync is called finished.
+
+**Why both halves.** The ordinary way a parcel lands is to build it beside the target and swap it in, which is right when the parcel is everything: nothing of the old folder can survive half a transfer. A sync sends only what changed, so swapping the folder replaces a project with the handful of files that changed and **everything else is gone**.
+
+**And it was found by the second half.** Every number about the stream was correct — promised, sent and landed all agreed — because the stream really did carry exactly what it said. The only check that could see it was the one that asks whether the *folder* is now the project. That check was written for completeness and immediately earned its place, which is the argument for writing it at all.
+
+---
+
+### D-154 `[DECIDED]` — A workspace has a short list of things that happened, and no feed
+
+**Decision.** A closed list of event kinds — joined, connected, brought, synced, built, revoked, allowed — each with its wording in one place, two hundred kept, on this computer, sent nowhere.
+
+**Why a closed list.** The temptation with a workspace is a feed: somebody opened a file, somebody is looking at a project, somebody has been idle eleven minutes. That is a surveillance product wearing a collaboration product's clothes. Every line here is an event that measurably occurred at an instant; a test asserts there is no kind for anything that would have to be inferred, and that no kind describes a *state*.
+
+**The sentence is built when it is read, never stored.** Changing the wording later changes how history reads, rather than rewriting what happened.
+
+---
+
+### D-155 `[DECIDED]` — A stream is listened to before anything is awaited
+
+**Decision.** `unwrap` attaches its error listener as the first statement, before preparing the folder, and hands anything that failed in the meantime to the reader once there is one.
+
+**Why.** Preparing a folder takes a moment, and a source that failed during that moment raised an error on a stream nothing was listening to — which is not a rejected promise, it is the end of the whole manager (D-77). The window was small and entirely real: a peer hanging up the instant after a transfer is asked for lands squarely in it. The third time this exact shape has been found, which is why it is worth a decision of its own rather than a comment.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

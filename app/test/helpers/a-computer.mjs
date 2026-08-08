@@ -14,6 +14,8 @@ import * as device from '../../device.mjs';
 import * as peers from '../../peers.mjs';
 import * as relay from '../../relay.mjs';
 import * as parcel from '../../parcel.mjs';
+import * as channelsOf from '../../channels.mjs';
+import * as syncing from '../../sync.mjs';
 
 const say = (id, body) => process.send?.({ id, ...body });
 
@@ -65,6 +67,30 @@ process.on('message', async (asked) => {
         bytes: out.bytes ?? 0,
         sentence: out.sentence ?? null,
       });
+    }
+
+    /**
+     * Wait on the relay and serve a sync: work out what the asker is missing
+     * and send only that. The far half of the real thing, in a real process.
+     */
+    if (what === 'serveSync') {
+      const socket = await relay.dialRelay({
+        host: '127.0.0.1', port: asked.relayPort, ticket: asked.ticket,
+      });
+      if (!socket) return say(id, { ok: false, why: 'the relay did not join us' });
+
+      const known = await peers.greet(socket);
+      if (!known) return say(id, { ok: false, why: 'the handshake did not finish' });
+
+      const peer = peers.conversation(socket, { ...known, kind: peers.RELAY });
+      const post = channelsOf.channels(peer, { odd: true });
+
+      post.whenOpened(async (channel) => {
+        if (!channel.what.startsWith('sync:')) return channel.fail('not that');
+        const out = await syncing.serve({ channel, dir: asked.dir, everything: false });
+        say(id, { ok: true, ...out });
+      });
+      return;
     }
 
     say(id, { ok: false, why: `nothing here does ${what}` });

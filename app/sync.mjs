@@ -22,7 +22,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -225,3 +225,197 @@ export const KEEP_THEIRS = 'keep theirs';
 export const LOOK_FIRST = 'look first';
 
 export const __testOnly = { looksSame };
+
+// ---------------------------------------------------------------------------
+// Doing it, between two computers
+// ---------------------------------------------------------------------------
+
+/**
+ * Bring the changed part of a project from another computer.
+ *
+ * The whole conversation, in one place, so neither end has to guess what the
+ * other is doing:
+ *
+ *   this end says what it already has;
+ *   that end works out what is missing and sends only that;
+ *   this end keeps a way back for anything that would be replaced;
+ *   the parcel lands through the ordinary unwrap, with what was kept counted in;
+ *   and the tree that results is held against what that end said the whole
+ *     project comes to.
+ *
+ * That last step is the one worth naming. Everything before it verifies **the
+ * stream** — that what was promised arrived. This verifies **the folder** —
+ * that what is now on this disk is the project, rather than the project as it
+ * was plus whatever happened to already be here. A sync is the one operation
+ * where those two can differ, because it is the only one that deliberately
+ * does not send everything.
+ */
+export async function bring({ channel, into, snapshotWith = null, onProgress = null }) {
+  const parcelOf = await import('./parcel.mjs');
+
+  // What is here now. An empty answer is fine and means "send everything".
+  const mine = existsSyncSafe(into) ? await manifest(into, { everything: false }) : { files: {}, dirs: [] };
+  await channel.write(`${JSON.stringify({ have: mine.files })}\n`);
+
+  const head = await firstLine(channel);
+  if (!head) {
+    return { ok: false, sentence: 'That computer did not say what it has.', action: 'Try again in a moment.' };
+  }
+  if (head.no) {
+    return { ok: false, sentence: head.no, action: head.action ?? null };
+  }
+
+  const work = {
+    toSend: head.toSend ?? [],
+    bytesToSend: head.bytesToSend ?? 0,
+    bytesUnchanged: head.bytesUnchanged ?? 0,
+  };
+  onProgress?.(inWords(work));
+
+  // A way back for anything about to be written over, before a byte lands.
+  let wayBack = null;
+  if (snapshotWith && work.toSend.length) {
+    const overwriting = work.toSend.filter((path) => path in (mine.files ?? {}));
+    if (overwriting.length) {
+      wayBack = await snapshotWith({ dir: into, files: overwriting, why: 'before bringing changes over' });
+    }
+  }
+
+  // Everything this end is keeping, in the shape resuming already understands.
+  const keeping = {};
+  for (const [path, one] of Object.entries(mine.files ?? {})) {
+    if (!work.toSend.includes(path)) keeping[path] = one.size;
+  }
+
+  const out = await parcelOf.unwrap(channel.incoming, into, {
+    have: { have: keeping },
+    keep: false,
+    // A sync sends a part, so what arrives goes *into* the folder rather than
+    // in place of it — otherwise everything that had not changed is gone.
+    merge: true,
+    onProgress: onProgress ? ({ files, bytes }) => onProgress(
+      `${files} files · ${parcelOf.inWords(bytes)}`,
+    ) : undefined,
+  });
+  if (!out.ok) return { ...out, wayBack };
+
+  /**
+   * The folder, held against what the far end said the whole project is.
+   *
+   * Counted rather than trusted: the far end said the project comes to so many
+   * files and so many bytes, and this is what is on the disk. A sync that got
+   * the arithmetic right about the stream and wrong about the folder would
+   * leave somebody with a project that is quietly missing a file, and every
+   * number on the way would have agreed.
+   */
+  const landed = await manifest(into, { everything: false });
+  const wantedFiles = Number(head.whole?.files ?? 0);
+  const wantedBytes = Number(head.whole?.bytes ?? 0);
+  const hereFiles = Object.keys(landed.files).length;
+  const hereBytes = Object.values(landed.files).reduce((sum, one) => sum + one.size, 0);
+
+  if (wantedFiles && (hereFiles !== wantedFiles || hereBytes !== wantedBytes)) {
+    return {
+      ok: false,
+      wayBack,
+      sentence: `What is here now is ${hereFiles} files and that project is ${wantedFiles}.`,
+      action: wayBack?.taken
+        ? 'Nothing of yours was lost — what would have been replaced was kept first, and can be put back.'
+        : 'Bring the whole project over instead.',
+    };
+  }
+
+  return {
+    ok: true,
+    wayBack,
+    at: out.at,
+    changed: work.toSend.length,
+    bytes: work.bytesToSend,
+    unchanged: work.bytesUnchanged,
+    sentence: work.toSend.length
+      ? `${work.toSend.length} file${work.toSend.length === 1 ? '' : 's'} changed — ${parcelOf.inWords(work.bytesToSend)} came over.`
+      : 'Nothing had changed, so nothing came over.',
+    action: `${parcelOf.inWords(work.bytesUnchanged)} was already here and stayed where it was.`,
+  };
+}
+
+/**
+ * The far half: work out what is missing and send only that.
+ *
+ * The folder is decided here, from what this computer is offering — never from
+ * anything the asker said. Same rule as everything else that runs at somebody
+ * else's request.
+ */
+export async function serve({ channel, dir, everything = false }) {
+  const parcelOf = await import('./parcel.mjs');
+
+  const asked = await firstLine(channel);
+  if (!asked) { channel.fail('nothing was asked for'); return { ok: false }; }
+
+  const whole = await manifest(dir, { everything });
+  const theirs = { files: asked.have ?? {} };
+  const work = compare(whole, theirs);
+  const toSend = await whatToSend(dir, work, { everything });
+
+  await channel.write(`${JSON.stringify({
+    whole: {
+      files: Object.keys(whole.files).length,
+      bytes: Object.values(whole.files).reduce((sum, one) => sum + one.size, 0),
+    },
+    toSend: work.toSend,
+    bytesToSend: work.bytesToSend,
+    bytesUnchanged: work.bytesUnchanged,
+  })}\n`);
+
+  await channel.pour(parcelOf.wrap(dir, { everything, seen: toSend }));
+  return { ok: true, changed: work.toSend.length, bytes: work.bytesToSend };
+}
+
+/** One line of JSON off a channel, and whatever follows stays for the parcel. */
+function firstLine(channel) {
+  return new Promise((done) => {
+    let held = Buffer.alloc(0);
+    let settled = false;
+
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      channel.incoming.off('data', onData);
+      done(v);
+    };
+
+    const onData = (chunk) => {
+      held = Buffer.concat([held, chunk]);
+      const at = held.indexOf(0x0a);
+      if (at === -1) return;
+
+      let said;
+      try { said = JSON.parse(held.subarray(0, at).toString()); } catch { return finish(null); }
+
+      /**
+       * Stop the stream before letting go of it.
+       *
+       * Attaching a `data` listener puts a stream into flowing mode, and taking
+       * the listener off again does **not** put it back — so everything that
+       * arrived between reading this line and the parcel reader attaching went
+       * into nothing. What was kept back went back on; what came next was lost,
+       * and every sync reported that the folder had stopped arriving part way
+       * through. The same shape of mistake as the relay's, which is why it is
+       * worth naming twice.
+       */
+      const rest = held.subarray(at + 1);
+      channel.incoming.pause();
+      channel.incoming.off('data', onData);
+      if (rest.length) channel.incoming.unshift(rest);
+      settled = true;
+      done(said);
+    };
+
+    channel.incoming.on('data', onData);
+    channel.incoming.on('end', () => finish(null));
+    channel.incoming.on('error', () => finish(null));
+    setTimeout(() => finish(null), 30000).unref?.();
+  });
+}
+
+const existsSyncSafe = (at) => { try { return existsSync(at); } catch { return false; } };

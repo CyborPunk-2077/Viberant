@@ -378,10 +378,25 @@ export async function forget(into) {
  * looks finished is ever left**, because the half folder is never the target.
  */
 export async function unwrap(stream, into, {
-  onProgress, have = null, keep = false, forOffer = null,
+  onProgress, have = null, keep = false, forOffer = null, merge = false,
 } = {}) {
   const target = resolve(into);
   const half = halfOf(target);
+
+  /**
+   * Listened to before anything is awaited.
+   *
+   * Preparing the folder takes a moment, and a source that fails during that
+   * moment used to raise an error on a stream nothing was listening to — which
+   * is not a rejected promise, it is the end of the whole manager (D-77). The
+   * window was small and entirely real: a peer hanging up the instant after a
+   * transfer was asked for lands squarely in it.
+   *
+   * Kept, and handed to the reader below once there is one.
+   */
+  let sourceFailed = null;
+  const holdError = (e) => { sourceFailed = e; };
+  stream.on('error', holdError);
 
   if (!have) await rm(half, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   await mkdir(half, { recursive: true });
@@ -425,8 +440,11 @@ export async function unwrap(stream, into, {
    * transfer never does.
    */
   const loose = createGunzip();
+  stream.off('error', holdError);
   stream.on('error', (e) => loose.destroy(e));
-  stream.pipe(loose);
+  // Anything that went wrong while the folder was being prepared is delivered
+  // now, to the one thing that is finally in a position to answer for it.
+  if (sourceFailed) loose.destroy(sourceFailed); else stream.pipe(loose);
 
   let holding = Buffer.alloc(0);
   let promised = null;
@@ -659,8 +677,29 @@ export async function unwrap(stream, into, {
   // inside somebody's project is worse than litter beside it.
   await rm(ledgerOf(target), { force: true }).catch(() => {});
 
-  await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  await moveIntoPlace(half, target);
+  if (merge) {
+    /**
+     * Put what arrived *into* the folder, rather than in place of it.
+     *
+     * The ordinary way a parcel lands is to build the whole thing beside the
+     * target and then swap it in, which is right when the parcel is the whole
+     * project: nothing of the old folder can survive half a transfer.
+     *
+     * A sync is the one case where the parcel is deliberately **not** the whole
+     * project — the files that did not change were never sent, because they are
+     * already here. Swapping the folder then replaces a project with the handful
+     * of files that changed, and everything else is gone.
+     *
+     * Caught by holding the resulting folder against what the far end said the
+     * project comes to, which is the one check that can see it: every number
+     * about the stream was correct.
+     */
+    await mergeOver(half, target);
+    await rm(half, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  } else {
+    await rm(target, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    await moveIntoPlace(half, target);
+  }
 
   return {
     ok: true,
@@ -671,6 +710,36 @@ export async function unwrap(stream, into, {
     promised,
     carriedOver: alreadyFiles,
   };
+}
+
+/**
+ * Move everything from one folder into another, keeping what is already there.
+ *
+ * Used only by a sync, where what arrived is a part rather than a whole. Files
+ * that arrived replace what is there; files that did not arrive are left
+ * exactly as they were, because they are the ones that had not changed.
+ */
+async function mergeOver(from, to) {
+  const { rename, readdir: read, mkdir: make, copyFile } = await import('node:fs/promises');
+
+  const walk = async (at, into) => {
+    await make(into, { recursive: true });
+    for (const entry of await read(at, { withFileTypes: true })) {
+      const here = join(at, entry.name);
+      const there = join(into, entry.name);
+      if (entry.isDirectory()) { await walk(here, there); continue; }
+      // Renaming across the same disk is a move; the copy is for the day it is
+      // not, which on Windows is any two folders on different drives.
+      try {
+        await rm(there, { force: true });
+        await rename(here, there);
+      } catch {
+        await copyFile(here, there);
+      }
+    }
+  };
+
+  await walk(from, to);
 }
 
 /**

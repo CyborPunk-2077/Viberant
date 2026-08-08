@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 519 passing on Windows. The ones added last hold the two decisions
+**Tests:** 534 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -216,6 +216,17 @@ copied and can be put back. D-146.
 **Why does this work here and not there.** Two computers side by side —
 versions, package manager, what the project expects. Names and counts, never
 values, held by a test that fails if the module can open a file. D-147.
+
+**A project catches up with another computer, over a real connection.** Two
+manifests, only what changed crosses, a way back kept for anything it would
+replace — and then the folder that results is held against what the far end said
+the project comes to. That last check caught something nothing else could: a
+sync was *replacing* the folder with the handful of files that changed, and
+every number about the stream was correct while it did it. D-153.
+
+**A short list of what happened**, and deliberately not a feed. A closed list of
+kinds, each an event that measurably occurred; a test asserts there is no kind
+for anything that would have to be inferred. D-154.
 
 **What a build made comes back**, beside the project rather than into it and
 named for the machine that made it, as an ordinary parcel with every integrity

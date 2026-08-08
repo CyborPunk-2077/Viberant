@@ -1117,6 +1117,22 @@ function everything() {
   });
   out.push({
     group: 'Your team',
+    glyph: '⇄',
+    what: 'Catch this project up with another computer',
+    run: async () => {
+      await go('workspace');
+      const first = document.querySelector('[data-remote]');
+      if (first) return first.click();
+      say({
+        ok: false,
+        sentence: 'No other computer of yours is online.',
+        action: 'Open Viberant on one of them.',
+      });
+      draw();
+    },
+  });
+  out.push({
+    group: 'Your team',
     glyph: '≡',
     what: 'Compare two computers',
     run: async () => {
@@ -3885,9 +3901,12 @@ async function drawTeam() {
 
     ${t.team.length ? `
       <div class="label-tiny" style="padding:.9rem 0 .4rem">Team</div>
-      <div class="sheetlist machine-cols">${t.team.map(row).join('')}</div>` : ''}`;
+      <div class="sheetlist machine-cols">${t.team.map(row).join('')}</div>` : ''}
+
+    <div id="lately"></div>`;
 
   $('#team-invite').onclick = inviteSomebody;
+  drawLately();
 
   for (const b of box.querySelectorAll('[data-compare]')) {
     b.onclick = (e) => { e.stopPropagation(); compareWith(b.dataset.compare); };
@@ -3900,6 +3919,31 @@ async function drawTeam() {
     const id = r.dataset.teamdev;
     inspectTeamDevice([...t.mine, ...t.team].find((one) => one.deviceId === id), t);
   });
+}
+
+/**
+ * What has actually happened here.
+ *
+ * Not a feed. A feed is something you scroll because it might contain
+ * something; this is a short list you look at when you want to know why
+ * something is different from how you left it. Every line is an event that
+ * measurably occurred — nobody is watching anybody, and there is no
+ * "somebody is looking at Atlas", because nothing here can know that.
+ */
+async function drawLately() {
+  const box = $('#lately');
+  if (!box) return;
+
+  const said = await get('/team/activity');
+  if (!box.isConnected || !said.activity?.length) return;
+
+  box.innerHTML = `
+    <div class="sect"><h2>Lately</h2></div>
+    <ul class="steps">
+      ${said.activity.slice(0, 12).map((one) => `
+        <li><span>${esc(one.sentence)}</span>
+          <span style="color:var(--faint)">${esc(ago(one.at))}</span></li>`).join('')}
+    </ul>`;
 }
 
 /** What is known about one computer in the workspace. */
@@ -4110,6 +4154,8 @@ async function doSomethingOn(deviceId, t) {
           <span>Lands beside your project rather than in it, so nothing of yours is replaced.</span></button>
         <button class="pick" data-on="preview"><b>Look at what is running there</b>
           <span>Opens on this computer only. Nothing is put on the internet.</span></button>
+        <button class="pick" data-on="sync"><b>Catch this project up with theirs</b>
+          <span>Only what changed comes over, and what would be replaced is kept first.</span></button>
       </div>`,
     foot: '<button class="quiet" id="on-close">Close</button>',
   });
@@ -4129,6 +4175,11 @@ async function doSomethingOn(deviceId, t) {
       }
 
       if (which === 'preview') return openPreview(deviceId, one);
+
+      if (which === 'sync') {
+        say(await post('/sync/bring', { device: deviceId }));
+        return draw();
+      }
 
       const out = await post('/remote/do', { asDevice: deviceId, name: which === 'run' ? 'dev' : 'build' });
       say(out);
