@@ -1305,6 +1305,13 @@ h2:first-of-type { margin-top: 0; }
 .machine-cols {
   grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, auto);
 }
+/* An errand: how it went, what it was, which project, what kind, and when. */
+.act-cols {
+  grid-template-columns: 8px minmax(0, 1fr) minmax(0, 10rem) minmax(0, 7rem) minmax(0, 6rem) minmax(0, auto);
+}
+/* The one being read, marked the same way the place you are on is marked. */
+.act-cols .trow.on { background: var(--vibe-wash); }
+.act-cols .trow { cursor: pointer; }
 /*
  * This computer, marked rather than moved.
  *
@@ -1345,8 +1352,17 @@ h2:first-of-type { margin-top: 0; }
   .machine-cols { grid-template-columns: 8px minmax(0, 1fr) minmax(0, auto); }
   .machine-cols .trow > :nth-child(3),
   .machine-cols .thead > :nth-child(3) { display: none; }
+
+  /* Which project it was, dropped first: the errand names it anyway. */
+  .act-cols { grid-template-columns: 8px minmax(0, 1fr) minmax(0, 7rem) minmax(0, 6rem) minmax(0, auto); }
+  .act-cols .trow > :nth-child(3),
+  .act-cols .thead > :nth-child(3) { display: none; }
 }
 @media (max-width: 58rem) {
+  .act-cols { grid-template-columns: 8px minmax(0, 1fr) minmax(0, 6rem) minmax(0, auto); }
+  .act-cols .trow > :nth-child(4),
+  .act-cols .thead > :nth-child(4) { display: none; }
+
   .apps-cols { grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto); }
   .apps-cols .trow > :nth-child(3),
   .apps-cols .thead > :nth-child(3) { display: none; }
@@ -1709,6 +1725,22 @@ h2:first-of-type { margin-top: 0; }
 .dot.attention { background: var(--attention); box-shadow: 0 0 0 3px color-mix(in srgb, var(--attention) 18%, transparent); }
 .dot.trouble { background: var(--trouble); box-shadow: 0 0 0 3px color-mix(in srgb, var(--trouble) 18%, transparent); }
 .dot.off { background: var(--line-strong); }
+
+/*
+ * A row of chips that filter, rather than chips that label.
+ *
+ * Same shape as the labels, because they are the same size of thing, and one
+ * of them is on. Pressable ones get a pointer and a hover; the labelling ones
+ * are inside rows and never move.
+ */
+.bar.chips { gap: var(--s2); flex-wrap: wrap; }
+.bar.chips .chip { cursor: pointer; }
+.bar.chips .chip:hover { color: var(--ink); border-color: var(--line-strong); }
+.bar.chips .chip.on {
+  background: var(--vibe-wash);
+  border-color: var(--vibe-b);
+  color: var(--ink);
+}
 
 .chip {
   display: inline-flex;

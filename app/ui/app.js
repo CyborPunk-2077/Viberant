@@ -4151,11 +4151,28 @@ function stopWatchingJob() {
  */
 let whenJobEnds = null;
 
+/**
+ * Whether this watch ever saw the errand actually running.
+ *
+ * The whole of the Activity bug. When an errand finishes, the screen that
+ * started it is redrawn once so that whatever changed underneath appears —
+ * a site that is now live, a file that now exists. Opening a *finished* errand
+ * to read it went down the same path: painted, found it finished, and six
+ * hundred milliseconds later redrew the page. The redraw replaced the box the
+ * detail had just been written into, so it opened and then closed itself, and
+ * from the outside it looked like the button did not work.
+ *
+ * Nothing changed underneath, because nothing happened — it was over before
+ * anybody pressed anything. So there is nothing to redraw for.
+ */
+let sawItRunning = false;
+
 async function watchJob(id, onEnd = null) {
   stopWatchingJob();
   watching = id;
   jobShown = null;
   whenJobEnds = onEnd;
+  sawItRunning = false;
   await paintJob();
 }
 
@@ -4337,22 +4354,31 @@ async function paintJob({ again = true } = {}) {
     jobShown = null;
   });
 
+  if (j.running) sawItRunning = true;
+
   stopWatchingJob();
   if (!again) return;
 
   if (j.running) {
     jobTimer = setTimeout(paintJob, 1000);
-  } else {
-    // Finished. The page is told once, quietly, so what changed underneath the
-    // errand appears — and never with a full redraw, which is what made the
-    // whole application blink at the end of every deploy.
-    const told = whenJobEnds;
-    whenJobEnds = null;
-    jobTimer = setTimeout(() => {
-      if (told) return told(j);
-      if (!layer.innerHTML) draw({ quietly: true });
-    }, 600);
+    return;
   }
+
+  // Finished. The page is told once, quietly, so what changed underneath the
+  // errand appears — and never with a full redraw, which is what made the
+  // whole application blink at the end of every deploy.
+  const told = whenJobEnds;
+  whenJobEnds = null;
+
+  // Opened to be read rather than watched to its end. Nothing has changed
+  // underneath since it was drawn, so redrawing would throw away the thing
+  // somebody has just opened and put nothing new in its place.
+  if (!sawItRunning && !told) return;
+
+  jobTimer = setTimeout(() => {
+    if (told) return told(j);
+    if (!layer.innerHTML) draw({ quietly: true });
+  }, 600);
 }
 
 // ---------------------------------------------------------------------------
@@ -5734,6 +5760,27 @@ function checkPictureReads({ fix = false } = {}) {
 }
 
 /**
+ * What kind of errand this is, said as a word and a colour rather than a code.
+ *
+ * The kinds come from the errand itself, which named itself when it began, so
+ * nothing here guesses from a sentence.
+ */
+const JOB_KINDS = [
+  { id: 'all', name: 'All' },
+  { id: 'transfer', name: 'Transfer' },
+  { id: 'git', name: 'Saving' },
+  { id: 'build', name: 'Build' },
+  { id: 'deploy', name: 'Deploy' },
+  { id: 'ai', name: 'Asking' },
+  { id: 'remote', name: 'Other computers' },
+  { id: 'sync', name: 'Sync' },
+  { id: 'send', name: 'Sending' },
+];
+
+/** Which kinds are being shown. Kept between redraws, not between sessions. */
+let activityFilter = 'all';
+
+/**
  * Everything that is happening, or happened, or is still sitting there.
  *
  * Five things were built and then left with no way in. Long errands were only
@@ -5755,21 +5802,28 @@ SCREENS.activity = async () => {
     p?.dir ? get('/waysback') : Promise.resolve({ ok: true, waysBack: [] }),
   ]);
 
-  const running = jobs.filter((j) => !j.finished);
-  const over = jobs.filter((j) => j.finished).slice(0, 12);
+  const mine = jobs.filter((j) => activityFilter === 'all' || j.kind === activityFilter);
+  const running = mine.filter((j) => !j.finished);
+  const over = mine.filter((j) => j.finished).slice(0, 14);
   const back = ways.waysBack ?? [];
 
+  // Only the kinds that actually happened here, plus whichever is chosen, so
+  // this is a list of what you have rather than a list of what exists.
+  const had = new Set(jobs.map((j) => j.kind));
+  const filters = JOB_KINDS.filter((k) => k.id === 'all' || had.has(k.id) || k.id === activityFilter);
+
   const jobLine = (j) => `
-    <div class="trow ${j.finished ? '' : 'live'}" data-job="${esc(j.id)}">
+    <div class="trow ${j.id === watching ? 'on' : ''}" data-job-open="${esc(j.id)}">
       <span class="dot ${j.finished ? (j.ok ? 'off' : 'attention') : 'live'}"></span>
       <span class="tname">
         <b>${esc(j.what)}</b>
-        <span class="where">${esc(j.sentence ?? (j.steps?.at(-1)?.sentence ?? 'Working\u2026'))}</span>
+        <span class="where">${esc(j.sentence ?? (j.steps?.at(-1)?.sentence ?? 'Working…'))}</span>
       </span>
+      <span class="tcell dim">${esc(j.project ?? '')}</span>
+      <span class="tcell"><span class="chip">${esc(kindCalled(j.kind))}</span></span>
+      <span class="tcell dim">${esc(ago(j.finished ?? j.started))}</span>
       <span class="tacts">
-        <span class="chip">${esc(j.kind)}</span>
-        <span style="color:var(--faint)">${esc(ago(j.finished ?? j.started))}</span>
-        <button class="small" data-job-open="${esc(j.id)}">Look at it</button>
+        <span class="onhover"><button class="small" data-job-open="${esc(j.id)}">Look at it</button></span>
       </span>
     </div>`;
 
@@ -5787,14 +5841,25 @@ SCREENS.activity = async () => {
 
     <div id="job"></div>
 
+    ${filters.length > 2 ? `
+      <div class="bar chips" style="margin:0 0 .2rem">
+        ${filters.map((k) => `
+          <button class="chip ${k.id === activityFilter ? 'on' : ''}" data-filter="${esc(k.id)}">${esc(k.name)}</button>`).join('')}
+      </div>` : ''}
+
     <div class="sect"><h2>Happening now</h2><span class="count">${running.length}</span></div>
     ${running.length
-    ? `<div class="sheetlist">${running.map(jobLine).join('')}</div>`
+    ? `<div class="sheetlist act-cols">
+        <div class="thead"><span></span><span>Errand</span><span>Project</span><span>Kind</span><span>Started</span><span></span></div>
+        ${running.map(jobLine).join('')}</div>`
     : '<div class="card" style="color:var(--quiet)">Nothing is running.</div>'}
 
     ${over.length ? `
       <div class="sect"><h2>Finished</h2><span class="count">${over.length}</span></div>
-      <div class="sheetlist">${over.map(jobLine).join('')}</div>` : ''}
+      <div class="sheetlist act-cols">
+        <div class="thead"><span></span><span>Errand</span><span>Project</span><span>Kind</span><span>Ended</span><span></span></div>
+        ${over.map(jobLine).join('')}
+      </div>` : ''}
 
     <div class="sect"><h2>Being run here by another computer</h2>
       <span class="count">${sessions.sessions?.length ?? 0}</span></div>
@@ -5806,7 +5871,7 @@ SCREENS.activity = async () => {
             <span class="tname">
               <b>${esc(one.what ?? one.kind)}</b>
               <span class="where">Asked for by ${esc(one.who ?? 'another computer')}
-                \u00b7 ${esc(one.where ?? '')} \u00b7 ${esc(ago(one.began))}</span>
+                · ${esc(one.where ?? '')} · ${esc(ago(one.began))}</span>
             </span>
             <span class="tacts">
               ${one.running ? `<button class="small danger" data-stop="${esc(one.id)}">Stop it</button>` : ''}
@@ -5823,7 +5888,7 @@ SCREENS.activity = async () => {
           <div class="trow">
             <span class="dot live"></span>
             <span class="tname"><b>${esc(w.name ?? 'A preview')}</b>
-              <span class="where mono">${esc(String(w.port))} \u00b7 open since ${esc(ago(w.began))}</span></span>
+              <span class="where mono">${esc(String(w.port))} · open since ${esc(ago(w.began))}</span></span>
             <span class="tacts"><button class="small" data-shut="${esc(w.at)}">Close it</button></span>
           </div>`).join('')}
       </div>` : ''}
@@ -5846,9 +5911,9 @@ SCREENS.activity = async () => {
               <span class="tname">
                 <b>${esc(one.files)} file${one.files === 1 ? '' : 's'} kept</b>
                 <span class="where">${esc(one.why ?? 'before something was written over')}
-                  \u00b7 ${esc(ago(one.at))}</span>
+                  · ${esc(ago(one.at))}</span>
               </span>
-              <span class="tacts"><button class="small" data-back="${esc(one.id)}">Put it back\u2026</button></span>
+              <span class="tacts"><button class="small" data-back="${esc(one.id)}">Put it back…</button></span>
             </div>`).join('')}
         </div>`
     : `<div class="card" style="color:var(--quiet)">Nothing has been written over in
@@ -5858,8 +5923,28 @@ SCREENS.activity = async () => {
 
   $('#act-again').onclick = () => draw();
 
+  for (const b of document.querySelectorAll('[data-filter]')) {
+    b.onclick = () => { activityFilter = b.dataset.filter; draw(); };
+  }
+
+  /*
+   * Opening one to read it, which used to close itself.
+   *
+   * The row and the button on it both carry the mark, so pressing anywhere on
+   * the row works — and the handler stops the press there, because the row is
+   * inside the row. Without that, one press was counted twice and the second
+   * one arrived after the first had already redrawn.
+   */
   for (const b of document.querySelectorAll('[data-job-open]')) {
-    b.onclick = () => { watchJob(b.dataset.jobOpen); };
+    b.onclick = (e) => {
+      e.stopPropagation();
+      watchJob(b.dataset.jobOpen);
+      // Only the marks change, and only on the rows. The page is not redrawn,
+      // because redrawing it is what threw the detail away.
+      for (const row of document.querySelectorAll('.act-cols .trow')) {
+        row.classList.toggle('on', row.dataset.jobOpen === b.dataset.jobOpen);
+      }
+    };
   }
 
   for (const b of document.querySelectorAll('[data-stop]')) {
@@ -5893,8 +5978,19 @@ SCREENS.activity = async () => {
     };
   }
 
+  /*
+   * Whatever was open stays open across a redraw.
+   *
+   * The same line every other screen that shows an errand has. Activity did not
+   * have it, so anything that redrew the page — a filter, a stop, an errand
+   * finishing elsewhere — left an empty box where the detail had been.
+   */
+  if (watching) return paintJob({ again: !jobTimer });
   if (running.length) watchJob(running[0].id);
 };
+
+/** What a kind of errand is called, in words. */
+const kindCalled = (id) => JOB_KINDS.find((k) => k.id === id)?.name ?? id ?? 'Other';
 
 SCREENS.settings = async () => {
   const [{ settings, parts, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);

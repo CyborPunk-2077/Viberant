@@ -106,6 +106,53 @@ describe('nothing asks forever', () => {
   });
 });
 
+describe('opening an errand to read it does not close it', () => {
+  /**
+   * The whole of the Activity fault, held as three lines of the page's source.
+   *
+   * When an errand finishes, the screen that started it is redrawn once so that
+   * whatever changed underneath appears. Opening a *finished* errand to read it
+   * went down the same path: painted, found it finished, and six hundred
+   * milliseconds later redrew the page — which replaced the box the detail
+   * had just been written into. From the outside the button did nothing.
+   */
+  test('it only redraws for an errand it actually watched running', () => {
+    const body = bodyOf(page, 'async function paintJob(');
+
+    assert.match(body, /if \(j\.running\) sawItRunning = true;/,
+      'nothing records whether this watch ever saw it running');
+    assert.match(body, /if \(!sawItRunning && !told\) return;/,
+      'a finished errand opened to be read still triggers a redraw over the top of itself');
+
+    // And the guard has to come before the redraw is scheduled, or it guards
+    // nothing at all.
+    assert.ok(body.indexOf('if (!sawItRunning && !told) return;') < body.indexOf('draw({ quietly: true })'),
+      'the redraw is scheduled before the check that would prevent it');
+  });
+
+  test('and every watch starts out having seen nothing', () => {
+    const body = bodyOf(page, 'async function watchJob(');
+    assert.match(body, /sawItRunning = false;/,
+      'the previous errand decides whether this one redraws');
+  });
+
+  test('Activity keeps what is open across a redraw, like every other screen', () => {
+    const body = bodyOf(page, 'SCREENS.activity = async ()');
+    assert.match(body, /if \(watching\) return paintJob\(\{ again: !jobTimer \}\);/,
+      'a filter or a stop leaves an empty box where the detail was');
+    // And it must not open a different one over the top of what somebody chose.
+    assert.ok(body.indexOf('if (watching) return paintJob') < body.indexOf('if (running.length) watchJob'),
+      'a running errand is opened over the one somebody deliberately opened');
+  });
+
+  test('and a press on a row is counted once', () => {
+    const body = bodyOf(page, 'SCREENS.activity = async ()');
+    const opening = body.slice(body.indexOf("querySelectorAll('[data-job-open]')"));
+    assert.match(opening.slice(0, 600), /e\.stopPropagation\(\)/,
+      'the button is inside the row, so one press arrives twice');
+  });
+});
+
 describe('what a page shows is what a person can reach', () => {
   test('every control with a name has something listening for it', () => {
     const named = new Set();

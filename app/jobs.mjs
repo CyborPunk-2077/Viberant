@@ -38,6 +38,11 @@ function snapshot(job) {
     sentence: job.sentence,
     action: job.action,
     at: job.at ?? null,
+    // Where the whole of it can be read at whoever ran it. This is the second
+    // half of the same lesson: a field that is set on the errand and not named
+    // here never reaches a page, silently, and the page shows nothing rather
+    // than showing something wrong — which is why it took two goes to spot.
+    inspect: job.inspect ?? null,
     made: job.made ?? null,
     release: job.release ?? null,
     lines: job.lines,
