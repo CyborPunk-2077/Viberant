@@ -1451,6 +1451,34 @@ Making that panel incremental was right: rebuilding it every second threw away t
 
 ---
 
+### D-130 `[DECIDED]` — Google is a list of names, and no code that decides a destination may read it
+
+**Decision.** Several Google accounts may be signed in on one computer, in the same shape GitHub already uses: a list with one in use. The file that held exactly one upgrades into the first of a list. Signing the one in use out hands the position to whichever is left rather than leaving nobody in use with accounts still here. And a test asserts that `github.mjs`, `projects.mjs`, `workspace.mjs`, `providers.mjs` and `deploy.mjs` do not import `google.mjs` at all.
+
+**Why.** GitHub decides where work goes; Google decides a name on this computer. They are constantly confused, and confusing them would be expensive — a Google address quietly influencing a destination is D-115's fault wearing a different hat. Holding that by care would last exactly until somebody adds a fifth call site, so it is held structurally instead: the modules that could do harm cannot see the module that could tempt them.
+
+**Considered and rejected.** Merging the two into one "account" concept, which is what every product does and is the reason nobody can tell which one is signing their work. Also rejected: making Google optional-but-recommended. It is optional, and saying more than that oversells it.
+
+---
+
+### D-131 `[DECIDED]` — The workspace is folded back into one save when its history outgrows its use — closes O-9
+
+**Decision.** Three things, all in `workspace.mjs`:
+
+1. **Pruning.** A computer not heard from in ninety days has its three files dropped, and each conversation is trimmed to its last five hundred lines. This computer never prunes its own files, whatever the clock says.
+2. **Folding.** Past five hundred saves, the current state is written once and the record of how it got there is dropped. Every file survives exactly as it stands; what is lost is the list of moments they were written.
+3. **Recovery.** A computer whose copy no longer lines up takes the other one whole, instead of never pulling again.
+
+**Why.** Being about writes a small save every couple of minutes (D-25). Nobody has ever read one — "danni is here" from three months ago answers no question anybody has — and left alone it is a quarter of a million saves a year in a project every computer keeps a copy of. Joining gets slower forever.
+
+All three would be indefensible against somebody's project and are correct here for one reason, which is the reason to state rather than the mechanism: **nothing in this folder is anybody's work.** It is three small files per computer, each of which rewrites its own within two minutes of noticing they are gone. That fact is what licenses the fold, the reset, and the prune; without it none of them may happen.
+
+Folding is the only irreversible step in the product, so it is guarded by checks a test can stand on rather than by care: it must be inside the workspace folder by resolved path, the address it sends to must carry the workspace's own name, nothing may be unwritten, and what is already there must not have moved since it was last read. Any one of those failing is a refusal, and a refusal leaves the computer exactly as it was found.
+
+**Considered and rejected.** Keeping a shallow copy — that shrinks what this computer holds and not what is on GitHub, so joining stays slow forever. Amending the previous save each time — the same rewrite, dressed up, happening seven hundred times a day instead of twice a year. Doing nothing and calling it honest — the growth is real and it was already written down as O-9.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
@@ -1536,7 +1564,7 @@ Ground preparation moves from effort creation to first delegation (D-5). Contrad
 | ~~O-6~~ | ~~Event & reason schema v1~~ — **closed.** Specified, implemented and held to a 39-test conformance suite in `core/`. | — | Done |
 | `[OPEN]` O-7 | Every remaining numeric parameter (grace period, staleness, Home ceilings) | Both | Before MVP |
 | `[OPEN]` O-8 | Business model. Untouched in the corpus; every conventional lever is constitutionally banned | Founder | Not blocking build |
-| `[OPEN]` O-9 | Compaction for a shared workspace left running for months — presence writes a small save every two minutes and nothing prunes them yet (D-25) | Eng | Before it is a year old |
+| ~~O-9~~ | ~~Compaction for a shared workspace left running for months~~ — **closed.** Prunes computers not heard from in ninety days, trims conversations, and folds the history back into one save past five hundred. D-131, held to twelve tests including the four guards on the one irreversible step. | — | Done |
 | `[ASSUMED]` R-2 | That signing in to an AI app inside a terminal the manager opened leaves that app signed in the same way it would be otherwise. Believed, never checked against a real provider (see also the untested half of profiles) | Eng | Verify with a throwaway account |
 | `[ASSUMED]` R-1 | That the founder's own repositories live on Windows filesystems, not inside WSL. If false, D-7 breaks the dogfooding loop that justified D-2 | Founder | Verify now |
 

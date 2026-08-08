@@ -209,10 +209,13 @@ describe('nothing decides an account from a name in the source', () => {
         // The shapes that look like owner/name but are not:
         //   what a browser is told a file is, which is always type/subtype;
         //   a path to a file, which has an extension on the end;
-        //   a folder a build puts things in.
+        //   a folder a build puts things in;
+        //   the name of somewhere in this computer's own copy, which names no
+        //   account — `origin` is whatever this copy was got from.
         if (/^(application|font|text|image|audio|video|multipart)$/i.test(owner)) continue;
         if (/\./.test(repo)) continue;
         if (/^(node|core|app|ui|dist|src|test|target|build|out|docs|public)$/i.test(owner)) continue;
+        if (/^(origin|refs|heads|remotes|upstream)$/i.test(owner)) continue;
         offences.push(`${file}: ${m[0]}`);
       }
     }

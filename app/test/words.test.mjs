@@ -61,7 +61,10 @@ async function proseIn(file) {
   for (const m of withoutComments.matchAll(/'([^'\\\n]{12,})'|"([^"\\\n]{12,})"/g)) {
     found.push(m[1] ?? m[2]);
   }
-  for (const m of withoutComments.matchAll(/>([^<>{}$`]{12,})</g)) {
+  // Not `=>`, which is a function rather than the end of a tag. An arrow
+  // followed anywhere later by a less-than reads as a whole run of code being
+  // shown to somebody, and the words inside it are not sentences.
+  for (const m of withoutComments.matchAll(/(?<!=)>([^<>{}$`]{12,})</g)) {
     found.push(m[1]);
   }
 

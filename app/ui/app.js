@@ -934,6 +934,36 @@ function everything() {
       group: 'This project', glyph: '↑', what: 'Save and send',
       run: async () => { await go('projects'); $('#save')?.click(); },
     });
+
+    /**
+     * Asking about a project, from anywhere.
+     *
+     * These live at the bottom of the project page, which is the right place to
+     * find them and the wrong place to be when the thought arrives. Typing
+     * "wrong" and pressing enter is how somebody actually asks.
+     */
+    out.push({
+      group: 'Ask about this project', glyph: '◇', what: 'Is anything wrong with it?',
+      run: async () => { await go('projects'); $('#ai-diagnose')?.click(); },
+    });
+    out.push({
+      group: 'Ask about this project', glyph: '◇', what: 'Look over my changes',
+      run: async () => { await go('projects'); $('#ai-review')?.click(); },
+    });
+    out.push({
+      group: 'Ask about this project', glyph: '◇', what: 'Ask a question about it',
+      run: async () => { await go('projects'); $('#ai-q')?.focus(); },
+    });
+    out.push({
+      group: 'Ask about this project', glyph: '◇', what: 'Ask for a change',
+      run: async () => {
+        await go('projects');
+        const box = $('#ai-q');
+        if (!box) return;
+        box.focus();
+        box.placeholder = 'Say what you want changed, then press Ask for a change';
+      },
+    });
   }
 
   // Only errands here. Every place is already above under "Go to", and listing

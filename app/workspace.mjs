@@ -299,10 +299,158 @@ export async function leave({ machine } = {}) {
 // Keeping in step
 // ---------------------------------------------------------------------------
 
-/** Bring down whatever the other computers have said. */
+/**
+ * Bring down whatever the other computers have said.
+ *
+ * If the two histories no longer line up, this computer takes theirs whole.
+ * That is a thing you would never do to somebody's project and exactly the
+ * right thing to do here: **nothing in this folder is anybody's work.** It is
+ * three small files per computer, and this one rewrites its own within two
+ * minutes of noticing they are gone. The alternative is a computer that can
+ * never pull again, silently, forever — which is the shape of fault this
+ * codebase has now paid for twice.
+ */
 async function pull() {
-  const ok = await quiet(() => git('pull', '--rebase', '--quiet', '--autostash'));
-  return !!ok;
+  if (await quiet(() => git('pull', '--rebase', '--quiet', '--autostash'))) return true;
+
+  // Rebasing may have stopped half-way. Leave nothing standing.
+  await quiet(() => git('rebase', '--abort'));
+
+  const got = await quiet(() => git('fetch', '--quiet', 'origin'));
+  if (!got) return false;
+
+  const theirs = await quiet(() => git('rev-parse', 'origin/HEAD'))
+    ?? await quiet(() => git('rev-parse', 'origin/main'))
+    ?? await quiet(() => git('rev-parse', 'origin/master'));
+  if (!theirs?.stdout.trim()) return false;
+
+  // Guarded by where rather than by care. This may run in the workspace and
+  // nowhere else, and the check is the same one that keeps projects out of it.
+  if (!isInsideWorkspace(HERE)) return false;
+
+  return !!(await quiet(() => git('reset', '--hard', '--quiet', theirs.stdout.trim())));
+}
+
+/** How many saves the workspace may carry before it is folded back into one. */
+const TOO_MANY_SAVES = 500;
+
+/**
+ * Fold the whole workspace back into a single save.
+ *
+ * Being about writes a small save every couple of minutes. Nobody has ever read
+ * one and nobody ever will — "danni is here" from three months ago answers no
+ * question anybody has. Left alone it is a quarter of a million saves a year in
+ * a project every computer keeps a copy of, and joining gets slower forever.
+ *
+ * So past five hundred, the current state is written once and the record of how
+ * it got there is dropped. What is kept is every file exactly as it stands; what
+ * is lost is the list of moments they were written. That trade is only
+ * acceptable **because this folder holds no work** — the same fact that makes
+ * `pull` above allowed to take another computer's version whole.
+ *
+ * The other computers find a history theirs cannot follow, and take this one.
+ * They lose nothing by it: each rewrites its own three files on its next beat.
+ */
+async function tidy(limit = TOO_MANY_SAVES) {
+  if (!isInsideWorkspace(HERE)) return false;
+  if (!(await canSign())) return false;
+
+  const many = await quiet(() => git('rev-list', '--count', 'HEAD'));
+  if (Number(many?.stdout.trim() ?? 0) < limit) return false;
+
+  // Nothing may be in flight. A fold that races an ordinary save would drop it.
+  const pending = await quiet(() => git('status', '--porcelain'));
+  if (pending?.stdout.trim()) return false;
+
+  const branch = (await quiet(() => git('rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim();
+  if (!branch || branch === 'HEAD') return false;
+
+  // Where this is about to send, checked by name as well as by folder. The one
+  // irreversible step in the whole product is about to run, and it may only
+  // ever land on this product's own plumbing.
+  const where = (await quiet(() => git('remote', 'get-url', 'origin')))?.stdout.trim() ?? '';
+  if (!where.toLowerCase().includes(WORKSPACE_NAME)) return false;
+
+  // What the other computers had a moment ago. Sending is refused outright if
+  // that has moved since — somebody wrote something this fold has not seen, and
+  // replacing the history would take it with it.
+  const seen = (await quiet(() => git('rev-parse', `origin/${branch}`)))?.stdout.trim();
+  if (!seen) return false;
+
+  const fresh = `folding-${Date.now()}`;
+  if (!(await quiet(() => git('checkout', '--quiet', '--orphan', fresh)))) return false;
+
+  const folded = await quiet(async () => {
+    await git('add', '--all');
+    await git('commit', '--quiet', '--no-verify', '-m',
+      'Everything the computers know, as it stands now');
+    await git('branch', '--quiet', '-M', branch);
+    await git('push', '--quiet', `--force-with-lease=refs/heads/${branch}:${seen}`,
+      '--set-upstream', 'origin', branch);
+    return true;
+  });
+
+  if (!folded) {
+    // Put it back exactly as it was rather than leaving a half-fold behind.
+    await quiet(() => git('checkout', '--quiet', '--force', branch));
+    await quiet(() => git('branch', '-D', fresh));
+    return false;
+  }
+
+  await quiet(() => git('reflog', 'expire', '--expire=now', '--all'));
+  await quiet(() => git('gc', '--prune=now', '--quiet'));
+  return true;
+}
+
+/** How long a computer has to be silent before its word is dropped. */
+const LONG_GONE = 90 * 24 * 60 * 60 * 1000;
+/** How much of what was said is worth keeping, per computer. */
+const KEEP_SAID = 500;
+
+/**
+ * Drop what belongs to computers that stopped coming, and trim what was said.
+ *
+ * A computer that has not been heard from in three months has been reinstalled,
+ * sold, or thrown away, and its offers point at folders that are not there any
+ * more. Leaving them makes the Workspace page a list of ghosts.
+ *
+ * Self-healing in both directions: one that comes back writes its three files
+ * on its next beat and is simply here again. **This computer never prunes its
+ * own**, whatever the clock says, because a wrong clock is common and being
+ * erased by one is not recoverable from the inside.
+ */
+async function prune(machine, now = Date.now()) {
+  let changed = false;
+
+  const gone = [];
+  for (const f of await listing('machines')) {
+    const id = path.basename(f, '.json');
+    if (id === machine) continue;
+    const one = parse(await quiet(() => readFile(path.join(HERE, 'machines', f), 'utf8'), ''));
+    if (one && now - (one.lastHere ?? 0) > LONG_GONE) gone.push(id);
+  }
+
+  for (const id of gone) {
+    for (const f of [
+      path.join(HERE, 'machines', `${id}.json`),
+      path.join(HERE, 'shared', `${id}.json`),
+      path.join(HERE, 'said', `${id}.jsonl`),
+    ]) await quiet(() => rm(f, { force: true }));
+    changed = true;
+  }
+
+  // What was said is a conversation, not a record: the last few hundred lines
+  // are the part anybody scrolls back through, and the page shows 200 of them.
+  for (const f of await listing('said')) {
+    const at = path.join(HERE, 'said', f);
+    const text = await quiet(() => readFile(at, 'utf8'), '');
+    const lines = String(text ?? '').split('\n').filter((l) => l.trim());
+    if (lines.length <= KEEP_SAID) continue;
+    await quiet(() => writeFile(at, `${lines.slice(-KEEP_SAID).join('\n')}\n`, 'utf8'));
+    changed = true;
+  }
+
+  return changed;
 }
 
 /**
@@ -396,8 +544,15 @@ export async function sync({ machine, name = null, project = null, sharing = nul
         JSON.stringify(sharing, null, 2), 'utf8');
     }
 
-    const sent = await push(sharing ? `${me.name} changed what it is offering` : `${me.name} is here`);
+    const swept = await prune(machine);
+    const sent = await push(
+      swept ? `${me.name} is here, and tidied up after computers that are not`
+        : sharing ? `${me.name} changed what it is offering` : `${me.name} is here`,
+    );
     reached = sent.ok;
+
+    // Only ever after a clean save, so a fold never races something unwritten.
+    if (sent.ok) await quiet(() => tidy());
     // Carried out whole rather than reduced to a no. The Workspace page draws
     // this as a standing sentence, because a computer that cannot write is a
     // computer the others will never see, and nothing else on that page says so.
@@ -506,6 +661,13 @@ async function listing(folder) {
   if (!existsSync(path.join(HERE, folder))) return [];
   return (await readdir(path.join(HERE, folder))).filter((f) => !f.startsWith('.'));
 }
+
+/**
+ * Reachable for testing only. Tidying and pruning are the two places in this
+ * product that throw something away, so both are exercised directly against a
+ * real workspace on disk rather than believed.
+ */
+export const __testOnly = { prune, tidy, pull, LONG_GONE, KEEP_SAID, TOO_MANY_SAVES };
 
 // ---------------------------------------------------------------------------
 // Saying things
