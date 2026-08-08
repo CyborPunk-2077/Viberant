@@ -1474,6 +1474,33 @@ h2:first-of-type { margin-top: 0; }
 .ai-state.bad b { color: var(--ink); font-weight: var(--w-mid); }
 .ai-state.bad span { color: var(--quiet); }
 
+/*
+ * Which one is about to be asked, said next to the buttons that ask it.
+ *
+ * Pressable, because the answer to "not that one" is here rather than three
+ * pages away. It looks like the label it is until it is under a pointer.
+ */
+.sect .count.pressable {
+  cursor: pointer;
+  border: 0;
+  background: none;
+  padding: 0;
+  border-bottom: 1px dashed var(--line);
+}
+.sect .count.pressable:hover { color: var(--ink); border-bottom-color: var(--dim); }
+
+/* One company, its model, and whether there is a key. */
+.ai-one { margin-bottom: var(--s3); }
+.ai-one .field { margin-top: var(--s3); }
+.ai-one .fact:empty { display: none; }
+.ai-one .fact {
+  margin-top: var(--s2);
+  font-size: var(--t-meta);
+  color: var(--quiet);
+}
+.ai-one .fact.good { color: var(--live); }
+.ai-one .fact.bad { color: var(--attention); }
+
 .ai-said {
   padding: var(--s4) 0 0;
   font-size: var(--t-sub);

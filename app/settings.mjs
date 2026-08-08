@@ -228,6 +228,45 @@ export const KNOWN = [
     fallback: () => '',
   },
   {
+    /**
+     * Which model each company should use.
+     *
+     * Not on the settings list, because the choice only means anything next to
+     * the company it belongs to and the key that pays for it — which is on the
+     * screen where somebody is already asking questions. `unlisted` rather than
+     * a kind of its own: it is an ordinary line of text that is kept, it simply
+     * is not one of the things the settings page draws.
+     */
+    id: 'model:claude',
+    name: 'Model for Claude',
+    why: 'Which of Claude models answers.',
+    kind: 'text',
+    optional: true,
+    unlisted: true,
+    longest: 80,
+    fallback: () => '',
+  },
+  {
+    id: 'model:openai',
+    name: 'Model for ChatGPT',
+    why: 'Which of ChatGPT models answers.',
+    kind: 'text',
+    optional: true,
+    unlisted: true,
+    longest: 80,
+    fallback: () => '',
+  },
+  {
+    id: 'model:gemini',
+    name: 'Model for Gemini',
+    why: 'Which of Gemini models answers.',
+    kind: 'text',
+    optional: true,
+    unlisted: true,
+    longest: 80,
+    fallback: () => '',
+  },
+  {
     id: 'grains',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
@@ -303,7 +342,7 @@ export async function allSafely() {
 /** The list the settings page draws itself from. */
 export async function described() {
   const now = await allSafely();
-  return KNOWN.filter((s) => s.kind !== 'hidden').map((s) => ({
+  return KNOWN.filter((s) => s.kind !== 'hidden' && !s.unlisted).map((s) => ({
     id: s.id, name: s.name, why: s.why, kind: s.kind,
     choices: s.choices ?? null,
     value: now[s.id],

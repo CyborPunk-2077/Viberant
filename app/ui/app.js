@@ -110,9 +110,11 @@ function saidHtml() {
 
 const TABS = [
   { id: 'projects', name: 'Projects', glyph: '◳' },
+  { id: 'ask', name: 'Ask', glyph: '◇' },
   { id: 'apps', name: 'AI apps', glyph: '✦' },
   { id: 'terminals', name: 'Terminals', glyph: '❯' },
   { id: 'workspace', name: 'Workspace', glyph: '⌸' },
+  { id: 'activity', name: 'Activity', glyph: '◷' },
   { id: 'ship', name: 'Deploy', glyph: '↗' },
   { id: 'settings', name: 'Settings', glyph: '⚙' },
 ];
@@ -128,8 +130,8 @@ const TABS = [
  * rather than an icon in a corner, which is D-69 and still right.
  */
 const GROUPS = [
-  { name: 'Work', places: ['projects', 'apps', 'terminals'] },
-  { name: 'Out into the world', places: ['workspace', 'ship'] },
+  { name: 'Work', places: ['projects', 'ask', 'apps', 'terminals'] },
+  { name: 'Out into the world', places: ['workspace', 'activity', 'ship'] },
   { name: 'This computer', places: ['settings'] },
 ];
 
@@ -698,7 +700,7 @@ const SCREENS = {};
  * from. It is the same page either way; only how far it is allowed to spread
  * changes.
  */
-const READING = new Set(['settings', 'feedback']);
+const READING = new Set(['settings', 'feedback', 'ask']);
 
 async function go(tab, { keepSaid = false } = {}) {
   at.tab = tab;
@@ -730,6 +732,134 @@ const AI_STEPS = {
 };
 
 let asking = null;
+
+const modelNamed = (who, id) => {
+  for (const m of who.models ?? []) {
+    const one = (m.models ?? []).find((x) => x.id === id);
+    if (one) return one.name;
+  }
+  return id ?? '';
+};
+
+/**
+ * Setting up the one that answers, without leaving what you were doing.
+ *
+ * The old behaviour was to say "there is a box for this in Settings" and leave
+ * somebody four presses away from the question they had already typed. This is
+ * the whole errand in one place: get a key, paste it, have it checked, and go
+ * straight back to the question.
+ *
+ * Two things it deliberately does not do. It does not sign anybody in to
+ * anything \u2014 paying one of these companies every month is not the same
+ * arrangement as a key, at any of the three, and pretending otherwise would
+ * produce a refusal nobody could interpret. And it never shows a key that is
+ * already here; it says whether there is one.
+ *
+ * @param {Function|null} andThen run once something is ready \u2014 the question
+ *   somebody asked before finding out there was nothing to ask it of.
+ */
+async function setUpAi(andThen = null) {
+  const who = await get('/ai');
+
+  const row = (m) => `
+    <div class="card ai-one" data-one="${esc(m.id)}">
+      <div class="line1">
+        <b>${esc(m.name)}</b>
+        ${m.ready
+    ? '<span class="chip cool">a key is here</span>'
+    : '<span class="chip">no key yet</span>'}
+        ${m.id === who.chosen ? '<span class="chip">this one is asked</span>' : ''}
+      </div>
+      <label class="field" for="ai-m-${esc(m.id)}">Which model</label>
+      <select id="ai-m-${esc(m.id)}" data-model="${esc(m.id)}" style="width:100%">
+        ${m.models.map((one) => `
+          <option value="${esc(one.id)}" ${one.id === m.using ? 'selected' : ''}>${esc(one.name)} \u2014 ${esc(one.why)}</option>`).join('')}
+      </select>
+      <label class="field" for="ai-k-${esc(m.id)}">${m.ready ? 'Replace the key' : 'Paste the key'}</label>
+      <input type="password" id="ai-k-${esc(m.id)}" data-key="${esc(m.id)}" style="width:100%"
+        placeholder="${m.ready ? 'leave empty to keep the one that is here' : 'it stays on this computer'}"
+        autocomplete="off" spellcheck="false">
+      <div class="bar" style="margin:.55rem 0 0">
+        <button class="quiet small" data-get="${esc(m.id)}">Get a key from ${esc(m.name)} \u2192</button>
+        <button class="go small" data-save="${esc(m.id)}">Save it</button>
+        ${m.ready && m.id !== who.chosen
+    ? `<button class="small" data-use="${esc(m.id)}">Ask this one</button>` : ''}
+      </div>
+      <div class="fact" data-note="${esc(m.id)}"></div>
+    </div>`;
+
+  sheet({
+    title: 'Set up the one that answers',
+    body: `
+      <p style="margin-top:0">A key from whichever of these you already pay for. The
+        question, and the few files it needs, go to that one and nowhere else \u2014 and
+        the key stays on this computer.</p>
+      ${who.models.map(row).join('')}
+      <p style="color:var(--quiet);font-size:.89rem">Paying one of these every month is a
+        different arrangement from a key, at all three. Being signed in to one on this
+        computer does not pay for a question asked here.</p>`,
+    foot: '<button class="quiet" id="ai-shut">Done</button>',
+  });
+
+  $('#ai-shut').onclick = () => { closeLayer(); draw(); };
+
+  const note = (id, r) => {
+    const box = layer.querySelector(`[data-note="${id}"]`);
+    if (!box) return;
+    box.className = `fact ${r.ok ? 'good' : 'bad'}`;
+    box.textContent = [r.sentence, r.action].filter(Boolean).join(' ');
+  };
+
+  for (const b of layer.querySelectorAll('[data-get]')) {
+    b.onclick = async () => note(b.dataset.get, await post('/ai/get-key', { provider: b.dataset.get }));
+  }
+
+  for (const sel of layer.querySelectorAll('[data-model]')) {
+    sel.onchange = async () => note(sel.dataset.model,
+      await post('/ai/choose', { model: sel.value, provider: sel.dataset.model }));
+  }
+
+  for (const b of layer.querySelectorAll('[data-use]')) {
+    b.onclick = async () => {
+      const out = await post('/ai/choose', { provider: b.dataset.use });
+      if (!out.ok) return note(b.dataset.use, out);
+      closeLayer();
+      if (andThen) return andThen();
+      draw();
+    };
+  }
+
+  for (const b of layer.querySelectorAll('[data-save]')) {
+    b.onclick = async () => {
+      const id = b.dataset.save;
+      const field = layer.querySelector(`[data-key="${id}"]`);
+      const typed = field?.value ?? '';
+      if (!typed.trim()) {
+        return note(id, { ok: false, sentence: 'Nothing was pasted.', action: 'Paste the key first.' });
+      }
+
+      const was = b.textContent;
+      b.disabled = true;
+      b.textContent = 'Checking it\u2026';
+      note(id, { ok: true, sentence: 'Asking one small question with it, to see whether it works.' });
+
+      const out = await post('/ai/key', { provider: id, key: typed });
+
+      b.disabled = false;
+      b.textContent = was;
+      // Never left sitting in a field somebody might walk away from.
+      if (field) field.value = '';
+      note(id, out);
+      if (!out.ok) return;
+
+      // It works, so go back to whatever somebody was doing when they found out
+      // there was nothing to ask.
+      closeLayer();
+      if (andThen) return andThen();
+      draw();
+    };
+  }
+}
 
 /**
  * Ask, and show it happening.
@@ -771,8 +901,10 @@ async function askAssistant(kind, where, body = {}) {
       </div>`;
     if (r.setting) {
       box.insertAdjacentHTML('beforeend',
-        '<div class="bar" style="margin:.6rem 0 0"><button class="small" id="ai-setup">Settings</button></div>');
-      $('#ai-setup').onclick = () => go('settings');
+        '<div class="bar" style="margin:.6rem 0 0"><button class="go small" id="ai-setup">Set it up now</button></div>');
+      // The question is kept and asked again the moment there is something to
+      // ask it of. Nobody should have to type it twice.
+      $('#ai-setup').onclick = () => setUpAi(() => askAssistant(kind, where, body));
     }
     return;
   }
@@ -1022,7 +1154,8 @@ const closeInspector = () => { if (inspecting) inspect(null); };
 
 /** The places worth a key of their own, and the key. */
 const SHORTCUTS = {
-  projects: '1', apps: '2', terminals: '3', workspace: '4', ship: '5', settings: ',',
+  projects: '1', ask: '2', apps: '3', terminals: '4',
+  workspace: '5', activity: '6', ship: '7', settings: ',',
 };
 const shortcutFor = (id) => (SHORTCUTS[id] ? `Ctrl ${SHORTCUTS[id].toUpperCase()}` : null);
 
@@ -2330,6 +2463,123 @@ async function fromGitHub() {
 // One project, open
 // ---------------------------------------------------------------------------
 
+/**
+ * Asking about the project that is open, wherever you are standing.
+ *
+ * The same panel appears on the open project and on a place of its own, because
+ * these are the same four questions either way and having two of them would
+ * mean two that drift apart. What differs is only how much room it has.
+ */
+function askPanel(p, { heading = 'Ask about this project' } = {}) {
+  return `
+    <div class="sect"><h2>${esc(heading)}</h2>
+      <button class="count" id="ai-who">\u2026</button></div>
+    <div class="card">
+      <div class="bar" style="margin:0 0 .2rem">
+        <button class="small" id="ai-diagnose">Is anything wrong with it?</button>
+        <button class="small" id="ai-review" ${p?.situation?.unsaved ? '' : 'disabled'}
+          data-tip="${p?.situation?.unsaved ? 'Look over what you have changed but not saved'
+    : 'Nothing unsaved to look at'}">Look over my changes</button>
+        <label class="find" style="flex:1;min-width:12rem">
+          <span class="mark" aria-hidden="true">?</span>
+          <input id="ai-q" placeholder="Where is signing in handled?" aria-label="Ask about this project">
+        </label>
+        <button class="small" id="ai-ask">Ask</button>
+        <button class="small" id="ai-change"
+          data-tip="Asks for a change and shows every file it would write, before anything happens">Ask for a change</button>
+      </div>
+      <div id="ai-out"></div>
+    </div>`;
+}
+
+function wireAskPanel() {
+  /**
+   * Which one is about to be asked, said before anybody asks it.
+   *
+   * A question here costs money at whichever company answers it, so which
+   * company that is belongs on screen next to the button rather than three
+   * pages away in Settings. It also says when the chosen one has no key and
+   * another is standing in, because being charged by a company you did not pick
+   * is a surprise nobody should get from a manager.
+   */
+  get('/ai').then((who) => {
+    const label = $('#ai-who');
+    if (!label) return;
+    label.textContent = who.ok
+      ? (who.insteadOf ? `${who.name}, not ${who.insteadOf}` : `${who.name} \u00b7 ${modelNamed(who, who.using)}`)
+      : 'nothing set up yet';
+    label.title = who.ok
+      ? who.insteadOf
+        ? `${who.insteadOf} is chosen and has no key here, so ${who.name} is being asked instead. Press to change it.`
+        : `Questions go to ${who.name} and nowhere else. Press to change which one, or which model.`
+      : `${who.sentence} ${who.action} Press to do it here.`;
+    label.classList.add('pressable');
+    label.onclick = () => setUpAi();
+  });
+
+  $('#ai-diagnose').onclick = () => askAssistant('diagnose', '/ai/diagnose');
+  $('#ai-review').onclick = () => askAssistant('review', '/ai/review');
+  const askIt = () => {
+    const q = $('#ai-q').value.trim();
+    if (q) askAssistant('ask', '/ai/ask', { question: q });
+  };
+  $('#ai-ask').onclick = askIt;
+  $('#ai-q').onkeydown = (e) => { if (e.key === 'Enter') askIt(); };
+  $('#ai-change').onclick = () => {
+    const q = $('#ai-q').value.trim();
+    if (!q) return say({ ok: false, sentence: 'There was nothing to ask for.', action: 'Say what you want changed first.' }) && draw();
+    askAssistant('propose', '/ai/propose', { wanted: q });
+  };
+}
+
+/**
+ * A place for asking, so it is not something you find by opening a project.
+ *
+ * It was reachable before, but only from inside one screen, which meant nobody
+ * who had not already gone looking knew it existed. A place in the rail is the
+ * whole of the difference between a feature and a feature somebody uses.
+ */
+SCREENS.ask = async () => {
+  const p = await get('/project');
+
+  view.innerHTML = `
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Ask</h1>
+        <p class="sub">Questions about the project that is open, answered by whichever company
+          you already pay for. The question and the few files it needs go to that one and
+          nowhere else \u2014 never the whole folder, and never another project.</p>
+      </div>
+    </div>
+    ${saidHtml()}
+
+    ${p?.name ? `
+      <div class="factbar">
+        <span><b>${esc(p.name)}</b><span class="dim">is the one being asked about</span></span>
+        <span class="rest"></span>
+      </div>
+      ${askPanel(p, { heading: `About ${p.name}` })}
+
+      <div class="sect"><h2>What it will and will not do</h2></div>
+      <div class="card">
+        <ul class="steps">
+          <li><span>It reads only what the question needs \u2014 not the whole folder,
+            and nothing from another project.</span></li>
+          <li><span>Anything that looks like a key or a password is taken out before
+            the question is sent, and the file that holds real values is never opened.</span></li>
+          <li><span>A change is something you read and then approve. Nothing is written
+            to a file because a model suggested it.</span></li>
+        </ul>
+      </div>`
+    : `<div class="empty"><b>Nothing is open yet.</b>
+        These questions are about a project, so there has to be one.
+        <span class="acts"><button class="go" id="ask-pick">Choose a project\u2026</button></span></div>`}`;
+  said = null;
+
+  $('#ask-pick')?.addEventListener('click', () => go('projects'));
+  if (p?.name) wireAskPanel();
+};
+
 async function drawOpenProject() {
   const [p, t] = await Promise.all([get('/project'), get('/tools')]);
   if (!p.open) { at.inside = false; return draw(); }
@@ -2356,24 +2606,7 @@ async function drawOpenProject() {
     </div>
     ${saidHtml()}
 
-    <div class="sect"><h2>Ask about this project</h2>
-      <span class="count" id="ai-who">…</span></div>
-    <div class="card">
-      <div class="bar" style="margin:0 0 .2rem">
-        <button class="small" id="ai-diagnose">Is anything wrong with it?</button>
-        <button class="small" id="ai-review" ${p.situation?.unsaved ? '' : 'disabled'}
-          data-tip="${p.situation?.unsaved ? 'Look over what you have changed but not saved'
-    : 'Nothing unsaved to look at'}">Look over my changes</button>
-        <label class="find" style="flex:1;min-width:12rem">
-          <span class="mark" aria-hidden="true">?</span>
-          <input id="ai-q" placeholder="Where is signing in handled?" aria-label="Ask about this project">
-        </label>
-        <button class="small" id="ai-ask">Ask</button>
-        <button class="small" id="ai-change"
-          data-tip="Asks for a change and shows every file it would write, before anything happens">Ask for a change</button>
-      </div>
-      <div id="ai-out"></div>
-    </div>
+    ${askPanel(p)}
 
     <div class="sect"><h2>Open this project in</h2></div>
     <div class="bar">
@@ -2421,32 +2654,7 @@ async function drawOpenProject() {
    * another is standing in, because being charged by a company you did not pick
    * is a surprise nobody should get from a manager.
    */
-  get('/ai').then((who) => {
-    const label = $('#ai-who');
-    if (!label) return;
-    label.textContent = who.ok
-      ? (who.insteadOf ? `${who.name}, not ${who.insteadOf}` : who.name)
-      : 'no key yet';
-    label.title = who.ok
-      ? who.insteadOf
-        ? `${who.insteadOf} is chosen in Settings and has no key here, so ${who.name} is being asked instead.`
-        : `Questions go to ${who.name} and nowhere else.`
-      : `${who.sentence} ${who.action}`;
-  });
-
-  $('#ai-diagnose').onclick = () => askAssistant('diagnose', '/ai/diagnose');
-  $('#ai-review').onclick = () => askAssistant('review', '/ai/review');
-  const askIt = () => {
-    const q = $('#ai-q').value.trim();
-    if (q) askAssistant('ask', '/ai/ask', { question: q });
-  };
-  $('#ai-ask').onclick = askIt;
-  $('#ai-q').onkeydown = (e) => { if (e.key === 'Enter') askIt(); };
-  $('#ai-change').onclick = () => {
-    const q = $('#ai-q').value.trim();
-    if (!q) return say({ ok: false, sentence: 'There was nothing to ask for.', action: 'Say what you want changed first.' }) && draw();
-    askAssistant('propose', '/ai/propose', { wanted: q });
-  };
+  wireAskPanel();
 
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');
@@ -5334,6 +5542,169 @@ function checkPictureReads({ fix = false } = {}) {
   // that has already happened.
   setTimeout(() => { if (wall.brightnessOfPicture() !== null) judge(); }, 400);
 }
+
+/**
+ * Everything that is happening, or happened, or is still sitting there.
+ *
+ * Five things were built and then left with no way in. Long errands were only
+ * visible on whichever screen started them, so a build begun on one page and
+ * finished on another simply vanished. What a build made, what somebody else is
+ * running on this computer, which previews are still open, and what was kept
+ * before a folder was written over — all real, all working, none of it
+ * reachable by anybody who had not read the source.
+ *
+ * They belong together because they answer one question: what has this computer
+ * got going on. Nothing here starts anything. It shows, and it stops.
+ */
+SCREENS.activity = async () => {
+  const [{ jobs }, p] = await Promise.all([get('/jobs'), get('/project')]);
+  const [sessions, previews, built, ways] = await Promise.all([
+    get('/remote/sessions'),
+    get('/remote/previews'),
+    p?.dir ? get('/remote/built') : Promise.resolve({ ok: false }),
+    p?.dir ? get('/waysback') : Promise.resolve({ ok: true, waysBack: [] }),
+  ]);
+
+  const running = jobs.filter((j) => !j.finished);
+  const over = jobs.filter((j) => j.finished).slice(0, 12);
+  const back = ways.waysBack ?? [];
+
+  const jobLine = (j) => `
+    <div class="trow ${j.finished ? '' : 'live'}" data-job="${esc(j.id)}">
+      <span class="dot ${j.finished ? (j.ok ? 'off' : 'attention') : 'live'}"></span>
+      <span class="tname">
+        <b>${esc(j.what)}</b>
+        <span class="where">${esc(j.sentence ?? (j.steps?.at(-1)?.sentence ?? 'Working\u2026'))}</span>
+      </span>
+      <span class="tacts">
+        <span class="chip">${esc(j.kind)}</span>
+        <span style="color:var(--faint)">${esc(ago(j.finished ?? j.started))}</span>
+        <button class="small" data-job-open="${esc(j.id)}">Look at it</button>
+      </span>
+    </div>`;
+
+  view.innerHTML = `
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Activity</h1>
+        <p class="sub">Long errands while they run, what a build left behind, what other
+          computers are running here, and what was kept before anything was written over.
+          Nothing on this page starts anything.</p>
+      </div>
+      <div class="acts"><button class="quiet" id="act-again">Look again</button></div>
+    </div>
+    ${saidHtml()}
+
+    <div id="job"></div>
+
+    <div class="sect"><h2>Happening now</h2><span class="count">${running.length}</span></div>
+    ${running.length
+    ? `<div class="sheetlist">${running.map(jobLine).join('')}</div>`
+    : '<div class="card" style="color:var(--quiet)">Nothing is running.</div>'}
+
+    ${over.length ? `
+      <div class="sect"><h2>Finished</h2><span class="count">${over.length}</span></div>
+      <div class="sheetlist">${over.map(jobLine).join('')}</div>` : ''}
+
+    <div class="sect"><h2>Being run here by another computer</h2>
+      <span class="count">${sessions.sessions?.length ?? 0}</span></div>
+    ${sessions.sessions?.length ? `
+      <div class="sheetlist">
+        ${sessions.sessions.map((one) => `
+          <div class="trow">
+            <span class="dot ${one.running ? 'live' : 'off'}"></span>
+            <span class="tname">
+              <b>${esc(one.what ?? one.kind)}</b>
+              <span class="where">Asked for by ${esc(one.who ?? 'another computer')}
+                \u00b7 ${esc(one.where ?? '')} \u00b7 ${esc(ago(one.began))}</span>
+            </span>
+            <span class="tacts">
+              ${one.running ? `<button class="small danger" data-stop="${esc(one.id)}">Stop it</button>` : ''}
+            </span>
+          </div>`).join('')}
+      </div>`
+    : `<div class="card" style="color:var(--quiet)">Nothing. Another computer in your workspace
+        can be allowed to run something here, and it would appear on this list while it did.</div>`}
+
+    ${previews.windows?.length ? `
+      <div class="sect"><h2>Previews still open</h2><span class="count">${previews.windows.length}</span></div>
+      <div class="sheetlist">
+        ${previews.windows.map((w) => `
+          <div class="trow">
+            <span class="dot live"></span>
+            <span class="tname"><b>${esc(w.name ?? 'A preview')}</b>
+              <span class="where mono">${esc(String(w.port))} \u00b7 open since ${esc(ago(w.began))}</span></span>
+            <span class="tacts"><button class="small" data-shut="${esc(w.at)}">Close it</button></span>
+          </div>`).join('')}
+      </div>` : ''}
+
+    ${p?.name ? `
+      <div class="sect"><h2>What the last build made</h2>
+        <span class="count">${esc(p.name)}</span></div>
+      <div class="card" style="color:${built.ok ? 'var(--ink)' : 'var(--quiet)'}">
+        ${esc(built.sentence ?? 'Nothing has been built here yet.')}
+        ${built.ok ? `<div class="mono" style="color:var(--faint);margin-top:.3rem">${esc(built.at)}</div>` : ''}
+        ${built.ok ? '' : `<div style="margin-top:.3rem">${esc(built.action ?? '')}</div>`}
+      </div>
+
+      <div class="sect"><h2>Ways back</h2><span class="count">${back.length}</span></div>
+      ${back.length ? `
+        <div class="sheetlist">
+          ${back.map((one) => `
+            <div class="trow">
+              <span class="dot off"></span>
+              <span class="tname">
+                <b>${esc(one.files)} file${one.files === 1 ? '' : 's'} kept</b>
+                <span class="where">${esc(one.why ?? 'before something was written over')}
+                  \u00b7 ${esc(ago(one.at))}</span>
+              </span>
+              <span class="tacts"><button class="small" data-back="${esc(one.id)}">Put it back\u2026</button></span>
+            </div>`).join('')}
+        </div>`
+    : `<div class="card" style="color:var(--quiet)">Nothing has been written over in
+        ${esc(p.name)}, so there is nothing to go back to. Anything that arrives from
+        another computer is kept here first, automatically.</div>`}` : ''}`;
+  said = null;
+
+  $('#act-again').onclick = () => draw();
+
+  for (const b of document.querySelectorAll('[data-job-open]')) {
+    b.onclick = () => { watchJob(b.dataset.jobOpen); };
+  }
+
+  for (const b of document.querySelectorAll('[data-stop]')) {
+    b.onclick = async () => {
+      say(await post('/remote/stop', { session: b.dataset.stop }));
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-shut]')) {
+    b.onclick = async () => {
+      say(await post('/remote/preview/close', { at: b.dataset.shut }));
+      draw();
+    };
+  }
+
+  for (const b of document.querySelectorAll('[data-back]')) {
+    b.onclick = async () => {
+      // Blunt on purpose, and said so before it happens: every file it holds
+      // goes over whatever is there now.
+      const sure = await confirmThat({
+        title: 'Put these files back?',
+        what: 'Every file that was kept is written over whatever is in the project now.',
+        why: 'This is the copy taken just before something wrote over them. Anything you have changed in those files since then is replaced.',
+        confirm: 'Put them back',
+        danger: true,
+      });
+      if (!sure) return;
+      say(await post('/waysback/restore', { id: b.dataset.back }));
+      draw();
+    };
+  }
+
+  if (running.length) watchJob(running[0].id);
+};
 
 SCREENS.settings = async () => {
   const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);

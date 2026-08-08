@@ -40,10 +40,49 @@ const quiet = async (fn, fallback = null) => { try { return await fn(); } catch 
 // ---------------------------------------------------------------------------
 
 /**
- * The models this can talk to.
+ * The models each company offers, in one place.
  *
- * A shape rather than one hard-coded service, so changing model or provider is
- * a line here rather than a change to anything anybody looks at.
+ * A catalogue rather than a name buried in each provider, because "which model"
+ * is a question somebody asks once a year and gets wrong for months afterwards:
+ * a name written into a request is a name nobody finds when it is retired.
+ *
+ * Each entry says which is the sensible default and what the others are for, in
+ * words rather than in parameter counts. Nobody choosing between these knows
+ * how many billion anything is.
+ */
+export const CATALOGUE = {
+  claude: {
+    default: 'claude-sonnet-4-5-20250929',
+    models: [
+      { id: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5', why: 'The balanced one. Use this unless you have a reason not to.' },
+      { id: 'claude-opus-4-1-20250805', name: 'Opus 4.1', why: 'Slower and better at hard problems. Costs more per question.' },
+      { id: 'claude-3-5-haiku-20241022', name: 'Haiku 3.5', why: 'Fast and cheap. Good for short questions about a file.' },
+    ],
+  },
+  openai: {
+    default: 'gpt-4o',
+    models: [
+      { id: 'gpt-4o', name: 'GPT-4o', why: 'The balanced one.' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o mini', why: 'Fast and cheap.' },
+      { id: 'o3-mini', name: 'o3-mini', why: 'Thinks for longer before answering.' },
+    ],
+  },
+  gemini: {
+    default: 'gemini-2.0-flash',
+    models: [
+      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', why: 'The balanced one.' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', why: 'Slower and better at hard problems.' },
+      { id: 'gemini-2.0-flash-lite', name: 'Gemini 2.0 Flash Lite', why: 'Fast and cheap.' },
+    ],
+  },
+};
+
+/**
+ * The companies this can talk to.
+ *
+ * A shape rather than one hard-coded service, so changing provider is a line
+ * here rather than a change to anything anybody looks at. Which of a company's
+ * models gets asked is in the catalogue above; this is how to reach it.
  */
 export const MODELS = [
   {
@@ -144,14 +183,33 @@ export const modelCalled = (id) => MODELS.find((m) => m.id === id) ?? null;
  * to use it on the grounds that a menu says otherwise would be obtuse.
  */
 export async function ready() {
+  /**
+   * Which model, out of the catalogue, honouring what was chosen.
+   *
+   * A name that is no longer offered falls back to that company's default
+   * rather than being sent anyway — a model retired since somebody last opened
+   * Settings should not turn every question into an error about an unknown
+   * model.
+   */
+  const withModel = async (m) => {
+    const wanted = await settings.get(`model:${m.id}`);
+    const offered = CATALOGUE[m.id]?.models ?? [];
+    const use = offered.some((one) => one.id === wanted) ? wanted : (CATALOGUE[m.id]?.default ?? m.model);
+    return { ...m, model: use };
+  };
+
   const chosen = modelCalled(await settings.get('askWho'));
   if (chosen && await settings.get(chosen.keySetting)) {
-    return { ok: true, model: chosen, name: chosen.name };
+    const m = await withModel(chosen);
+    return { ok: true, model: m, name: m.name, using: m.model };
   }
 
-  for (const m of MODELS) {
-    const key = await settings.get(m.keySetting);
-    if (key) return { ok: true, model: m, name: m.name, insteadOf: chosen?.name ?? null };
+  for (const one of MODELS) {
+    const key = await settings.get(one.keySetting);
+    if (key) {
+      const m = await withModel(one);
+      return { ok: true, model: m, name: m.name, using: m.model, insteadOf: chosen?.name ?? null };
+    }
   }
 
   const want = chosen ?? MODELS[0];
@@ -161,7 +219,9 @@ export async function ready() {
     where: want.where,
     setting: want.keySetting,
     sentence: `Viberant has no key for ${want.name} yet, so it cannot look at anything.`,
-    action: 'Settings has a box for it. The key stays on this computer.',
+    // Not "there is a box for this somewhere else". Somebody who has just typed
+    // a question should not be sent four presses away to be able to ask it.
+    action: 'Set one up here — it takes a minute, and the key stays on this computer.',
   };
 }
 
@@ -178,8 +238,46 @@ export async function whoCanBeAsked() {
       setting: m.keySetting,
       // Whether there is one, never what it is (D-81).
       ready: !!(await settings.get(m.keySetting)),
+      // What this company offers, and which of them is in use here.
+      models: CATALOGUE[m.id]?.models ?? [],
+      using: (await settings.get(`model:${m.id}`)) || CATALOGUE[m.id]?.default || m.model,
     }))),
   };
+}
+
+/**
+ * Does this key actually work?
+ *
+ * Asked before it is saved, because a key that is one character short is
+ * indistinguishable from a working one until somebody asks a question and gets
+ * a refusal they cannot interpret. One tiny request, and the answer is a
+ * sentence rather than a status code.
+ *
+ * **The key is never written anywhere by this function.** It is used once, in
+ * memory, and the caller decides whether to keep it.
+ */
+export async function checkKey(providerId, key) {
+  const m = modelCalled(providerId);
+  if (!m) return { ok: false, sentence: 'That is not one this can ask.', action: null };
+  if (!String(key ?? '').trim()) {
+    return { ok: false, sentence: 'No key was typed.', action: 'Paste the key and try again.' };
+  }
+
+  const out = await quiet(() => m.ask.call(
+    { ...m, model: CATALOGUE[m.id]?.default ?? m.model },
+    { key: String(key).trim(), system: 'Reply with the single word: ok', message: 'ok', mostTokens: 8 },
+  ));
+
+  if (!out) {
+    return {
+      ok: false,
+      sentence: `${m.name} could not be reached to check that key.`,
+      action: 'Check you are online, and try again.',
+    };
+  }
+  if (!out.ok) return whatThatMeant(m, out);
+
+  return { ok: true, sentence: `That key works. ${m.name} is ready.`, name: m.name };
 }
 
 // ---------------------------------------------------------------------------
@@ -356,7 +454,9 @@ export function whatThatMeant(set, out) {
     return {
       ok: false,
       sentence: `${name} would not accept the key on this computer.`,
-      action: 'Put a current key in Settings and try again.',
+      // Where the key goes is on the screen that says this, so it says "here"
+      // rather than naming somewhere else to go and look.
+      action: 'Check you pasted the whole of a current key, and try again.',
     };
   }
 

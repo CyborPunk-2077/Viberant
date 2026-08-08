@@ -1300,6 +1300,67 @@ const routes = {
     return { ...set, ...(await assistant.whoCanBeAsked()), project: current?.name ?? null };
   },
 
+  /**
+   * Add a key, having checked it first.
+   *
+   * Checked before it is kept, because a key that is one character short looks
+   * exactly like a working one until somebody asks a question and gets a
+   * refusal they cannot interpret. Nothing is written unless it works.
+   */
+  async 'POST /ai/key'({ body }) {
+    const which = String(body?.provider ?? '');
+    const key = String(body?.key ?? '').trim();
+
+    const checked = await assistant.checkKey(which, key);
+    if (!checked.ok) return checked;
+
+    const one = assistant.modelCalled(which);
+    await settings.set(one.keySetting, key);
+    await settings.set('askWho', which);
+
+    return { ...checked, ...(await assistant.whoCanBeAsked()) };
+  },
+
+  /** Which company to ask, and which of its models. */
+  async 'POST /ai/choose'({ body }) {
+    const which = String(body?.provider ?? '');
+    const one = assistant.modelCalled(which);
+    if (!one) return { ok: false, sentence: 'That is not one this can ask.', action: null };
+
+    if (body?.provider) await settings.set('askWho', which);
+    if (body?.model) {
+      const offered = assistant.CATALOGUE[which]?.models ?? [];
+      if (!offered.some((m) => m.id === body.model)) {
+        return { ok: false, sentence: 'That is not a model this offers.', action: null };
+      }
+      await settings.set(`model:${which}`, String(body.model));
+    }
+
+    const said = await assistant.whoCanBeAsked();
+    const mine = said.models.find((m) => m.id === which);
+    const named = (mine?.models ?? []).find((m) => m.id === mine?.using)?.name ?? mine?.using;
+
+    return {
+      ok: true,
+      sentence: body?.model
+        ? `${one.name} will use ${named}.`
+        : `${one.name} it is${named ? `, using ${named}` : ''}.`,
+      ...said,
+    };
+  },
+
+  /** Where to get a key, opened in a browser. Never a key over the wire. */
+  async 'POST /ai/get-key'({ body }) {
+    const one = assistant.modelCalled(String(body?.provider ?? ''));
+    if (!one) return { ok: false, sentence: 'That is not one this can ask.', action: null };
+    signin.openInBrowser(one.where);
+    return {
+      ok: true,
+      sentence: `${one.name}'s key page is open in your browser.`,
+      action: 'Make a key there, then paste it here. It stays on this computer.',
+    };
+  },
+
   /** Why did something fail. The most useful question there is. */
   async 'POST /ai/explain'({ body }) {
     if (!current) return noProject;
