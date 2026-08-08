@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 368 passing on Windows. The ones added last hold the two decisions
+**Tests:** 496 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -174,6 +174,53 @@ when the window is hidden, two megabytes. D-117.
 shows what this computer actually knows, with its repository once the project
 has been asked; two presses opens it. Its own column above 74rem, a drawer
 below. Two scroll containers, neither moving the other. D-118.
+
+---
+
+## Viberant Anywhere
+
+**Two computers on different networks are in the same workspace, and the
+existing transfer carries the project.** Not a second application and not a
+second transfer path: `peers.mjs` offers this network, direct across the
+internet, or a relay, tries them in that order, and hands back the same kind of
+thing either way — so `parcel.wrap`/`unwrap`, resuming and the three-way
+integrity check work unchanged on all three. D-143.
+
+**A computer is a key it made itself.** Ed25519 for signing, X25519 for agreeing
+a secret, both from Node's own crypto. The identifier is the fingerprint of the
+public key, so it cannot be claimed by anybody without the private half — which
+never leaves, by any route, and a test proves it. D-141.
+
+**The relay carries ciphertext.** A test runs a real project through a real
+relay on a real socket, then searches everything the relay carried for the file
+contents and a run of every real file. None of it is there. D-144.
+
+**The service knows who is about and nothing else.** Members, public keys,
+unused invitations, presence, relay tickets. Pluggable, and the one that ships
+runs inside the app and needs no account. A test fails if it can open a file at
+all. With it unreachable, a workspace already on this disk keeps working on this
+network — losing the internet must not cost you the next room. D-145.
+
+**Joining is never a reason to run a command on somebody's computer.** Terminal,
+run and build are off even for a full member; the owner of the target machine
+grants them per device, one at a time, and a role cannot bypass that. Every check
+happens where the command would run. Nothing anybody sends becomes a command —
+the target reads the project's own scripts to decide what `build` means. D-142.
+
+**Send the twenty megabytes that changed.** Two manifests, compared on path,
+size and time, hashed only where that is ambiguous. A file here and not there is
+never deleted. A file both sides changed is a conflict with three answers and
+none chosen automatically. Before anything is replaced, what would be replaced is
+copied and can be put back. D-146.
+
+**Why does this work here and not there.** Two computers side by side —
+versions, package manager, what the project expects. Names and counts, never
+values, held by a test that fails if the module can open a file. D-147.
+
+**Nineteen hostile tests**, written as the attempt rather than as the rule: path
+traversal, absolute paths, a parcel that lies about its size, a forged proof, a
+frame length asking for three gigabytes, bad relay tickets, a dressed-up terminal
+request, a command name carrying a shell.
 
 ---
 

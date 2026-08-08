@@ -1600,6 +1600,84 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-141 `[LOCKED]` — A computer is a key it made itself, not a name and not an address
+
+**Decision.** Every installation generates an Ed25519 pair for signing and an X25519 pair for key agreement, both from Node's own `crypto`. The device identifier is the fingerprint of the public signing key. The private halves never leave: no route returns them, nothing in `device.mjs` prints, and a test asserts both.
+
+**Why.** On one network, being on the network is itself a claim. Across the internet it is not: a name proves nothing and an address proves nothing. Everything else in this part of the product — who may join, who may run a command, whether a relay may be trusted — stands on this one fact.
+
+**Nothing here invents cryptography.** Every primitive is one somebody else designed, reviewed and shipped. This file only decides where keys live and who may see them.
+
+**Found by building it**: `identity()` raced on first call — two things asking at once each generated a pair and each wrote one, so the card no longer matched the signature and every handshake failed with nothing to say why. One in-flight promise, shared.
+
+---
+
+### D-142 `[LOCKED]` — Joining a workspace is never a reason to run a command on somebody's computer
+
+**Decision.** Roles are `owner`, `member`, `readOnly`, in a table where every capability defaults to no. The three that run code — terminal, run, build — are **off even for a full member**, and are granted by the owner of the target machine, per device, one capability at a time. A role cannot bypass the per-device decision: promoting somebody to owner without trusting their machine still refuses.
+
+**Why.** Everything else in this product moves data. A mistake there costs somebody a folder; a mistake here costs them a machine. The default anybody gets by being let into a workspace has to be "can see what is offered", and nothing more.
+
+**The far end decides.** Every check happens on the computer that would do the work, from what that computer believes about the workspace on its own disk. A caller asking nicely is not authorisation, and a caller that has already decided it is allowed is not consulted.
+
+**And nothing anybody sends becomes a command.** A caller says `build`; the target decides what that means by reading the project's own scripts. A test finds every call that starts a process and asserts there are exactly two — a shell, and a runner from the project's own list.
+
+---
+
+### D-143 `[DECIDED]` — Three ways to reach a computer, one transfer behind all of them
+
+**Decision.** `peers.mjs` offers this network, direct across the internet, and a relay, tried in that order. All three end in the same handshake and return the same kind of thing, so `parcel.wrap`/`unwrap`, resuming, the three-way integrity check and smart sync serve all of them unchanged.
+
+**Why.** Three transports with three copies of the transfer logic is the same arithmetic written three times and wrong in two of them. The version of this that is worth having is the one where a remote transfer is the ordinary transfer with a different socket under it.
+
+**What a person is told is three words** — "Direct · Internet", "Relay" — and a test asserts none of those sentences contains a protocol. STUN, addresses and which way was tried live in diagnostics.
+
+**Nothing invents NAT traversal.** Learning this computer's address as the internet sees it is STUN, RFC 5389, client side. Where that address is reachable a direct connection is tried; where it is not, the relay is used, and the relay is not a failure — it is how this works on the networks most people actually have.
+
+---
+
+### D-144 `[LOCKED]` — A relay carries ciphertext and holds nothing
+
+**Decision.** Both ends agree a key with X25519 before the relay sees a byte; everything after the handshake is sealed with AES-GCM. The relay reads exactly one frame — a ticket — and forwards the rest without looking. It buffers nothing: the socket's own back-pressure paces it. Tickets work once and expire. One address may hold a bounded number of pairs, and one pair a bounded rate.
+
+**Why this is checkable rather than promised.** A test runs a real project through a real relay on a real socket, captures everything the relay carried, and searches it for the file contents and a run of every real file. None of it is there. That is a fact about what arrives, not a claim about how careful the code is.
+
+**Found by building it**: the relay left the first side's control listener attached, so it read the other computer's handshake as though addressed to itself, decided it was nonsense and hung up. Nothing could ever have got through.
+
+---
+
+### D-145 `[DECIDED]` — The service knows who is about and nothing about what anybody is building
+
+**Decision.** A small control plane holding members, public keys, unused invitations, presence and relay tickets. It is pluggable; the one that ships runs inside the app and needs no account. Messages to a hosted one are signed and carry the time.
+
+**Why the list is short enough to read.** Anybody who read that service end to end would learn who works with whom and nothing about what anybody is building. A test reads `plane.mjs` and fails if it can open a file or wrap a project, so "it never holds your code" is a fact about what it can do.
+
+**And it is allowed to be missing.** A workspace already on this disk keeps working on this network with the service down — the membership and the keys are here, so the check that matters needs nobody. Losing the internet must not cost you the computer in the next room.
+
+---
+
+### D-146 `[DECIDED]` — Send what changed; never delete because something is missing
+
+**Decision.** Two manifests compared on path, size and modified time. Where the same size appears at a different moment, the content is hashed — those files only. What has to move is handed to `wrap` as its `seen`, which is the same door resuming already uses.
+
+**A file here and not there is never deleted.** It is as likely to be new as to be gone, and guessing which is not this program's decision.
+
+**Nothing lands on top of an afternoon.** A file both sides changed since they last agreed is a conflict with three answers and none is chosen automatically. With no record of ever agreeing, anything that differs is asked about.
+
+**And before anything is replaced**, the files that would be replaced are copied and can be put back — only those files, never the whole project, and never the file with real values in it.
+
+---
+
+### D-147 `[DECIDED]` — Two computers are compared by names and counts, never by values
+
+**Decision.** `machines.mjs` collects the short list of facts that have actually been the answer — versions, package manager, what a project expects — and puts two of them side by side. Environment facts are **names and counts only**, the comparison row says so on itself, and a test fails if the module can open a file at all.
+
+**Why not read the real settings file for its key names.** It would be more useful and it means opening the file with values in it, which is never done anywhere in this product (D-125). One careless regex between there and a prompt and somebody's key has left the building. "Expects twelve, has a settings file" answers the question almost every time, and the times it does not are worth losing.
+
+**A model may recommend and never act.** A test asserts `assistant.mjs` cannot start a process by any route, and the remote-build recommendation is told in its own instructions that it cannot run anything.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
