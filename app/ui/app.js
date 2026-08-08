@@ -2626,8 +2626,75 @@ function connectProjectSheet(d) {
       $('#conn-yes').onclick = async () => {
         const name = $('#conn-name').value.trim();
         if (!name) return;
+
+        const out = await post('/project/connect', { name });
+
+        /**
+         * One of that name is already there, holding different work.
+         *
+         * Not an error and not a thing to decide for somebody: two projects
+         * that share a name and nothing else. Nothing has changed at this
+         * point, so the choice is offered with all three answers named for what
+         * they actually do.
+         */
+        if (out.needsChoice) return whichOneToKeep(name, out);
+
         closeLayer();
-        say(await post('/project/connect', { name }));
+        say(out);
+        await refreshMe();
+        draw();
+      };
+    },
+  });
+}
+
+/**
+ * Two projects with the same name and nothing in common.
+ *
+ * Every answer here loses something, which is exactly why none of them happens
+ * without being pressed. The wording says what goes rather than what stays,
+ * because "keep mine" reads as safe and is not.
+ */
+function whichOneToKeep(name, out) {
+  sheet({
+    title: 'That name is already taken',
+    narrow: true,
+    body: `
+      <div class="said bad"><b>${esc(out.sentence)}</b>
+        <span>${esc(out.action ?? '')}</span></div>
+      <p class="sub">The one on GitHub and the one in this folder have no shared
+        history — they are two different projects that happen to have the same name.</p>
+      <div class="menu">
+        <button class="pick" data-keep="other"><b>Use a different name</b>
+          <span>Nothing is touched. This project gets a copy of its own.</span></button>
+        <button class="pick" data-keep="theirs"><b>Keep what is on GitHub</b>
+          <span>This folder starts sending there. Nothing in the folder is changed,
+            and you would need to get the latest before sending.</span></button>
+      </div>
+      <p class="sub" style="margin-top:1rem;color:var(--faint)">Replacing what is on
+        GitHub with this folder is not offered here. If that is what you want, delete
+        that project on GitHub first — deliberately, where you can see it.</p>`,
+    foot: '<button class="quiet" id="keep-no">Never mind</button>',
+    onOpen: () => {
+      $('#keep-no').onclick = closeLayer;
+
+      $('[data-keep="other"]').onclick = async () => {
+        const another = await ask({
+          title: 'A different name',
+          label: 'What should it be called on GitHub?',
+          value: `${name}-2`,
+          confirm: 'Connect it',
+        });
+        if (!another) return;
+        closeLayer();
+        say(await post('/project/connect', { name: another }));
+        await refreshMe();
+        draw();
+      };
+
+      $('[data-keep="theirs"]').onclick = async () => {
+        closeLayer();
+        say(await post('/project/connect', { name, useExisting: 'theirs' }));
         await refreshMe();
         draw();
       };
@@ -4370,9 +4437,12 @@ SCREENS.workspace = async () => {
     <div class="pagehead">
       <div class="grow">
         <h1>Shared workspace</h1>
-        <p class="sub">Every computer signed in to <b>${esc(w.account ?? '')}</b> on GitHub.
-          Folders move straight between them across this network — never through GitHub.
-          ${w.mismatch ? '<b style="color:var(--attention)">You are signed in as somebody else right now, so this is out of step.</b>' : ''}</p>
+        <p class="sub">This workspace was made on the GitHub account
+          <b>${esc(w.account ?? 'unknown')}</b>. Folders move straight between your
+          computers across this network — never through GitHub.</p>
+        ${w.mismatch ? `<p class="sub" style="color:var(--attention)">
+          You are signed in as <b>${esc(me.github ?? 'somebody else')}</b> right now, so this
+          computer cannot write to it. Switch account, or make a workspace on this one.</p>` : ''}
       </div>
       <div class="acts">
         <button class="small" id="w-refresh">Check again</button>
@@ -4813,9 +4883,19 @@ async function drawGitHubSettings() {
   box.innerHTML = `
     ${g.account ? row(
     `<span class="who-now"><span class="dot live"></span>${esc(g.account)}</span>`,
-    'Everything this manager does on GitHub uses this account — new copies of your '
-      + 'projects, sending your work, and the place your computers find each other.',
+    `Everything this manager does on GitHub uses this account — new copies of your
+      projects, sending your work, and the place your computers find each other.${
+  g.reachable === false ? ' GitHub could not be reached just now, so this is the last account it confirmed.' : ''}`,
     '<button class="small" id="gh-out">Sign out</button>',
+  ) : g.reachable === false ? row(
+    /**
+     * Could not ask is not the same as nobody, and saying the wrong one of
+     * those is what made this screen contradict every other screen in the app.
+     */
+    'Cannot check just now',
+    'GitHub could not be reached, so this computer cannot say which account it is '
+      + 'using. Nothing has changed — it will say as soon as it can ask.',
+    '<button class="small" id="gh-again">Check again</button>',
   ) : row(
     'Not signed in',
     'Nothing here needs an account, but a second copy of your work and your other '
@@ -4844,6 +4924,11 @@ async function drawGitHubSettings() {
 
   $('#gh-out')?.addEventListener('click', async () => { say(await post('/github/signout')); await refreshMe(); draw(); });
   $('#gh-in')?.addEventListener('click', () => signInToGitHub({}));
+  $('#gh-again')?.addEventListener('click', async () => {
+    say(await post('/github/refresh', {}));
+    await refreshMe();
+    draw();
+  });
   $('#gh-add')?.addEventListener('click', () => signInToGitHub({}));
   $('#gh-name').onclick = () => identitySheet(g);
   for (const b of box.querySelectorAll('[data-gh-use]')) {

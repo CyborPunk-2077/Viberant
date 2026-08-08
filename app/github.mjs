@@ -85,11 +85,42 @@ export function forgetWho() {
 }
 
 export async function who({ fresh = false } = {}) {
-  if (!fresh && lastKnown && Date.now() - lastKnown.at < WORTH_KEEPING_FOR) return lastKnown.name;
-  const out = await quiet(() => gh(['api', 'user', '--jq', '.login']));
-  const name = out ? out.stdout.trim() || null : null;
-  lastKnown = { at: Date.now(), name };
-  return name;
+  return (await whoReally({ fresh })).login;
+}
+
+/**
+ * Who GitHub says you are, and whether anybody could be asked.
+ *
+ * **Three answers, not two**, and the missing third is what made the app
+ * contradict itself: Settings said "Not signed in" while every other screen
+ * named the account. Asking GitHub goes over the network; a network that is not
+ * there answers nothing, and nothing was being written down as *nobody* — then
+ * kept for five seconds, so whichever screen drew during that window said
+ * signed out while its neighbour, drawing a moment later, said signed in.
+ *
+ * So a failure to ask is never kept, and the last name that was actually
+ * confirmed survives it. The page is told `reachable: false` and can say
+ * "cannot check just now" instead of the one thing that is definitely wrong.
+ *
+ * This is the same rule as D-132's "no releases yet is not could not check" and
+ * D-139's "out of credit is not a bad key": **a question that could not be
+ * asked has its own answer.**
+ */
+async function whoReally({ fresh = false } = {}) {
+  if (!fresh && lastKnown && Date.now() - lastKnown.at < WORTH_KEEPING_FOR) {
+    return { login: lastKnown.name, reachable: true, id: lastKnown.id ?? null };
+  }
+
+  const out = await quiet(() => gh(['api', 'user', '--jq', '.login,.id']));
+  if (!out) {
+    // Could not ask. Anything confirmed earlier is still the best thing known,
+    // and is offered as such rather than replaced with a guess.
+    return { login: lastKnown?.name ?? null, reachable: false, id: lastKnown?.id ?? null, stale: !!lastKnown };
+  }
+
+  const [login = null, id = null] = out.stdout.trim().split('\n').map((l) => l.trim() || null);
+  lastKnown = { at: Date.now(), name: login, id };
+  return { login, reachable: true, id };
 }
 
 // ---------------------------------------------------------------------------
@@ -119,13 +150,30 @@ export async function who({ fresh = false } = {}) {
  */
 export async function session({ fresh = false } = {}) {
   if (!(await haveGitHubTool())) {
-    return { tool: false, signedIn: false, login: null, id: null };
+    return {
+      tool: false, signedIn: false, login: null, id: null, reachable: true,
+    };
   }
-  const login = await who({ fresh });
-  if (!login) return { tool: true, signedIn: false, login: null, id: null };
 
-  const id = await quiet(() => gh(['api', 'user', '--jq', '.id']));
-  return { tool: true, signedIn: true, login, id: id ? id.stdout.trim() || null : null };
+  const asked = await whoReally({ fresh });
+
+  /**
+   * One answer, and every screen derives from it.
+   *
+   * Nothing else in this product may work out the account for itself. Settings,
+   * the Workspace, a project's destination and Deploy all read this, so there
+   * is no arrangement of timing in which two of them can disagree.
+   */
+  return {
+    tool: true,
+    signedIn: !!asked.login,
+    login: asked.login,
+    id: asked.id,
+    // Whether GitHub could be reached at all, so a screen can say "cannot check
+    // just now" rather than the one thing that is definitely wrong.
+    reachable: asked.reachable,
+    stale: !!asked.stale,
+  };
 }
 
 /** A folder by the name the computer itself uses for it. */
@@ -251,7 +299,112 @@ export async function destinationFor(dir) {
  * go, in order to make a send succeed, is exactly the kind of quiet damage this
  * product is not allowed to do. Putting it back afterwards is one line.
  */
-export async function connectTo(gitRoot, { name, session: now }) {
+/**
+ * Is there already a project of this name on that account, and can we use it?
+ *
+ * Asked **before** anything is created, which is the whole of the fix. Trying
+ * to create and reading the failure was the old shape, and it cannot tell three
+ * very different situations apart: a name already used by a project of yours, a
+ * name used by somebody else's, and a name that failed for an unrelated reason.
+ * Asking first answers all three.
+ */
+export async function repoThere(owner, name) {
+  if (!(await haveGitHubTool())) return { ok: false, ...notSetUp };
+
+  const looked = await quiet(() => gh([
+    'repo', 'view', `${owner}/${name}`,
+    '--json', 'name,owner,defaultBranchRef,isEmpty,viewerPermission,url',
+  ]));
+
+  if (!looked) return { ok: true, exists: false };
+
+  let said;
+  try { said = JSON.parse(looked.stdout); } catch { return { ok: true, exists: false }; }
+
+  const may = String(said.viewerPermission ?? '').toUpperCase();
+  return {
+    ok: true,
+    exists: true,
+    owner: said.owner?.login ?? owner,
+    name: said.name ?? name,
+    url: said.url ?? `https://github.com/${owner}/${name}`,
+    branch: said.defaultBranchRef?.name ?? null,
+    empty: said.isEmpty === true,
+    // Whether this account may actually send to it. A project you can see and
+    // cannot write to is worse than one that is not there, because everything
+    // looks right until the moment it matters.
+    canWrite: may === 'ADMIN' || may === 'MAINTAIN' || may === 'WRITE',
+    permission: may || null,
+  };
+}
+
+/**
+ * Do the two histories share anything at all?
+ *
+ * The question that decides whether binding to an existing project is a
+ * pleasant surprise or a way to lose somebody's work. Two histories with no
+ * common commit cannot be reconciled by pushing; one of them would have to go,
+ * and choosing which is not this program's decision to make.
+ */
+export async function howTheyCompare(gitRoot, remote) {
+  const named = `viberant-checking-${Date.now()}`;
+  await quiet(() => git(gitRoot, 'remote', 'remove', named));
+  await quiet(() => git(gitRoot, 'remote', 'add', named, remote));
+
+  const fetched = await quiet(() => git(gitRoot, 'fetch', '--quiet', named));
+  if (!fetched) {
+    await quiet(() => git(gitRoot, 'remote', 'remove', named));
+    return { ok: false, reachable: false };
+  }
+
+  const branch = (await quiet(() => git(gitRoot, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim();
+  const theirs = (await quiet(() => git(gitRoot, 'rev-parse', `${named}/${branch}`)))
+    ?? (await quiet(() => git(gitRoot, 'rev-parse', `${named}/main`)))
+    ?? (await quiet(() => git(gitRoot, 'rev-parse', `${named}/master`)));
+
+  if (!theirs?.stdout.trim()) {
+    await quiet(() => git(gitRoot, 'remote', 'remove', named));
+    // Nothing there to disagree with, which is the easy case.
+    return { ok: true, reachable: true, empty: true, branch };
+  }
+
+  const at = theirs.stdout.trim();
+  const shared = await quiet(() => git(gitRoot, 'merge-base', 'HEAD', at));
+  const ahead = await quiet(() => git(gitRoot, 'rev-list', '--count', `${at}..HEAD`));
+  const behind = await quiet(() => git(gitRoot, 'rev-list', '--count', `HEAD..${at}`));
+
+  await quiet(() => git(gitRoot, 'remote', 'remove', named));
+
+  return {
+    ok: true,
+    reachable: true,
+    empty: false,
+    branch,
+    // No common commit at all: two unrelated projects that happen to share a
+    // name. Nothing may be pushed over that without somebody deciding.
+    unrelated: !shared?.stdout.trim(),
+    ahead: Number(ahead?.stdout.trim() ?? 0),
+    behind: Number(behind?.stdout.trim() ?? 0),
+  };
+}
+
+/**
+ * Point this project at a repository on the account in use here.
+ *
+ * Looks before it creates. If one of that name is already there and this
+ * account may write to it, that one is used — which is what somebody pressing
+ * "connect this project to my account" almost always means, and what the old
+ * behaviour refused with "a project of that name may already be there".
+ *
+ * **Nothing is overwritten and nothing is forced.** Where the two histories have
+ * no commit in common, this stops and says so: pushing would mean choosing
+ * whose work survives, and that is not a choice a button may make.
+ *
+ * The old address is kept under another name, because throwing away where
+ * somebody's work used to go in order to make a send succeed is exactly the
+ * quiet damage this product is not allowed to do.
+ */
+export async function connectTo(gitRoot, { name, session: now, useExisting = null }) {
   if (workspace.isInsideWorkspace(gitRoot)) {
     return {
       ok: false,
@@ -259,10 +412,79 @@ export async function connectTo(gitRoot, { name, session: now }) {
       action: 'Pick the folder your work is actually in.',
     };
   }
+  if (!now?.login) return { ok: false, ...notSignedIn };
 
   const was = await quiet(() => git(gitRoot, 'remote', 'get-url', 'origin'));
   const old = was ? was.stdout.trim() : null;
+  const to = `https://github.com/${now.login}/${name}.git`;
 
+  const there = await repoThere(now.login, name);
+
+  // ---- One of that name is already there --------------------------------
+  if (there.exists) {
+    if (!there.canWrite) {
+      return {
+        ok: false,
+        exists: true,
+        sentence: `${there.owner}/${there.name} already exists and this account cannot send to it.`,
+        action: 'Choose another name, or ask whoever owns it for access.',
+      };
+    }
+
+    const how = there.empty ? { ok: true, empty: true } : await howTheyCompare(gitRoot, to);
+
+    if (!how.ok) {
+      return {
+        ok: false,
+        exists: true,
+        sentence: `${there.owner}/${there.name} exists but could not be read just now.`,
+        action: 'Check you are online, and try again.',
+      };
+    }
+
+    /**
+     * Two projects that share a name and nothing else.
+     *
+     * Offered rather than decided. The three answers are all destructive to
+     * something, so the person picks — and until they do, nothing has changed.
+     */
+    if (how.unrelated && useExisting !== 'mine' && useExisting !== 'theirs') {
+      return {
+        ok: false,
+        exists: true,
+        needsChoice: true,
+        theirs: { owner: there.owner, name: there.name, url: there.url },
+        sentence: `${there.owner}/${there.name} already exists and holds different work from this folder.`,
+        action: 'Nothing has been changed. Choose which one to keep, or use a different name.',
+      };
+    }
+
+    if (old) {
+      await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
+      await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
+    }
+    await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
+      || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+    await useOwnCredentials(gitRoot);
+
+    return {
+      ok: true,
+      exists: true,
+      owner: there.owner,
+      name: there.name,
+      branch: how.branch ?? there.branch ?? null,
+      behind: how.behind ?? 0,
+      ahead: how.ahead ?? 0,
+      sentence: `This project now sends to ${there.owner}/${there.name}, which was already there.`,
+      action: how.behind
+        ? `That copy has ${how.behind} saved change${how.behind === 1 ? '' : 's'} you do not have yet. Get the latest before you send.`
+        : (old
+          ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
+          : 'Send your work whenever you are ready.'),
+    };
+  }
+
+  // ---- Nothing of that name yet -----------------------------------------
   const made = await quiet(() => gh(
     ['repo', 'create', `${now.login}/${name}`, '--private', '--source', '.'],
     { cwd: gitRoot },
@@ -271,40 +493,43 @@ export async function connectTo(gitRoot, { name, session: now }) {
     return {
       ok: false,
       sentence: `A project called ${name} could not be made on ${now.login}.`,
-      action: 'One of that name may already be there. Try another name.',
+      action: 'Check you are online, and that the name has no unusual characters in it.',
     };
   }
 
-  // Kept before anything is repointed, so there is never a moment where the old
-  // address exists nowhere at all.
   if (old) {
     await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
     await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
   }
-
-  const to = `https://github.com/${now.login}/${name}.git`;
   await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to));
   await useOwnCredentials(gitRoot);
 
   return {
     ok: true,
+    exists: false,
+    owner: now.login,
+    name,
     sentence: `This project now sends to ${now.login}/${name}.`,
     action: old
       ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
       : 'Send your work whenever you are ready.',
   };
 }
+
 export async function accounts() {
   if (!(await haveGitHubTool())) return { here: false, accounts: [], active: null };
 
   // Two questions that do not depend on each other, so they are asked at once.
-  const [status, active] = await Promise.all([quiet(() => gh(['auth', 'status'])), who()]);
+  // The active one comes from the same place every other screen reads, so this
+  // list can never name a different account from the rest of the app.
+  const [status, now] = await Promise.all([quiet(() => gh(['auth', 'status'])), session()]);
+  const active = now.login;
   const text = status ? `${status.stdout}\n${status.stderr ?? ''}` : '';
   const names = [...text.matchAll(/account (\S+)/g)].map((m) => m[1]);
 
   const list = [...new Set(names)].map((name) => ({ name, active: name === active }));
   if (active && !list.some((a) => a.name === active)) list.unshift({ name: active, active: true });
-  return { here: true, accounts: list, active };
+  return { here: true, accounts: list, active, reachable: now.reachable };
 }
 
 /** Move to another GitHub account already signed in here. */

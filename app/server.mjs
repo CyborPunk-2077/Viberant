@@ -609,10 +609,42 @@ const routes = {
 
   // -- GitHub -------------------------------------------------------------
 
+  /**
+   * The one place anything asks who this computer is on GitHub.
+   *
+   * Settings, the Workspace, a project's destination and Deploy all read this
+   * answer rather than working one out. Two screens disagreeing about the
+   * account was never a wording problem — it was two screens asking two
+   * different questions at two different moments.
+   */
   async 'GET /github'() {
-    const [accounts, identity] = await Promise.all([github.accounts(), github.identity()]);
+    const [accounts, identity, now] = await Promise.all([
+      github.accounts(), github.identity(), github.session(),
+    ]);
     const picture = current ? await github.picture(current.dir) : null;
-    return { ...accounts, identity, picture, project: current?.name ?? null };
+    return {
+      ...accounts,
+      // Whether the answer is a fact or the last one confirmed, said out loud.
+      account: now.login,
+      reachable: now.reachable,
+      stale: now.stale,
+      identity,
+      picture,
+      project: current?.name ?? null,
+    };
+  },
+
+  /** Ask GitHub again, now, rather than waiting for the held answer to lapse. */
+  async 'POST /github/refresh'() {
+    github.forgetWho();
+    const now = await github.session({ fresh: true });
+    return {
+      ok: now.reachable,
+      sentence: now.reachable
+        ? (now.login ? `Signed in as ${now.login}.` : 'Not signed in to GitHub on this computer.')
+        : 'GitHub still could not be reached.',
+      action: now.reachable ? null : 'Check you are online, and try again.',
+    };
   },
 
   async 'POST /github/signin'() {
@@ -1141,7 +1173,12 @@ const routes = {
         action: 'Letters, numbers, dots and dashes.',
       };
     }
-    return github.connectTo(going.binding.gitRoot ?? current.dir, { name, session: going.session });
+    return github.connectTo(going.binding.gitRoot ?? current.dir, {
+      name,
+      session: going.session,
+      // Only ever a value the page got back from a refusal it showed somebody.
+      useExisting: body?.useExisting ?? null,
+    });
   },
 
   // -- asking a model about this project ----------------------------------
