@@ -1495,6 +1495,30 @@ Folding is the only irreversible step in the product, so it is guarded by checks
 
 ---
 
+### D-133 `[DECIDED]` — Workspace rows are a sheet like every other list, and one press tells you about one
+
+**Decision.** Your computers, what this one is offering, and what the others are offering are all sheets with aligned columns, like Projects, AI apps and Terminals. This computer is the first row with a tint rather than its own heading further down. One press on a computer or an offer opens the inspector; it never does anything to the row.
+
+**Why.** It was the last page still built from stacked slabs, so nothing lined up with anything and the count above a list was wrong about itself — this computer was excluded from "your computers" and then described underneath it. The inspector already existed for Projects and had nowhere to put the facts somebody actually wants here: whether a computer can be reached *right now*, and what that means for whether a folder can move.
+
+**One sentence that had to differ.** "Reachable now: no" is a fact about another computer and a misreading about this one, where the question is only whether you have let the others reach it — a switch you decide, on this page. The inspector says the opposite thing for the row you are sitting at.
+
+---
+
+### D-134 `[DECIDED]` — A rule that hides part of a table is aimed at a row's children, never at the sheet's
+
+**Decision.** Dropping a column on a narrow window is written `.projects-cols .trow > :nth-child(4)`, together with the same rule for `.thead`. A test reads the stylesheet and fails on any `-cols > :nth-child` selector that sets `display: none`.
+
+**Why.** It was written `.projects-cols > :nth-child(4)`, and a sheet's direct children are its **rows** — the columns are one level down, inside each row, because the row is a subgrid. So it was not narrowing a table. It was hiding the fourth project. And the third computer. Whichever row landed on that number, in every list that had one of these rules, on any window under 74rem.
+
+It survived every audit this project has run because each list was short enough that the number fell past the last row. The Workspace list of computers was the first with three real rows in it, and the third one vanished at 1120 wide.
+
+**What this says about how it was found.** Not by reading the stylesheet — it had been read several times. By measuring: an audit that walked every row and asked whether any had `display: none`. That is the fourth fault in this project that only a measurement caught, after the mark in the track, the menu hidden by its own click, and the two paths Windows keeps for the same folder. The pattern is now hard to argue with — **anything about layout is checked by asking the browser, never by looking at the rule.**
+
+**Also held.** A column dropped from the rows is dropped from the heading too, or the labels stop naming the columns under them; and a sheet that drops a column restates its columns, or the last item wraps onto a line of its own on top of the first.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

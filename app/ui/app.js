@@ -891,6 +891,115 @@ function inspect(what) {
   }
 }
 
+/**
+ * A row that tells you about itself when you press it.
+ *
+ * Selecting is not doing. Pressing the row shows what is known; the controls
+ * inside it still do what they say, so a press on one of those must not also
+ * select — which is what `closest` and the check below are for.
+ */
+function wireInspect(which, show) {
+  for (const row of document.querySelectorAll(which)) {
+    row.onclick = (e) => {
+      if (e.target.closest('button, a, input, select, .tacts')) return;
+      for (const on of document.querySelectorAll('.trow.on')) on.classList.remove('on');
+      row.classList.add('on');
+      show(row);
+    };
+  }
+}
+
+/** What is known about one of your computers, without leaving the list. */
+function inspectMachine(m, near, w) {
+  if (!m) return inspect(null);
+
+  /**
+   * The one you are sitting at needs the opposite sentence.
+   *
+   * "Reachable now: no" about this computer read as though something were
+   * wrong with the network, when the question is only whether you have let the
+   * others reach it — a switch, on this page, that you decide.
+   */
+  const here = m.you;
+
+  inspect({
+    name: m.name,
+    kind: here ? 'This computer' : 'Your computer',
+    mark: (here ? w.sharingHere : near) ? '◉' : '○',
+    facts: [
+      here
+        ? { label: 'The others can reach it', value: w.sharingHere ? 'Yes' : 'No' }
+        : { label: 'Reachable now', value: near ? 'Yes, on this network' : 'No' },
+      {
+        label: 'What that means',
+        value: here
+          ? w.sharingHere
+            ? 'Your other computers can find this one and ask it for what it offers. Nothing leaves until one asks.'
+            : 'Your other computers cannot ask this one for anything. Notes still travel.'
+          : near
+            ? 'Whole folders can move between here and there, straight across your network.'
+            : m.hereNow
+              ? 'It is signed in, so notes reach it. Folders cannot move until you are both on the same network.'
+              : 'Nothing reaches it until it is opened again.',
+      },
+      { label: 'Last here', value: here ? 'Now' : ago(m.lastHere) },
+      { label: 'Working on', value: m.workingOn },
+      { label: 'Kind', value: m.kind },
+      { label: 'Known by', value: m.id, mono: true, dim: true },
+      {
+        label: 'Offering',
+        value: here
+          ? (w.offers ?? []).length || 'nothing'
+          : (w.projects ?? []).filter((p) => p.from === m.id).length || 'nothing',
+      },
+    ],
+    acts: here
+      ? [
+        { what: 'Rename it', run: () => $('#w-rename')?.click() },
+        ...(w.sharingHere ? [] : [{ what: 'Let the others reach it', run: () => $('#w-share-on')?.click() }]),
+      ]
+      : near
+        ? [{ what: 'See what it is offering', run: () => peekAt(m.id, w) }]
+        : [],
+  });
+}
+
+/** What is known about something this computer is offering. */
+function inspectOffered(o) {
+  if (!o) return inspect(null);
+
+  inspect({
+    name: o.name,
+    kind: KIND_WORD[o.kind] ?? 'Folder',
+    mark: KIND_MARK[o.kind] ?? KIND_MARK.folder,
+    facts: [
+      { label: 'Where it is', value: o.path, mono: true },
+      { label: 'How big', value: size(o.bytes) },
+      { label: 'What is in it', value: o.kind === 'file' ? null : `${o.files} files in ${o.dirs} folders` },
+      {
+        label: 'Everything included',
+        value: o.everything
+          ? 'Yes — including what is normally left out, like installed packages'
+          : 'No — the parts a project rebuilds for itself are left out',
+      },
+      { label: 'Left out', value: o.skipped ? `${o.skipped} could not be read` : null },
+      {
+        label: 'Who can take it',
+        value: 'Only your own computers, and only when one asks. Nothing moves on its own.',
+      },
+    ],
+    acts: [
+      { what: 'Show it in Explorer', run: () => post('/reveal', { path: o.path }) },
+      { what: 'Copy where it is', run: () => navigator.clipboard?.writeText(o.path ?? '') },
+      {
+        what: 'Stop offering it',
+        danger: true,
+        run: async () => { say(await post('/local/withdraw', { id: o.id })); inspect(null); draw(); },
+      },
+    ],
+  });
+}
+
 /** Close it when the page underneath changes to something it cannot describe. */
 const closeInspector = () => { if (inspecting) inspect(null); };
 
@@ -3680,16 +3789,41 @@ SCREENS.workspace = async () => {
 
   const known = w.machines ?? [];
   const nearby = new Map((w.around ?? []).map((m) => [m.machine, m]));
-  const mine = known.find((m) => m.you);
+  /**
+   * This computer's own row, which exists before its file does.
+   *
+   * The first time somebody joins there is nothing written down yet — the
+   * heartbeat has not run — and the row was drawing from `me` while carrying no
+   * identifier at all. Pressing it selected a row and then found nothing to
+   * describe, which reads as broken and is D-65's exact shape. It stands in for
+   * itself instead, out of what this computer already knows.
+   */
+  const mine = known.find((m) => m.you) ?? {
+    id: me.machine,
+    name: me.machineName,
+    you: true,
+    hereNow: true,
+    lastHere: Date.now(),
+    kind: null,
+    workingOn: me.currentName ?? null,
+  };
   const others = known.filter((m) => !m.you);
   const theirs = (w.projects ?? []).filter((p) => !p.yours);
   const reachable = others.filter((m) => nearby.has(m.id)).length;
 
   view.innerHTML = `
-    <h1>Shared workspace</h1>
-    <p class="sub">Every computer signed in to <b>${esc(w.account ?? '')}</b> on GitHub.
-      Folders move straight between them across this network — never through GitHub.
-      ${w.mismatch ? '<b style="color:var(--attention)">You are signed in as somebody else right now, so this is out of step.</b>' : ''}</p>
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Shared workspace</h1>
+        <p class="sub">Every computer signed in to <b>${esc(w.account ?? '')}</b> on GitHub.
+          Folders move straight between them across this network — never through GitHub.
+          ${w.mismatch ? '<b style="color:var(--attention)">You are signed in as somebody else right now, so this is out of step.</b>' : ''}</p>
+      </div>
+      <div class="acts">
+        <button class="small" id="w-refresh">Check again</button>
+        <button class="go" id="w-offer">Offer…</button>
+      </div>
+    </div>
     ${saidHtml()}
     ${w.trouble ? `<div class="said bad"><b>${esc(w.trouble.sentence)}</b>
       <span>${esc(w.trouble.action ?? '')}</span>
@@ -3706,83 +3840,83 @@ SCREENS.workspace = async () => {
       </div>
     </div>
 
-    <h2>Your other computers</h2>
-    ${others.length ? `<div class="lane">${others.map((m) => {
+    <div class="sect"><h2>Your computers</h2><span class="count">${known.length}</span></div>
+    <div class="sheetlist machine-cols">
+      <div class="trow tap on-this" data-machine="${esc(mine.id)}">
+        <span class="dot ${w.sharingHere ? 'live' : 'off'}"></span>
+        <span class="tname">
+          <b>${esc(mine.name)}</b>
+          <span class="where">${w.sharingHere
+    ? 'Your other computers can find this one and ask it for what it offers.'
+    : 'Not reachable by your other computers at the moment.'}</span>
+        </span>
+        <span class="chip vibe">this one</span>
+        <span class="tacts">
+          <span class="onhover">
+            <button class="small" id="w-rename">Rename</button>
+            ${w.sharingHere ? '' : '<button class="go small" id="w-share-on">Let the others reach it</button>'}
+          </span>
+        </span>
+      </div>
+      ${others.map((m) => {
     const near = nearby.get(m.id);
     return `
-      <div class="slab" style="cursor:default">
+      <div class="trow tap" data-machine="${esc(m.id)}">
         <span class="dot ${near ? 'live' : m.hereNow ? 'attention' : 'off'}"></span>
-        <div class="grow">
-          <div class="line1"><b>${esc(m.name)}</b>
-            <span class="chip">${esc(m.kind ?? '')}</span>
-            ${near ? '<span class="chip live">on this network</span>' : ''}</div>
-          <div class="fact">${near ? 'Here now, and folders can move both ways.'
+        <span class="tname">
+          <b>${esc(m.name)}</b>
+          <span class="where">${near ? 'Here now, and folders can move both ways.'
       : m.hereNow ? 'Signed in, but not on this network — notes travel, folders cannot.'
-        : `Last seen ${ago(m.lastHere)}.`}</div>
-          ${m.workingOn ? `<div class="did">Working on ${esc(m.workingOn)}</div>` : ''}
-        </div>
-        <div class="acts">
-          ${near ? `<button class="go small" data-peek="${esc(m.id)}">See what it is offering</button>` : ''}
-        </div>
+        : `Last seen ${ago(m.lastHere)}.`}${m.workingOn ? ` · Working on ${esc(m.workingOn)}` : ''}</span>
+        </span>
+        <span class="chip">${esc(m.kind ?? '')}</span>
+        <span class="tacts">
+          <span class="onhover">
+            ${near ? `<button class="go small" data-peek="${esc(m.id)}">See what it is offering</button>` : ''}
+          </span>
+        </span>
       </div>`;
-  }).join('')}</div>`
-    : `<div class="empty"><b>Only this computer so far.</b>
+  }).join('')}
+    </div>
+    ${others.length ? '' : `<div class="empty"><b>Only this computer so far.</b>
          Install Viberant on another one, sign in to the same GitHub account, and press Join there.</div>`}
 
-    <h2>This computer</h2>
-    <div class="slab" style="cursor:default">
-      <span class="dot ${w.sharingHere ? 'live' : 'off'}"></span>
-      <div class="grow">
-        <div class="line1"><b>${esc(mine?.name ?? me.machineName)}</b>
-          <span class="chip vibe">this one</span></div>
-        <div class="fact">${w.sharingHere
-    ? 'Your other computers can find this one and ask it for what it offers.'
-    : 'Not reachable by your other computers at the moment.'}</div>
-      </div>
-      <div class="acts">
-        <button class="small" id="w-rename">Rename</button>
-        ${w.sharingHere ? '' : '<button class="go small" id="w-share-on">Let the others reach it</button>'}
-      </div>
-    </div>
-
-    <h2>What this computer is offering</h2>
-    ${(w.offers ?? []).length ? `<div class="lane">${(w.offers ?? []).map((o) => `
-      <div class="slab" style="cursor:default" data-offered="${esc(o.id)}">
+    <div class="sect"><h2>What this computer is offering</h2>
+      <span class="count">${(w.offers ?? []).length}</span></div>
+    ${(w.offers ?? []).length ? `<div class="sheetlist offer-cols">${(w.offers ?? []).map((o) => `
+      <div class="trow tap" data-offered="${esc(o.id)}">
         <span class="kindmark" aria-hidden="true">${KIND_MARK[o.kind] ?? KIND_MARK.folder}</span>
-        <div class="grow">
-          <div class="line1"><b>${esc(o.name)}</b>
-            <span class="chip">${esc(KIND_WORD[o.kind] ?? 'Folder')}</span>
-            ${o.everything ? '<span class="chip">everything included</span>' : ''}</div>
-          <div class="path" title="${esc(o.path ?? '')}">${esc(o.path ?? '')}</div>
-        </div>
+        <span class="tname">
+          <b>${esc(o.name)}</b>
+          <span class="where" title="${esc(o.path ?? '')}">${esc(shortPath(o.path ?? ''))}</span>
+        </span>
         <span class="metric">${esc(size(o.bytes))}</span>
         <span class="metric quiet">${o.kind === 'file' ? '' : `${o.files} files`}</span>
         <span class="state finished"><span class="pip"></span>Shared</span>
-        <div class="acts">
+        <span class="tacts">
           <button class="small icon" data-offered-more="${esc(o.id)}"
             data-tip="More for ${esc(o.name)}" aria-label="More for ${esc(o.name)}">⋯</button>
-        </div>
+        </span>
       </div>`).join('')}</div>`
     : `<div class="empty"><b>Nothing offered yet.</b>
-         Offer a file or a folder and your other computers can take a copy. Nothing moves until one asks.</div>`}
-    <div class="bar" style="margin-top:.6rem">
-      <button class="go" id="w-offer">Offer…</button>
-    </div>
+         Offer a file or a folder and your other computers can take a copy. Nothing moves until one asks.
+         <span class="acts"><button class="go" id="w-offer-empty">Offer…</button></span></div>`}
 
-    <h2>Available from your other computers</h2>
-    ${theirs.length ? `<div class="lane">${theirs.map((p) => `
-      <div class="slab" style="cursor:default">
+    <div class="sect"><h2>Available from your other computers</h2>
+      <span class="count">${theirs.length}</span></div>
+    ${theirs.length ? `<div class="sheetlist avail-cols">${theirs.map((p) => `
+      <div class="trow">
         <span class="kindmark" aria-hidden="true">${KIND_MARK.project}</span>
-        <div class="grow">
-          <div class="line1"><b>${esc(p.name)}</b>
-            <span class="chip">${p.kind ? esc(p.kind) : 'Project'}</span>
-            <span class="chip">on ${esc(p.fromName)}</span></div>
-          <div class="fact">${esc(p.says ?? '')}${p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</div>
-        </div>
+        <span class="tname">
+          <b>${esc(p.name)}</b>
+          <span class="where">on ${esc(p.fromName)}${p.says ? ` · ${esc(p.says)}` : ''}${
+  p.lastDid ? ` · ${esc(p.lastDid)}` : ''}</span>
+        </span>
+        <span class="chip">${p.kind ? esc(p.kind) : 'Project'}</span>
         <span class="state ${nearby.has(p.from) ? 'finished' : p.url ? 'working' : 'notStarted'}">
           <span class="pip"></span>${nearby.has(p.from)
     ? 'Direct transfer' : p.url ? 'GitHub copy' : 'Out of reach'}</span>
-        <div class="acts">
+        <span class="tacts">
           <button class="small" data-bring='${esc(JSON.stringify(p))}'
             ${nearby.has(p.from) || p.url ? '' : 'disabled'}
             data-tip="${nearby.has(p.from)
@@ -3791,12 +3925,12 @@ SCREENS.workspace = async () => {
       ? `${esc(p.fromName)} is not on this network. Only work that has been saved and sent to GitHub would come.`
       : `Ask ${esc(p.fromName)} to offer the folder instead`}">${
   nearby.has(p.from) ? 'Bring it here' : 'Get the GitHub copy'}</button>
-        </div>
+        </span>
       </div>`).join('')}</div>`
     : `<div class="empty"><b>Nothing offered to this computer.</b>
          Anything your other computers offer shows here.</div>`}
 
-    <h2>Notes between your computers</h2>
+    <div class="sect"><h2>Notes between your computers</h2></div>
     <div class="card">
       <div class="talk" id="talk">
         ${(w.said ?? []).map((s) => `
@@ -3812,7 +3946,6 @@ SCREENS.workspace = async () => {
     </div>
 
     <div class="bar" style="margin-top:1.6rem">
-      <button class="quiet small" id="w-refresh">Check again now</button>
       <button class="quiet small danger" id="w-leave">Take this computer out of the workspace</button>
     </div>
 
@@ -3871,16 +4004,37 @@ SCREENS.workspace = async () => {
     draw();
   };
 
-  for (const b of document.querySelectorAll('[data-peek]')) b.onclick = () => peekAt(b.dataset.peek, w);
+  for (const b of document.querySelectorAll('[data-peek]')) {
+    b.onclick = (e) => { e.stopPropagation(); peekAt(b.dataset.peek, w); };
+  }
+
+  /**
+   * One press tells you about a row; it never does anything to it.
+   *
+   * The same arrangement Projects has, for the same reason: what a computer is
+   * and what it can reach right now are facts somebody wants without leaving
+   * the list, and there was nowhere on this page to put them.
+   */
+  wireInspect('[data-machine]', (row) => {
+    const id = row.dataset.machine;
+    inspectMachine(known.find((m) => m.id === id) ?? (id === mine.id ? mine : null),
+      nearby.get(id), w);
+  });
+  wireInspect('[data-offered]', (row) => {
+    inspectOffered((w.offers ?? []).find((o) => o.id === row.dataset.offered));
+  });
+
   // Offering is one control with two answers rather than two buttons, because
   // they are the same decision with a different noun in it.
-  $('#w-offer').onclick = (e) => {
+  const offerMenu = (e) => {
     const room = e.currentTarget.getBoundingClientRect();
-    menuAt({ x: room.left, y: room.bottom + 6 }, [
+    menuAt({ x: Math.min(room.left, innerWidth - 220), y: room.bottom + 6 }, [
       { what: 'Offer a file…', run: offerFile },
       { what: 'Offer a folder…', run: offerFolder },
     ]);
   };
+  $('#w-offer').onclick = offerMenu;
+  $('#w-offer-empty')?.addEventListener('click', offerMenu);
 
   for (const b of document.querySelectorAll('[data-offered-more]')) {
     const one = (w.offers ?? []).find((o) => o.id === b.dataset.offeredMore);

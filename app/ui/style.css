@@ -1221,18 +1221,58 @@ h2:first-of-type { margin-top: 0; }
 .avail-cols {
   grid-template-columns: 40px minmax(0, 1fr) auto auto minmax(0, auto);
 }
+.machine-cols {
+  grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, auto);
+}
+/*
+ * This computer, marked rather than moved.
+ *
+ * It used to sit under its own heading below the others, which put the one row
+ * you are certain about furthest from the top and made the count above it wrong
+ * about itself. In the list, first, with a tint — the same answer the tabs
+ * already use for the place you are on.
+ */
+.machine-cols .on-this { background: var(--vibe-wash); }
+.machine-cols .on-this:hover { background: var(--vibe-wash); }
 
+/*
+ * Dropping a column on a narrow screen, and the fault that was hiding rows.
+ *
+ * These used to be written `.projects-cols > :nth-child(4)`. A sheet's direct
+ * children are its **rows** — the columns live one level down, inside each row,
+ * because the row is a subgrid. So it was not narrowing the table at all: it
+ * was hiding the fourth project, the third computer, whichever row happened to
+ * land on that number. Data, gone, silently, and only on a narrow window.
+ *
+ * It went unnoticed because every list that had one of these was short enough
+ * that the number fell past the end. The Workspace list of computers was the
+ * first with three real rows in it, and the third one vanished.
+ *
+ * Written against the row now, which is where a column actually is. The heading
+ * is a row too, so it needs the same treatment or the heading keeps a column
+ * the rows below no longer have.
+ */
 @media (max-width: 74rem) {
   .projects-cols { grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, auto); }
-  .projects-cols > :nth-child(4) { display: none; }
+  .projects-cols .trow > :nth-child(4),
+  .projects-cols .thead > :nth-child(4) { display: none; }
+
   .offer-cols { grid-template-columns: 40px minmax(0, 1fr) auto auto minmax(0, auto); }
-  .offer-cols > :nth-child(4) { display: none; }
+  .offer-cols .trow > :nth-child(4),
+  .offer-cols .thead > :nth-child(4) { display: none; }
+
+  .machine-cols { grid-template-columns: 8px minmax(0, 1fr) minmax(0, auto); }
+  .machine-cols .trow > :nth-child(3),
+  .machine-cols .thead > :nth-child(3) { display: none; }
 }
 @media (max-width: 58rem) {
   .apps-cols { grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto); }
-  .apps-cols > :nth-child(3) { display: none; }
+  .apps-cols .trow > :nth-child(3),
+  .apps-cols .thead > :nth-child(3) { display: none; }
+
   .avail-cols { grid-template-columns: 40px minmax(0, 1fr) auto minmax(0, auto); }
-  .avail-cols > :nth-child(3) { display: none; }
+  .avail-cols .trow > :nth-child(3),
+  .avail-cols .thead > :nth-child(3) { display: none; }
 }
 
 /* ------------------------------------------------------------------------- */
