@@ -1509,17 +1509,32 @@ h2:first-of-type { margin-top: 0; }
 }
 .sect .count.pressable:hover { color: var(--ink); border-bottom-color: var(--dim); }
 
+/*
+ * Three things to do, in the order they are done.
+ *
+ * Numbered because they genuinely are a sequence and the middle one is the one
+ * people miss: the token is shown once, and a page reloaded before it is copied
+ * means starting again.
+ */
+.steps-numbered {
+  margin: 0 0 var(--s4);
+  padding-left: var(--s5);
+  color: var(--quiet);
+  font-size: var(--t-sub);
+  line-height: 1.6;
+}
+.steps-numbered li { margin-bottom: var(--s2); }
+
+/* A short sentence under a control, saying how that control just went. */
+.fact { font-size: var(--t-meta); color: var(--quiet); }
+.fact:empty { display: none; }
+.fact.good { color: var(--live); }
+.fact.bad { color: var(--attention); }
+
 /* One company, its model, and whether there is a key. */
 .ai-one { margin-bottom: var(--s3); }
 .ai-one .field { margin-top: var(--s3); }
-.ai-one .fact:empty { display: none; }
-.ai-one .fact {
-  margin-top: var(--s2);
-  font-size: var(--t-meta);
-  color: var(--quiet);
-}
-.ai-one .fact.good { color: var(--live); }
-.ai-one .fact.bad { color: var(--attention); }
+.ai-one .fact { margin-top: var(--s2); }
 
 .ai-said {
   padding: var(--s4) 0 0;

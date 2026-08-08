@@ -1171,45 +1171,53 @@ const routes = {
    * browser had plainly said yes. The errand is a job so the page can watch it,
    * and the page asks for the state again when it finishes — no restart.
    */
-  async 'POST /ship/connect'({ body }) {
-    const which = String(body?.place ?? 'vercel');
-    if (which !== 'vercel') {
-      return { ok: false, sentence: 'That one has nothing to connect.', action: null };
-    }
+  /**
+   * Connect Vercel, by a token that is checked before it is kept.
+   *
+   * This used to start Vercel's own sign-in as a background command and wait
+   * for a browser. Inside an app with no terminal attached that command has
+   * nowhere to print what it wants you to visit and nothing to read your answer
+   * from, so it waited, and all anybody saw was a spinner that never stopped.
+   * Sometimes the browser half worked, which was worse: authorised over there,
+   * "Not connected" over here, and a process left running.
+   */
+  async 'POST /ship/token'({ body }) {
+    const token = String(body?.token ?? '').trim();
+    const checked = await providers.vercel.checkToken(token);
+    if (!checked.ok) return checked;
 
-    const state = await providers.vercel.state();
-    if (!state.here) {
-      return { ok: false, sentence: state.missing, action: `Install it once with ${state.how}, then try again.` };
-    }
-    if (state.connected) {
-      return { ok: true, connected: true, login: state.login, sentence: `Already connected as ${state.login}.` };
-    }
+    await settings.set('vercelToken', token);
+    providers.forgetVercel();
 
-    const job = jobs.begin({ what: 'Connecting Vercel', where: current?.dir ?? '', kind: 'deploy' });
+    return { ...checked, vercel: await providers.vercel.state({ fresh: true }) };
+  },
 
-    (async () => {
-      const done = await providers.vercel.connect(job, jobs);
-      // Asked again afterwards rather than believed: the command exiting is not
-      // the same as this computer being signed in, and the difference is
-      // exactly what nobody was checking.
-      const after = await providers.vercel.state();
+  /** Where to make one, opened in a browser. Never a token over the wire. */
+  async 'POST /ship/get-token'() {
+    signin.openInBrowser(providers.VERCEL_TOKEN_PAGE);
+    return {
+      ok: true,
+      sentence: "Vercel's token page is open in your browser.",
+      action: 'Make one there, then paste it here. It stays on this computer.',
+    };
+  },
 
-      jobs.end(job, after.connected
-        ? { ok: true, sentence: `Vercel is connected as ${after.login}.`, action: 'Deploy whenever you are ready.' }
-        : {
-          ok: false,
-          sentence: 'Vercel is still not connected on this computer.',
-          action: done.ok
-            ? 'The sign-in finished but this computer was not left signed in. Try again.'
-            : 'Finish the sign-in in your browser, then try again.',
-        });
-    })().catch((e) => jobs.end(job, {
-      ok: false,
-      sentence: 'Connecting Vercel stopped part way through.',
-      action: String(e?.message ?? e),
-    }));
+  /** Stop acting as that account on this computer. */
+  async 'POST /ship/forget'() {
+    await settings.set('vercelToken', '');
+    providers.forgetVercel();
+    return {
+      ok: true,
+      sentence: 'Vercel is no longer connected on this computer.',
+      action: 'Nothing that is already online was touched.',
+      vercel: await providers.vercel.state({ fresh: true }),
+    };
+  },
 
-    return { ok: true, job: job.id };
+  /** Ask Vercel again, rather than trusting what was true twenty seconds ago. */
+  async 'POST /ship/again'() {
+    providers.forgetVercel();
+    return { ok: true, vercel: await providers.vercel.state({ fresh: true }) };
   },
 
   /** What every place this can put a site is, asked fresh. */
@@ -1693,42 +1701,52 @@ const routes = {
      * looking at when the page was drawn.
      */
     if (body.place === 'vercel') {
+      // Read once, here, from the project that is open at the moment of the
+      // press. Everything below uses these and never asks again, so a project
+      // changed while a deploy is running cannot redirect it.
       const dir = current.dir;
       const name = current.name;
       const job = jobs.begin({ what: `Putting ${name} online`, where: dir, kind: 'deploy', project: name });
 
       (async () => {
-        const state = await providers.vercel.state();
+        const state = await providers.vercel.state({ fresh: true });
+
+        if (!state.connected) {
+          return jobs.end(job, {
+            ok: false,
+            sentence: state.sentence ?? 'Vercel is not connected on this computer.',
+            action: state.action ?? 'Connect it on this page first.',
+            needsToken: !!state.needsToken,
+          });
+        }
         if (!state.here) {
           return jobs.end(job, {
             ok: false,
-            sentence: state.missing,
-            action: `Install it once with ${state.how}, then try again.`,
+            sentence: 'Vercel is connected, but the command that builds and uploads is not on this computer.',
+            action: 'Install it once with npm install -g vercel, then try again.',
           });
         }
-        if (!state.connected) {
-          const signedIn = await providers.vercel.connect(job, jobs);
-          if (!signedIn.ok) {
-            return jobs.end(job, {
-              ok: false,
-              sentence: 'Vercel was not connected, so nothing was put online.',
-              action: 'Try again and finish the sign-in in your browser.',
-            });
-          }
-        }
 
-        const out = await providers.vercel.deploy(job, jobs, { dir, name });
+        const token = await settings.get('vercelToken');
+        const out = await providers.vercel.deploy(job, jobs, { dir, name, token });
         if (!out.ok) return jobs.end(job, out);
 
-        // Remembered against this project, so the next press knows where it went
-        // and project B never inherits project A's site.
-        await providers.bind(dir, { provider: 'vercel', url: out.at, name });
+        // Remembered against this project by its own path, so the next press
+        // knows where it went and project B never inherits project A's site.
+        await providers.bind(dir, {
+          provider: 'vercel',
+          url: out.at,
+          inspect: out.inspect ?? null,
+          name,
+          account: state.login,
+        });
 
         return jobs.end(job, {
           ok: true,
           at: out.at,
+          inspect: out.inspect ?? null,
           sentence: `${name} is live at ${out.at}`,
-          action: 'Anyone with the address can see it now.',
+          action: 'Checked with Vercel: it is serving that address now.',
         });
       })().catch((e) => jobs.end(job, {
         ok: false,

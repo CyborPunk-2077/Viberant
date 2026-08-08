@@ -115,12 +115,19 @@ export function write(job, text) {
  * happened, which is this codebase's signature failure and the reason D-65
  * exists.
  */
-export function end(job, { ok, sentence, action = null, at = null, made = null, release = null }) {
+export function end(job, {
+  ok, sentence, action = null, at = null, made = null, release = null, inspect = null,
+}) {
   job.finished = Date.now();
   job.ok = ok;
   job.sentence = sentence;
   job.action = action;
   job.at = at;
+  // Where the whole of it can be read at whoever ran it. Named like the rest,
+  // because a field that arrives by being spread in is a field no page knows
+  // about — which is how the address of a deployment got as far as here and
+  // then quietly stopped.
+  job.inspect = inspect;
   // What the errand actually produced, so the panel can offer it rather than
   // describe it. Named fields rather than a spread, because a job is read by a
   // page and everything on it has to be something a page can show.

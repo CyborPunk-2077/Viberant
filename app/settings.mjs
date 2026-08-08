@@ -241,6 +241,24 @@ export const KNOWN = [
   },
   {
     /**
+     * The token that lets this computer act on Vercel.
+     *
+     * Not on the settings list: it is set on the Deploy screen, where it is
+     * checked against Vercel before it is kept and the account it turns out to
+     * belong to is shown. A box here that took a token and believed it would be
+     * a second way to do one thing, and the worse one.
+     */
+    id: 'vercelToken',
+    name: 'Token for Vercel',
+    why: 'Lets this computer put a site online as you. It stays on this computer.',
+    kind: 'secret',
+    optional: true,
+    unlisted: true,
+    longest: 200,
+    fallback: () => '',
+  },
+  {
+    /**
      * Where the small service that introduces computers lives.
      *
      * Empty means the one inside this app, which needs no account and costs

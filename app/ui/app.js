@@ -3699,25 +3699,30 @@ SCREENS.terminals = async () => {
 };
 
 /**
- * Vercel's row, which says which of the three things is true.
+ * Vercel's row: connected as somebody, or the one thing to do about it.
  *
- * Not here at all, here but not signed in, or ready — and the third is one
- * press. The sign-in happens inside the deploy errand rather than as a separate
- * chore, so the first time costs a browser window and every time after costs
- * nothing.
+ * Four states rather than three, and the fourth is the one that was missing.
+ * "Could not ask just now" is not "not connected", and drawing it as though it
+ * were is how somebody comes to make a second token they did not need.
  */
 function vercelRow(d) {
   const v = d.vercel ?? {};
   const canBuild = !!d.look?.frameworkId;
 
-  const state = !v.here ? { s: 'notStarted', word: 'Not installed' }
-    : !v.connected ? { s: 'working', word: 'Not connected' }
-      : { s: 'finished', word: `Connected as ${v.login}` };
+  const state = v.connected && v.reachable === false
+    ? { s: 'working', word: `Connected as ${v.login}, out of date` }
+    : v.connected ? { s: 'finished', word: `Connected as ${v.login}` }
+      : v.reachable === false ? { s: 'working', word: 'Cannot check just now' }
+        : { s: 'notStarted', word: 'Not connected' };
 
-  const says = !v.here ? 'Install it once with npm install -g vercel'
-    : !v.connected ? 'The first deploy opens your browser to connect it. After that it is one press.'
+  const says = v.connected
+    ? (!v.here
+      ? 'Connected, but the command that builds and uploads is not on this computer yet.'
       : canBuild ? `Builds this ${d.look.framework} project itself and gives it an address.`
-        : 'Builds the site itself and gives it an address.';
+        : 'Builds the site itself and gives it an address.')
+    : v.reachable === false
+      ? 'Vercel could not be reached. Nothing here has changed.'
+      : 'A token from your Vercel account, made in your browser. It stays on this computer.';
 
   return `
     <div class="trow">
@@ -3728,12 +3733,86 @@ function vercelRow(d) {
       </span>
       <span class="tacts">
         <span class="state ${state.s}"><span class="pip"></span>${esc(state.word)}</span>
-        ${v.here && !v.connected
-    ? '<button class="go small" id="v-connect">Connect Vercel</button>'
-    : `<button class="${v.here ? 'go ' : ''}small" data-site="vercel" ${v.here && v.connected ? '' : 'disabled'}>
-          Deploy website</button>`}
+        ${v.connected
+    ? `${v.here ? '' : '<button class="quiet small" id="v-how">How to install it</button>'}
+       <button class="quiet small" id="v-manage">Account\u2026</button>
+       <button class="go small" data-site="vercel" ${v.here ? '' : 'disabled'}>Deploy website</button>`
+    : `<button class="quiet small" id="v-again">Check again</button>
+       <button class="go small" id="v-connect">Connect Vercel\u2026</button>`}
       </span>
     </div>`;
+}
+
+/**
+ * Connecting Vercel, in one window, without waiting on a browser to come back.
+ *
+ * The old way started Vercel's own sign-in as a background command and waited.
+ * That command wants a terminal: somewhere to print the address it needs you to
+ * visit, and something to read your answer from. It has neither here, so it
+ * waited forever and all anybody saw was a spinner \u2014 sometimes with the
+ * browser half having plainly succeeded, which is the worst of both.
+ *
+ * A token is Vercel's own supported way for something that is not a terminal to
+ * act on your behalf. It is made on a page, it is checked here before it is
+ * kept, and it is still there after this app is restarted.
+ */
+async function connectVercel(andThen = null) {
+  sheet({
+    title: 'Connect Vercel',
+    narrow: true,
+    body: `
+      <ol class="steps-numbered">
+        <li>Open your Vercel account page and make a token. Any name, any expiry.</li>
+        <li>Copy it \u2014 Vercel shows it once.</li>
+        <li>Paste it here. It is checked with Vercel before anything is kept, and it
+          stays on this computer.</li>
+      </ol>
+      <label class="field" for="v-token">The token</label>
+      <input type="password" id="v-token" style="width:100%" autocomplete="off" spellcheck="false"
+        placeholder="it stays on this computer">
+      <div class="fact" id="v-note"></div>`,
+    foot: `<button class="quiet" id="v-page">Open the token page \u2192</button>
+           <button class="quiet" id="v-never">Never mind</button>
+           <button class="go" id="v-save">Connect</button>`,
+  });
+
+  const note = (r) => {
+    const box = $('#v-note');
+    if (!box) return;
+    box.className = `fact ${r.ok ? 'good' : 'bad'}`;
+    box.textContent = [r.sentence, r.action].filter(Boolean).join(' ');
+  };
+
+  $('#v-page').onclick = async () => note(await post('/ship/get-token'));
+  $('#v-never').onclick = closeLayer;
+  $('#v-token').focus();
+
+  const save = async () => {
+    const field = $('#v-token');
+    const typed = field?.value ?? '';
+    if (!typed.trim()) return note({ ok: false, sentence: 'Nothing was pasted.', action: 'Paste the token first.' });
+
+    const b = $('#v-save');
+    b.disabled = true;
+    b.textContent = 'Checking it\u2026';
+    note({ ok: true, sentence: 'Asking Vercel who this token belongs to.' });
+
+    const out = await post('/ship/token', { token: typed });
+
+    b.disabled = false;
+    b.textContent = 'Connect';
+    if (field) field.value = '';
+    note(out);
+    if (!out.ok) return;
+
+    closeLayer();
+    say(out);
+    if (andThen) return andThen();
+    draw();
+  };
+
+  $('#v-save').onclick = save;
+  $('#v-token').onkeydown = (e) => { if (e.key === 'Enter') save(); };
 }
 
 /** The mark for a place a website lives: a globe, reduced to two strokes. */
@@ -3917,24 +3996,45 @@ SCREENS.ship = async () => {
     b.onclick = () => begin(b, '/ship/site', { place: b.dataset.site });
   }
 
+  $('#v-connect')?.addEventListener('click', () => connectVercel());
+
   /**
-   * Connecting, watched to its end and then asked again.
+   * Ask Vercel again, rather than trusting what was true twenty seconds ago.
    *
-   * The screen used to change only when something else redrew it, so a browser
-   * that had plainly said yes left "Not connected" on screen until the app was
-   * restarted. Now the errand is watched, and when it finishes the state is
-   * fetched fresh — the row changes on its own.
+   * The answer is kept for a moment so that drawing this page three times does
+   * not ask three times. This is how somebody says "no, ask now".
    */
-  $('#v-connect')?.addEventListener('click', async () => {
-    const b = $('#v-connect');
+  $('#v-again')?.addEventListener('click', async () => {
+    const b = $('#v-again');
     b.disabled = true;
-    b.textContent = 'Waiting for your browser…';
+    b.textContent = 'Asking…';
+    const out = await post('/ship/again');
+    say(out.vercel?.connected
+      ? { ok: true, sentence: `Vercel is connected as ${out.vercel.login}.` }
+      : { ok: false, sentence: out.vercel?.sentence ?? 'Vercel is not connected.', action: out.vercel?.action ?? null });
+    draw();
+  });
 
-    const out = await post('/ship/connect', { place: 'vercel' });
-    if (!out.ok) { say(out); return draw(); }
-    if (out.connected) { say(out); return draw(); }
+  $('#v-how')?.addEventListener('click', () => {
+    say({
+      ok: false,
+      sentence: 'The command that builds and uploads is not on this computer.',
+      action: 'Install it once in a terminal with: npm install -g vercel',
+    });
+    draw();
+  });
 
-    watchJob(out.job, () => draw());
+  $('#v-manage')?.addEventListener('click', async () => {
+    const sure = await confirmThat({
+      title: `Stop acting as ${d.vercel?.login ?? 'this account'}?`,
+      what: 'The token is removed from this computer, and nothing here can put a site online until another is added.',
+      why: 'Nothing that is already online is touched and nothing on Vercel is deleted. This only forgets the token.',
+      confirm: 'Forget the token',
+      danger: true,
+    });
+    if (!sure) return;
+    say(await post('/ship/forget'));
+    draw();
   });
   $('#app-build').onclick = () => begin($('#app-build'), '/ship/app', { giveOut: false });
   $('#app-out').onclick = async () => {
@@ -4076,6 +4176,11 @@ async function paintJob({ again = true } = {}) {
     } else if (j.at && /^https?:/i.test(j.at)) {
       bits.push(`<button class="go small" data-open-out="${esc(j.at)}">Open the website ↗</button>`);
       bits.push(`<button class="small" data-copy-out="${esc(j.at)}">Copy the address</button>`);
+    }
+    // Where the whole of it can be read at whoever ran it, offered on both
+    // endings: after a good one out of interest, after a bad one out of need.
+    if (j.inspect && /^https?:/i.test(j.inspect)) {
+      bits.push(`<button class="quiet small" data-open-out="${esc(j.inspect)}">See it on Vercel ↗</button>`);
     }
     for (const m of j.made ?? []) {
       bits.push(`<button class="small" data-show-out="${esc(m.path)}"
