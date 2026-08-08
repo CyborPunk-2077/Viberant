@@ -767,6 +767,38 @@ h2:first-of-type { margin-top: 0; }
   .slab .acts, .row .acts { width: 100%; justify-content: flex-start; }
 }
 
+/*
+ * What this page is acting on, said once across the top.
+ *
+ * Deploy is the screen where acting on the wrong project cannot be undone by
+ * pressing something else afterwards, so the project and the repository are
+ * facts on the page rather than things to infer from the rail.
+ */
+.factbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s6);
+  padding: var(--s3) var(--s5);
+  margin: 0 0 var(--s5);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--card);
+  font-size: var(--t-sub);
+  color: var(--ink);
+  min-width: 0;
+}
+.factbar > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.factbar b {
+  font-size: var(--t-tiny);
+  font-weight: var(--w-mid);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.factbar .dim { color: var(--dim); }
+.factbar .warn { color: var(--attention); }
+.factbar .mono { font-family: var(--mono); font-size: var(--t-meta); }
+
 /* ------------------------------------------------------------------------- */
 /* Numbers                                                                    */
 /*                                                                            */

@@ -2661,6 +2661,11 @@ SCREENS.terminals = async () => {
   }
 };
 
+/** The mark for a place a website lives: a globe, reduced to two strokes. */
+const SITE_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.3"><circle cx="8" cy="8" r="5.6"/><ellipse cx="8" cy="8" rx="2.4" ry="5.6"/>'
+  + '<path d="M2.6 8h10.8"/></svg>';
+
 /** The mark for a terminal. A prompt, which is what one actually looks like. */
 const TERM_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
   + 'stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">'
@@ -2695,68 +2700,92 @@ SCREENS.ship = async () => {
 
   const { site, app } = d;
 
+  const bind = d.binding ?? {};
+
   view.innerHTML = `
-    <h1>Deploy</h1>
-    <p class="sub">Two different errands, because they really are different. A website
-      lives at an address and gets replaced whole. An application is downloaded and
-      installed, and old copies stay out there.</p>
+    <div class="pagehead">
+      <div class="grow">
+        <h1>Deploy</h1>
+        <p class="sub">Two errands, kept apart because they really are different. A website
+          is replaced whole every time. An application is downloaded, and every version
+          you hand out stays out there.</p>
+      </div>
+    </div>
     ${saidHtml()}
-    <div class="split">
-      <div class="card">
-        <h2 style="margin-top:0">A website</h2>
-        <p class="note" style="color:var(--quiet);font-size:.88rem">
-          People visit an address and see the newest version. Putting up a new one
-          replaces the old one everywhere, at once.</p>
-        ${site.buildStep ? '<p class="chip cool">this project builds itself first</p>' : ''}
-        ${d.project?.shared ? '' : `
-          <div class="row" style="margin-bottom:.6rem">
-            <span class="dot attention"></span>
-            <div class="grow"><div class="name">This project is not on GitHub yet</div>
-              <div class="note">Everything below needs it there first. One question and it is.</div></div>
-            <button class="go small" id="dep-publish">Put it on GitHub…</button>
-          </div>`}
 
-        <div style="margin-top:.8rem">
-          ${site.places.map((pl) => `
-            <div class="row" style="margin-bottom:.4rem">
-              <span class="dot ${pl.ready ? 'live' : 'off'}"></span>
-              <div class="grow"><div class="name">${esc(pl.name)}</div>
-                <div class="note">${esc(pl.ready ? pl.blurb : pl.missing ?? pl.blurb)}</div></div>
-              <button class="${pl.ready ? 'go ' : ''}small" data-site="${esc(pl.id)}" ${pl.ready ? '' : 'disabled'}>Put it up</button>
-            </div>`).join('')}
-        </div>
-      </div>
+    <div class="factbar">
+      <span><b>Project</b>${esc(d.name ?? '')}</span>
+      <span><b>Repository</b>${bind.bound
+    ? `<span class="mono">${esc(bind.owner)}/${esc(bind.repo)}</span>`
+    : '<span class="dim">not on GitHub yet</span>'}</span>
+      ${bind.branch ? `<span><b>Line</b><span class="mono">${esc(bind.branch)}</span></span>` : ''}
+      <span><b>Unsaved</b>${d.project?.unsaved
+    ? `<span class="warn">${d.project.unsaved}</span>` : 'none'}</span>
+    </div>
 
-      <div class="card">
-        <h2 style="margin-top:0">An application</h2>
-        <p class="note" style="color:var(--quiet);font-size:.88rem">
-          People download a file and install it. Whatever they installed stays installed
-          until they take a newer one, so every version you put out lives on.</p>
-        ${app.packStep
-          ? `<p class="chip cool">builds with this project's own “${esc(app.packStep)}” step</p>`
-          : '<p class="chip attention">this project does not say how to build itself yet</p>'}
-        ${app.installers.length ? `
-          <div style="margin-top:.8rem">
-            ${app.installers.map((f) => `
-              <div class="row" style="margin-bottom:.4rem">
-                <span class="dot live"></span>
-                <div class="grow"><div class="name">${esc(f.name)}</div>
-                  <div class="note">${esc(size(f.size))} · already built, in ${esc(f.where)}</div></div>
-              </div>`).join('')}
-          </div>` : ''}
-        <div class="bar" style="margin:.8rem 0 0">
-          <button class="go small" id="app-build" ${app.packStep || app.manager === 'cargo' ? '' : 'disabled'}>Build it</button>
-          <button class="small" id="app-out" ${app.canRelease && (app.packStep || app.installers.length) ? '' : 'disabled'}>Build and give it out</button>
-        </div>
-        ${app.canRelease ? '' : `
-          <p class="note" style="color:var(--quiet);font-size:.85rem;margin-top:.6rem">
-            Giving it out needs a copy of this project on GitHub, and you signed in to it.
-            ${d.project?.shared ? '' : '<button class="quiet small" id="dep-publish2">Put it on GitHub…</button>'}</p>`}
-      </div>
+    ${d.project?.shared ? '' : `
+      <div class="said">
+        <b>This project has no copy on GitHub yet.</b>
+        <span>Both errands below need one. It is a single question.</span>
+        <span class="acts"><button class="go small" id="dep-publish">Put it on GitHub…</button></span>
+      </div>`}
+
+    <div class="sect"><h2>Website</h2><span class="count">replaced whole, every time</span></div>
+    <div class="sheetlist term-cols">
+      ${site.places.map((pl) => `
+        <div class="trow">
+          <span class="kindmark" aria-hidden="true">${SITE_MARK}</span>
+          <span class="tname">
+            <b>${esc(pl.name)}</b>
+            <span class="where">${esc(pl.ready ? pl.blurb : pl.missing ?? pl.blurb)}</span>
+          </span>
+          <span class="tacts">
+            <span class="state ${pl.ready ? 'finished' : 'notStarted'}">
+              <span class="pip"></span>${pl.ready ? 'Ready' : 'Not ready'}</span>
+            <button class="small" data-site="${esc(pl.id)}" ${pl.ready ? '' : 'disabled'}>Deploy website</button>
+          </span>
+        </div>`).join('')}
+    </div>
+
+    <div class="sect">
+      <h2>Application</h2>
+      <span class="count">${app.packStep
+    ? `builds with this project’s own “${esc(app.packStep)}” step`
+    : app.manager === 'cargo' ? 'builds with cargo' : 'no build step yet'}</span>
+    </div>
+    ${app.installers.length ? `
+      <div class="sheetlist term-cols">
+        ${app.installers.map((f) => `
+          <div class="trow">
+            <span class="kindmark" aria-hidden="true">${KIND_MARK.file}</span>
+            <span class="tname">
+              <b>${esc(f.name)}</b>
+              <span class="where">${esc(size(f.size))} · already built, in ${esc(f.where)}</span>
+            </span>
+            <span class="tacts">
+              <button class="quiet small" data-show-built="${esc(f.path)}">Show in Explorer</button>
+            </span>
+          </div>`).join('')}
+      </div>` : `
+      <div class="empty"><b>Nothing built yet.</b>
+        ${app.packStep || app.manager === 'cargo'
+    ? 'Build an installer and it appears here with where it went.'
+    : 'This project does not say how to build itself into something installable yet.'}</div>`}
+
+    <div class="bar" style="margin-top:.8rem">
+      <button class="go small" id="app-build" ${app.packStep || app.manager === 'cargo' ? '' : 'disabled'}>Build installer</button>
+      <button class="small" id="app-out"
+        ${app.canRelease && (app.packStep || app.installers.length) ? '' : 'disabled'}
+        data-tip="${app.canRelease ? 'Builds it, then puts the file on GitHub under a version anybody can download'
+    : 'Needs a copy of this project on GitHub, and you signed in to it'}">Build &amp; publish</button>
     </div>
 
     <div id="job"></div>`;
   said = null;
+
+  for (const b of document.querySelectorAll('[data-show-built]')) {
+    b.onclick = () => post('/reveal', { path: b.dataset.showBuilt });
+  }
 
   for (const id of ['#dep-publish', '#dep-publish2']) {
     $(id)?.addEventListener('click', () => firstTimeSheet());
@@ -3793,9 +3822,26 @@ async function watchTheOthers() {
   again(3500);
 }
 
+/**
+ * The news worth interrupting a page for.
+ *
+ * Not everything the other computers are doing. Something *you already have*
+ * that has moved somewhere else is worth a strip at the top of whatever you are
+ * looking at — you are working in it, and the two copies disagreeing is a fact
+ * you need before you carry on.
+ *
+ * Something you simply do not have is not that. It is a thing that exists
+ * elsewhere and might be nice to fetch, and it already has a home: the table on
+ * the Workspace page that lists exactly that. Putting it in both places meant
+ * the same offer appeared twice, with the second copy following you onto every
+ * other screen in the app.
+ */
+const worthInterrupting = (n) => !((n.may ?? []).length === 1 && n.may[0] === 'bring');
+
 function newsHtml() {
-  if (!liveNews.length) return '';
-  return `<div id="news">${liveNews.map((n, i) => `
+  const shown = liveNews.filter(worthInterrupting);
+  if (!shown.length) return '';
+  return `<div id="news">${liveNews.map((n, i) => (worthInterrupting(n) ? `
     <div class="news ${esc(n.kind)}">
       <span class="spine ${n.kind === 'collision' ? 'unsaved' : n.kind === 'behind' ? 'published' : 'clean'}"></span>
       <div class="grow">
@@ -3811,7 +3857,7 @@ function newsHtml() {
     ? `<button class="small" data-savefirst="${i}">Save mine first</button>` : ''}
         <button class="quiet small" data-hush="${i}">Leave it</button>
       </div>
-    </div>`).join('')}</div>`;
+    </div>` : '')).join('')}</div>`;
 }
 
 /** Put the strip at the top of whatever is on screen, without redrawing it. */
@@ -3819,7 +3865,7 @@ function paintNews() {
   const hold = $('#view');
   if (!hold) return;
   const there = $('#news');
-  if (!liveNews.length) { there?.remove(); return; }
+  if (!liveNews.some(worthInterrupting)) { there?.remove(); return; }
 
   const wanted = newsHtml();
   if (there && there.outerHTML === wanted) return;

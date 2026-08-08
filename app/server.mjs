@@ -805,7 +805,13 @@ const routes = {
 
   async 'GET /ship'() {
     if (!current) return { open: false };
-    return { open: true, name: current.name, ...(await deploy.look(current.dir)) };
+    // Which repository this would act on, said on the page. Deploying to the
+    // wrong one is not recoverable by pressing something else afterwards.
+    const [looked, binding] = await Promise.all([
+      deploy.look(current.dir),
+      github.bindingOf(current.dir),
+    ]);
+    return { open: true, name: current.name, binding, ...looked };
   },
 
   async 'POST /ship/site'({ body }) {
