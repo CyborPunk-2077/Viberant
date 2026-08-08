@@ -332,7 +332,13 @@ const routes = {
   // -- settings -----------------------------------------------------------
 
   async 'GET /settings'() {
-    return { settings: await settings.described(), record: settings.recordFolder };
+    return {
+      settings: await settings.described(),
+      // Which part of the page each one is drawn on, said here rather than in
+      // the page, so one place decides what belongs with what.
+      parts: settings.PARTS,
+      record: settings.recordFolder,
+    };
   },
 
   async 'POST /settings'({ body }) {

@@ -5731,7 +5731,31 @@ SCREENS.activity = async () => {
 };
 
 SCREENS.settings = async () => {
-  const [{ settings, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
+  const [{ settings, parts, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
+
+  /**
+   * One part of the page, and only if anything belongs on it.
+   *
+   * The whole list used to be one card in the order the settings happened to
+   * be written in — what this computer is called, then where projects go, then
+   * eight about colour, then two about a Google application, then three keys.
+   * Nobody reads that. They scan it, fail to find the one they came for, and
+   * scroll past it twice.
+   */
+  const part = (one) => {
+    const mine = settings.filter((s) => s.where === one.id);
+    if (!mine.length) return '';
+    return `
+      <div class="sect"><h2>${esc(one.name)}</h2></div>
+      ${one.why ? `<p class="sub" style="margin:-.4rem 0 .7rem">${esc(one.why)}</p>` : ''}
+      <div class="card">
+        ${mine.map((s) => `
+          <div class="setting">
+            <div class="about"><b>${esc(s.name)}</b><span>${esc(s.why)}</span></div>
+            <div class="set">${control(s, terminals)}</div>
+          </div>`).join('')}
+      </div>`;
+  };
 
   view.innerHTML = `
     <div class="pagehead">
@@ -5743,26 +5767,26 @@ SCREENS.settings = async () => {
     </div>
     ${saidHtml()}
 
-    <div class="sect"><h2>GitHub</h2></div>
+    <div class="sect"><h2>Who you are signed in as</h2></div>
     <div class="card" id="gh-settings">
-      <div class="setting"><div class="about"><b>Account</b>
+      <div class="setting"><div class="about"><b>GitHub</b>
         <span>Reading who this computer is signed in as…</span></div><div class="set"></div></div>
     </div>
-
-    <div class="sect"><h2>Google</h2></div>
-    <div class="card" id="google-settings">
-      <div class="setting"><div class="about"><b>Accounts</b>
+    <div class="card" id="google-settings" style="margin-top:.6rem">
+      <div class="setting"><div class="about"><b>Google</b>
         <span>Reading…</span></div><div class="set"></div></div>
     </div>
 
-    <div class="sect"><h2>This manager</h2></div>
+    <div class="sect"><h2>Asking about your projects</h2></div>
     <div class="card">
-      ${settings.map((s) => `
-        <div class="setting">
-          <div class="about"><b>${esc(s.name)}</b><span>${esc(s.why)}</span></div>
-          <div class="set">${control(s, terminals)}</div>
-        </div>`).join('')}
+      <div class="setting">
+        <div class="about"><b>Which one answers, and which of its models</b>
+          <span id="ai-here">Reading\u2026</span></div>
+        <div class="set"><button class="small" id="ai-setup-here">Set it up\u2026</button></div>
+      </div>
     </div>
+
+    ${parts.map(part).join('')}
 
     <div class="sect"><h2>Keeping it up to date</h2></div>
     <div class="card" id="newer-settings">
@@ -5770,7 +5794,7 @@ SCREENS.settings = async () => {
         <span>Asking whether a newer Viberant has been released.</span></div><div class="set"></div></div>
     </div>
 
-    <div class="sect"><h2>This computer</h2></div>
+    <div class="sect"><h2>What is written down, and what to do when something is wrong</h2></div>
     <div class="card">
       <div class="setting">
         <div class="about"><b>Everything the manager has written down</b>
@@ -5808,6 +5832,26 @@ SCREENS.settings = async () => {
     });
     setTimeout(() => draw(), 1200);
   };
+
+  /**
+   * One place to set this up, and it is the one that checks the key.
+   *
+   * There used to be three boxes here \u2014 one per company \u2014 that took a key
+   * and kept it without ever asking whether it worked, alongside a menu for
+   * choosing between them. Two ways to do one thing, and the easier one was the
+   * one that could not tell you it had failed. This is the same dialog somebody
+   * gets when they try to ask a question with nothing set up.
+   */
+  $('#ai-setup-here').onclick = () => setUpAi();
+  get('/ai').then((who) => {
+    const line = $('#ai-here');
+    if (!line) return;
+    const ready = (who.models ?? []).filter((m) => m.ready);
+    line.textContent = who.ok
+      ? `${who.name} answers, using ${modelNamed(who, who.using)}.${
+        ready.length > 1 ? ` ${ready.length} companies have a key here.` : ''} The key stays on this computer.`
+      : 'Nothing is set up yet, so questions about a project cannot be answered.';
+  });
 
   drawGitHubSettings();
   drawGoogleSettings();

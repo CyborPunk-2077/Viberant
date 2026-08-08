@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 537 passing on Windows, eight consecutive clean runs. The ones added last hold the two decisions
+**Tests:** 472 in the app and 107 in core — 579 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,67 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## What was fixed in the exposure pass
+
+**Setting up the one that answers no longer sends you somewhere else.** Asking a
+question with nothing set up used to end at "Settings has a box for it", four
+presses from the question already typed. It is a dialog in front of you now: get
+a key from whichever company you pay for, paste it, have it checked with one
+tiny request before anything is kept, and go straight back to the question. A key
+that does not work is never written down. It signs nobody in to anything, and
+says why: paying one of these companies monthly is a different arrangement from a
+key, at all three. Settings has one row that opens the same dialog; the three key
+boxes that could not tell you they had failed are gone. D-157.
+
+**Which model each company uses is a choice, out of one catalogue,** with words a
+person can choose by rather than parameter counts. A name that has since been
+retired falls back to that company's sensible one rather than being sent and
+having the refusal reported as a fault. D-158.
+
+**Two things that worked and could not be found now have places in the rail.**
+Ask is the four questions about the open project, reachable before only by
+opening a project first. Activity is what this computer has going on: long
+errands while they run, what the last build made, what another computer is
+running here, previews still open, and the copies kept before anything was
+written over. All of it existed and worked; none of it could be found by anybody
+who had not read the source. Nothing on Activity starts anything — it shows,
+and it stops. D-159.
+
+**Settings is in parts.** It was one undivided card of twenty-odd rows in the
+order they happened to be written in. Now: who you are signed in as, asking about
+your projects, how it looks, this computer, your other computers, signing in with
+Google, keeping it up to date, and what is written down.
+
+**The red line under Save and send is gone.** It was a one-pixel rule in the
+failure colour running the whole width under a bar of controls — which reads
+as a divider somebody coloured by accident, because that is what it looked like.
+It is a panel now, marked down its own left edge, in amber: nothing has failed,
+a send is waiting for two facts to agree, and both are still true.
+
+**Three faults the pass turned up on its own.**
+
+*A model choice that was saved and silently ignored.* It was kept in a setting
+whose kind coerced every value to true. Caught by a test that set a model and
+asked which one would be sent.
+
+*The word `Repository` at the top of the deploy page,* for as long as the
+vocabulary audit has existed. The audit only read runs of twelve characters or
+more — which keeps code out, along with every short label on every screen.
+It reads down to three now, and machinery is ruled out by what machinery looks
+like. Proved by putting the word back and watching it fail. D-160.
+
+*Two ways in that never stopped asking.* Cancel on a sign-in stopped the polling;
+the corner and the darkened background did not, so the page asked every second
+for as long as the app stayed open and then announced the sign-in over whatever
+screen you had moved to. The cause was that only closing a layer cleared up after
+it — writing a sheet over a sheet ends the first one just as finally. D-161.
+
+**Measured, at 1280, 1366, 1440 and 1920:** nothing runs off the right, nothing
+is cut without a sign, no two controls overlap, and no line anywhere is in a
+colour that means something it does not mean.
 
 ---
 

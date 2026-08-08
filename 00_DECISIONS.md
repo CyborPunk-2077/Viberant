@@ -1766,6 +1766,57 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-157 `[DECIDED]` — A key is checked before it is kept, and set up where it is needed
+
+**Decision.** Asking about a project with nothing set up opens the setup where the question was asked, not a page four presses away. The dialog gets a key from whichever company you already pay for, checks it with one eight-token request, and only then writes it down — then runs the question that could not be asked. Settings has one row that opens the same dialog, and the three key boxes it used to have are gone.
+
+**Why not keep both.** Two ways to do one thing, and the easier one was the one that could not tell you it had failed. A key one character short is indistinguishable from a working one until the first real question comes back refused, at which point the refusal is about something else entirely.
+
+**What it must not do.** It does not sign anybody in. Paying one of these companies every month is a different arrangement from a key at all three of them, and a dialog that blurred the two would produce a refusal nobody could interpret. It says so in as many words.
+
+---
+
+### D-158 `[DECIDED]` — Which model each company uses is a choice out of one catalogue
+
+**Decision.** `CATALOGUE` in `assistant.mjs` holds what each company offers, which is its sensible default, and what each is for in words a person can choose by. A stored choice that is no longer offered falls back to that company's default rather than being sent anyway.
+
+**Why.** A model name written into a request is a name nobody finds when it is retired, and everybody who chose one a year ago would get an error about a model they had never heard of, reported as a fault.
+
+**Found writing the test.** The choice was stored in a setting whose kind coerced every value to true, so it was made, saved, and silently ignored. Settings can now be kept without being listed, which is a different thing from being a yes or a no.
+
+---
+
+### D-159 `[DECIDED]` — A feature nobody can reach is not a feature
+
+**Decision.** Ask and Activity are places in the rail. Ask is the four questions about the open project, which were reachable only by opening a project first. Activity is long errands while they run, what the last build made, what another computer is running here, previews still open, and the copies kept before anything was written over.
+
+**Why.** All of it was built, tested and working, and none of it could be found by anybody who had not read the source. An errand was visible only on the screen that started it, so a build begun on one page and finished on another vanished.
+
+**Nothing on Activity starts anything.** It shows, and it stops.
+
+---
+
+### D-160 `[DECIDED]` — The vocabulary audit reads short labels too
+
+**Decision.** The prose extractor reads runs of three characters, not twelve. The machinery this newly reaches is ruled out by what machinery looks like — braces, underscores, shouting capitals, paths — rather than by raising the length back up.
+
+**Why.** Twelve was chosen to keep code out, and it did, along with every short label on every screen. The word `Repository` sat at the top of the deploy page for as long as this audit has existed: ten characters, never once read by it, because a label is one word and a sentence is not. A label is the most read text on a screen.
+
+**Proved by putting the word back and watching the audit fail.**
+
+---
+
+### D-161 `[DECIDED]` — A layer takes what it started away with it, however it goes
+
+**Decision.** Both ways a layer ends — being closed, and being written over by the next one — run whatever it registered to be stopped. Anything that asks repeatedly hands its clock over.
+
+**Why.** Cancel on a sign-in stopped the asking. The corner, and the darkened background, did not: the page went on asking every second for as long as the app stayed open, and then announced the sign-in over the top of whatever screen you had moved on to. Writing a sheet over a sheet ends the first one as finally as closing it does, and that path cleared up nothing.
+
+**Held by counting** rather than by remembering: every clock the page starts must be handed to something that clears it, every named control must have something listening for it, and nothing may be marked up for a handler that has been taken away.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -28,9 +28,29 @@ const OLD_NAME = join(HOUSE, 'machine-name');
  * The descriptions live here rather than in the page so there is one place to
  * change what a setting claims to do.
  */
+/**
+ * Which part of the settings page each of these belongs on.
+ *
+ * They were one undivided card of twenty-odd rows, in the order they happened
+ * to be written in: what this computer is called, then where projects go, then
+ * a terminal, then eight about colour, then two about a Google application,
+ * then three keys. Nobody reads a list like that — they scan it, fail to find
+ * the one they came for, and scroll past it twice.
+ *
+ * The order below is unchanged, because other things read this list in order.
+ * Only where each one is drawn is new.
+ */
+export const PARTS = [
+  { id: 'look', name: 'How it looks', why: 'Colour only. A look never changes a layout, a control, or a sentence.' },
+  { id: 'computer', name: 'This computer', why: 'What it is called, where work goes, and what opens when something needs a terminal.' },
+  { id: 'others', name: 'Your other computers', why: 'How this one is found, and what it will do without asking.' },
+  { id: 'joined', name: 'Signing in with Google', why: 'Only needed if you want the Google button to work. Nothing else uses this.' },
+];
+
 export const KNOWN = [
   {
     id: 'machineName',
+    where: 'computer',
     name: 'What this computer is called',
     why: 'Your other computers see this name. Make it one you would recognise in a list.',
     kind: 'text',
@@ -38,6 +58,7 @@ export const KNOWN = [
   },
   {
     id: 'workFolder',
+    where: 'computer',
     name: 'Where your projects live',
     why: 'Choosing a folder starts here, and anything you bring down from GitHub or another computer is put here unless you say otherwise.',
     kind: 'folder',
@@ -45,6 +66,7 @@ export const KNOWN = [
   },
   {
     id: 'terminal',
+    where: 'computer',
     name: 'Which terminal to use',
     why: 'When a command-line app opens, this is the terminal it opens in. Leave it on whichever is here and the manager picks for you.',
     kind: 'terminal',
@@ -52,6 +74,7 @@ export const KNOWN = [
   },
   {
     id: 'appearance',
+    where: 'look',
     name: 'Appearance',
     why: 'A look changes colours and nothing else — never a layout, never a control, never a sentence.',
     kind: 'appearance',
@@ -87,6 +110,7 @@ export const KNOWN = [
      * blank screen.
      */
     id: 'wallPicture',
+    where: 'look',
     name: 'Which picture',
     why: 'Any picture on this computer. It is read where it sits — nothing is copied, and nothing about it leaves here.',
     kind: 'picture',
@@ -94,6 +118,7 @@ export const KNOWN = [
   },
   {
     id: 'wallMotion',
+    where: 'look',
     name: 'Movement behind the app',
     why: 'The looks with a picture behind them drift, slowly enough that you notice only if you look. Off here, and off automatically if this computer asks for less movement.',
     kind: 'yesNo',
@@ -101,6 +126,7 @@ export const KNOWN = [
   },
   {
     id: 'wallDim',
+    where: 'look',
     name: 'How dark behind the app',
     why: 'How much of the picture is covered before anything is drawn on top of it. Higher is easier to read.',
     kind: 'slider',
@@ -110,6 +136,7 @@ export const KNOWN = [
   },
   {
     id: 'wallBlur',
+    where: 'look',
     name: 'How soft behind the app',
     why: 'Blurring the picture pushes it further back. It costs a little while something is moving.',
     kind: 'slider',
@@ -119,6 +146,7 @@ export const KNOWN = [
   },
   {
     id: 'opening',
+    where: 'look',
     name: 'Play the opening',
     why: 'The name of the app, once, when it starts. Turning this off makes it appear straight away.',
     kind: 'yesNo',
@@ -135,6 +163,7 @@ export const KNOWN = [
   },
   {
     id: 'googleClientId',
+    where: 'joined',
     name: 'Google sign-in: client ID',
     why: 'A Google sign-in cannot exist without an application registered with Google — that is true of every Google button anywhere. Make one at console.cloud.google.com (type: TV and Limited Input) and paste its ID here.',
     kind: 'text',
@@ -147,6 +176,7 @@ export const KNOWN = [
   },
   {
     id: 'googleClientSecret',
+    where: 'joined',
     name: 'Google sign-in: client secret',
     why: 'The second half of the same thing. It stays on this computer, in the settings file, and goes nowhere but Google.',
     kind: 'secret',
@@ -164,6 +194,8 @@ export const KNOWN = [
      * chose would be spending your money without saying so.
      */
     id: 'askWho',
+    where: 'asking',
+    unlisted: true,
     name: 'Which one to ask',
     why: 'Whichever you already pay for. The question, and the few files it needs, go to that one and nowhere else.',
     kind: 'choice',
@@ -176,6 +208,8 @@ export const KNOWN = [
   },
   {
     id: 'anthropicKey',
+    where: 'asking',
+    unlisted: true,
     name: 'Key for Claude',
     why: 'Lets this manager ask Claude about a project when something fails. It stays on this computer, in the settings file, and is never sent anywhere but Claude. Get one from console.anthropic.com.',
     kind: 'secret',
@@ -185,6 +219,8 @@ export const KNOWN = [
   },
   {
     id: 'openaiKey',
+    where: 'asking',
+    unlisted: true,
     name: 'Key for ChatGPT',
     why: 'The same thing for ChatGPT. It stays on this computer, in the settings file, and is never sent anywhere but OpenAI. Get one from platform.openai.com.',
     kind: 'secret',
@@ -194,6 +230,8 @@ export const KNOWN = [
   },
   {
     id: 'geminiKey',
+    where: 'asking',
+    unlisted: true,
     name: 'Key for Gemini',
     why: 'The same thing for Gemini. It stays on this computer, in the settings file, and is never sent anywhere but Google. Get one from aistudio.google.com.',
     kind: 'secret',
@@ -211,6 +249,7 @@ export const KNOWN = [
      * computers on different networks find each other.
      */
     id: 'workspaceService',
+    where: 'others',
     name: 'Where your computers find each other',
     why: 'Leave this empty and your computers find each other on this network. An address here lets them find each other from anywhere. It never carries your files — only which computers are about.',
     kind: 'text',
@@ -220,6 +259,7 @@ export const KNOWN = [
   },
   {
     id: 'relayService',
+    where: 'others',
     name: 'Where to pass through when a direct line is not possible',
     why: 'Most home connections cannot be reached from outside, so two computers need somewhere to meet. Whatever passes through cannot be read by it — both ends agree a key first.',
     kind: 'text',
@@ -268,6 +308,7 @@ export const KNOWN = [
   },
   {
     id: 'grains',
+    where: 'look',
     name: 'Sand from the pointer',
     why: 'Fine grains fall from the cursor as it moves. They mean nothing and mark nothing — turn them off if they are a distraction.',
     kind: 'yesNo',
@@ -275,6 +316,7 @@ export const KNOWN = [
   },
   {
     id: 'watchFolder',
+    where: 'computer',
     name: 'Notice when a folder changes',
     why: 'Work in another app and come back, and the picture is already right. Turn it off on a very large project if it feels slow.',
     kind: 'yesNo',
@@ -282,6 +324,7 @@ export const KNOWN = [
   },
   {
     id: 'localSharing',
+    where: 'others',
     name: 'Let your other computers reach this one',
     why: 'Needed to send folders to and from the computers on the same network as this one. Nothing is ever sent without you asking.',
     kind: 'yesNo',
@@ -289,6 +332,7 @@ export const KNOWN = [
   },
   {
     id: 'confirmPublic',
+    where: 'others',
     name: 'Ask before letting anyone see a project',
     why: 'A second question before a project on GitHub becomes readable by anybody. Worth keeping on.',
     kind: 'yesNo',
@@ -343,7 +387,7 @@ export async function allSafely() {
 export async function described() {
   const now = await allSafely();
   return KNOWN.filter((s) => s.kind !== 'hidden' && !s.unlisted).map((s) => ({
-    id: s.id, name: s.name, why: s.why, kind: s.kind,
+    id: s.id, name: s.name, why: s.why, kind: s.kind, where: s.where ?? 'computer',
     choices: s.choices ?? null,
     value: now[s.id],
     isDefault: s.kind === 'secret'
