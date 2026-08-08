@@ -178,6 +178,50 @@
   --glow: transparent;
 }
 
+/*
+ * The four that have something behind them.
+ *
+ * Their surfaces are a shade darker than they would otherwise be, because a
+ * panel over a picture needs more separation from it than a panel over a flat
+ * colour needs from that. The accents stay exactly where they are: a colourful
+ * backdrop is not a reason to make the buttons colourful too.
+ */
+:root[data-theme="space"], [data-theme="space"] {
+  --page: #05060a; --deep: #030407; --card: #0b0d14; --raised: #11141d;
+  --lifted: #161a25; --hover: #141722;
+  --line: #232838; --line-soft: rgba(255, 255, 255, .06); --line-strong: #384057;
+  --ink: #f2f4fa; --quiet: #a3aabd; --faint: #737b90; --dim: #545b6d;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #60a5fa;
+  --vibe-a: #7c5cfc; --vibe-b: #9b7dff; --vibe-c: #6366f1;
+}
+
+:root[data-theme="orbital"], [data-theme="orbital"] {
+  --page: #04070d; --deep: #020509; --card: #0a1018; --raised: #101923;
+  --lifted: #15202c; --hover: #131d28;
+  --line: #1f2f3d; --line-soft: rgba(255, 255, 255, .06); --line-strong: #33485c;
+  --ink: #eef4fa; --quiet: #9fb0c0; --faint: #6f8090; --dim: #52616f;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #7dd3fc;
+  --vibe-a: #38a6f0; --vibe-b: #6cc4ff; --vibe-c: #2b7fc4;
+}
+
+:root[data-theme="nebula"], [data-theme="nebula"] {
+  --page: #06040d; --deep: #040309; --card: #0d0a17; --raised: #131020;
+  --lifted: #18142a; --hover: #161226;
+  --line: #271f3c; --line-soft: rgba(255, 255, 255, .06); --line-strong: #3d3159;
+  --ink: #f3effa; --quiet: #a9a0c0; --faint: #7a7192; --dim: #5a536e;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #60a5fa;
+  --vibe-a: #8b5cf6; --vibe-b: #a78bfa; --vibe-c: #6d28d9;
+}
+
+:root[data-theme="rig"], [data-theme="rig"] {
+  --page: #08090b; --deep: #050607; --card: #0e1013; --raised: #14171b;
+  --lifted: #191d22; --hover: #171a1f;
+  --line: #24282e; --line-soft: rgba(255, 255, 255, .055); --line-strong: #383e46;
+  --ink: #f1f3f5; --quiet: #a2a8b0; --faint: #737a83; --dim: #545a62;
+  --live: #34d399; --attention: #fbbf24; --trouble: #fb7185; --cool: #60a5fa;
+  --vibe-a: #4a9eda; --vibe-b: #74baea; --vibe-c: #2f7bb0;
+}
+
 :root[data-theme="neon"], [data-theme="neon"] {
   --page: #07060f; --deep: #040309; --card: #0e0c1a; --raised: #141024;
   --lifted: #191330; --hover: #17122b;
@@ -1765,6 +1809,27 @@ select { cursor: pointer; }
 .who-now { display: inline-flex; align-items: center; gap: var(--s2); }
 .who-now .dot { flex: none; }
 
+/* A number chosen by dragging, with the number itself beside it. */
+.slide { display: inline-flex; align-items: center; gap: var(--s3); }
+.slide .mono {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--faint);
+  min-width: 2rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.slide input[type="range"] {
+  width: 9rem;
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--vibe-a);
+  cursor: pointer;
+}
+.slide input[type="range"]:focus { box-shadow: none; }
+
 /* ------------------------------------------------------------------------- */
 /* Choosing a look by looking at it                                           */
 /*                                                                            */
@@ -2121,6 +2186,61 @@ select { cursor: pointer; }
 /* It carries no meaning. It never marks anything, never points at anything   */
 /* and never indicates state, which is the only rule it has (D-70, D-75).     */
 /* ========================================================================= */
+
+/* ========================================================================= */
+/* What sits behind the application                                          */
+/*                                                                           */
+/* The order here is the whole readability argument, and it is deliberately   */
+/* not glass:                                                                */
+/*                                                                           */
+/*   the picture                                                             */
+/*     ↓ a tone the theme controls, before anything is drawn on it           */
+/*   the surfaces, which stay near-opaque                                    */
+/*     ↓                                                                     */
+/*   the text, which never sits on a photograph                              */
+/*                                                                           */
+/* Making every panel transparent and blurring what is behind it is the       */
+/* fashionable answer and the wrong one: it puts a moving picture directly    */
+/* underneath the words, and no amount of blur makes that as readable as a    */
+/* surface. Blur here supports the tone; it is not the look.                  */
+/* ========================================================================= */
+
+:root { --wall-dim: 0; --wall-blur: 0px; --wall-bright: 1; }
+
+#wall {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  display: none;
+  filter: brightness(var(--wall-bright)) blur(var(--wall-blur));
+  /* Kept on its own layer so moving it never repaints the interface. */
+  will-change: transform;
+}
+#wall-veil {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  display: none;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 40%, transparent 20%, rgba(0, 0, 0, .45) 100%),
+    color-mix(in srgb, var(--page) calc(var(--wall-dim) * 100%), transparent);
+}
+
+.has-wall #wall, .has-wall #wall-veil { display: block; }
+
+/*
+ * With a picture behind it, the app stops painting its own background and the
+ * surfaces take a little of it — a little, not a lot. Everything that holds
+ * information stays as close to opaque as it was.
+ */
+.has-wall body, .has-wall #frame { background: transparent; }
+.has-wall nav { background: color-mix(in srgb, var(--card) 88%, transparent); }
+.has-wall #top { background: color-mix(in srgb, var(--page) 72%, transparent); }
+.has-wall .card,
+.has-wall .sheetlist,
+.has-wall .tally,
+.has-wall .factbar { background: color-mix(in srgb, var(--card) 92%, transparent); }
 
 #grains {
   position: fixed;

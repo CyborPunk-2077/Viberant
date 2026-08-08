@@ -11,6 +11,8 @@
  * here until you press the button, because until then they have not happened.
  */
 
+import * as wall from './wallpaper.js';
+
 const $ = (s) => document.querySelector(s);
 const view = $('#view');
 const layer = $('#layer');
@@ -209,7 +211,27 @@ async function refreshMe() {
   me = await get('/me');
   const look = me.settings?.appearance ?? 'system';
   document.documentElement.dataset.theme = look === 'system' ? '' : look;
+  wallFromSettings(me.settings);
   drawNav();
+}
+
+/**
+ * Put whatever the settings ask for behind the application.
+ *
+ * The only place that decides this. `wear` does nothing when nothing has
+ * changed, which matters because this is reached from every redraw and a
+ * redraw happens whenever anything at all happens — a background that
+ * restarted on every navigation would be worse than having none.
+ */
+function wallFromSettings(s = {}) {
+  const look = s.appearance ?? 'system';
+  wall.wear({
+    scene: wall.SCENE_FOR[look] ?? null,
+    dim: (s.wallDim ?? 55) / 100,
+    blur: s.wallBlur ?? 0,
+    motion: s.wallMotion !== false,
+    brightness: 1,
+  });
 }
 
 /**
@@ -3621,6 +3643,19 @@ SCREENS.settings = async () => {
       draw();
     };
   }
+  for (const r of document.querySelectorAll('[data-slide]')) {
+    // The picture follows the slider as it moves, and the manager is told when
+    // it stops — dragging one of these writes a settings file otherwise, forty
+    // times a second.
+    r.oninput = () => {
+      $(`#slide-${r.dataset.slide}`).textContent = r.value;
+      wallFromSettings({ ...me.settings, [r.dataset.slide]: Number(r.value) });
+    };
+    r.onchange = async () => {
+      await post('/settings', { id: r.dataset.slide, value: Number(r.value) });
+      await refreshMe();
+    };
+  }
   for (const b of document.querySelectorAll('button[data-choose]')) {
     b.onclick = async () => {
       // Applied to the page before the manager is even asked, so choosing a
@@ -3687,6 +3722,13 @@ function control(s, terminals) {
         <span class="what">${esc(c.name)}</span>
         <span class="why">${esc(c.why ?? '')}</span>
       </button>`).join('')}</div>`;
+  }
+  if (s.kind === 'slider') {
+    return `<span class="slide">
+      <input type="range" data-slide="${esc(s.id)}" min="${s.min}" max="${s.max}"
+        value="${esc(String(s.value))}" aria-label="${esc(s.name)}">
+      <span class="mono" id="slide-${esc(s.id)}">${esc(String(s.value))}</span>
+    </span>`;
   }
   if (s.kind === 'terminal') {
     return `<select data-choose="${esc(s.id)}">
@@ -4264,7 +4306,12 @@ const start = async () => {
   const wanted = asAsked();
   shedGrains();
   await refreshMe();
-  if (wanted.look) document.documentElement.dataset.theme = wanted.look;
+  if (wanted.look) {
+    document.documentElement.dataset.theme = wanted.look;
+    // The look asked for in the address drives what is behind the app too,
+    // otherwise a picture of the theme shows its colours and none of its scene.
+    wallFromSettings({ ...me.settings, appearance: wanted.look });
+  }
   const p = await get('/project');
   at.inside = !!p.open;
   if (wanted.place) { at.tab = wanted.place; at.inside = false; }

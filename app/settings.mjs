@@ -60,12 +60,41 @@ export const KNOWN = [
       { id: 'dark', name: 'Obsidian Signal', why: 'The one it is designed in. Near-black, one violet accent, meaning in colour.' },
       { id: 'graphite', name: 'Minimal Graphite', why: 'Neutral throughout. Colour appears only where something is happening.' },
       { id: 'light', name: 'Light Precision', why: 'A warm off-white, precise borders, the same restraint the other way up.' },
+      { id: 'space', name: 'Deep Space', why: 'A star field at three depths, drifting.', scene: true },
+      { id: 'orbital', name: 'Orbital', why: 'The edge of a planet, its air catching light.', scene: true },
+      { id: 'nebula', name: 'Nebula', why: 'Clouds of colour moving past each other.', scene: true },
+      { id: 'rig', name: 'Rig Room', why: 'A dark workstation, lit the way a photograph would light one.', scene: true },
       { id: 'steam', name: 'Deep Blue', why: 'Cool slate and a bright blue.' },
       { id: 'neon', name: 'Neon', why: 'Deep violet with a hard cyan edge.' },
       { id: 'fire', name: 'Ember', why: 'Warm dark, amber and orange.' },
       { id: 'crimson', name: 'Crimson', why: 'Dark plum and magenta.' },
     ],
     fallback: () => 'system',
+  },
+  {
+    id: 'wallMotion',
+    name: 'Movement behind the app',
+    why: 'The looks with a picture behind them drift, slowly enough that you notice only if you look. Off here, and off automatically if this computer asks for less movement.',
+    kind: 'yesNo',
+    fallback: () => true,
+  },
+  {
+    id: 'wallDim',
+    name: 'How dark behind the app',
+    why: 'How much of the picture is covered before anything is drawn on top of it. Higher is easier to read.',
+    kind: 'slider',
+    min: 20,
+    max: 90,
+    fallback: () => 55,
+  },
+  {
+    id: 'wallBlur',
+    name: 'How soft behind the app',
+    why: 'Blurring the picture pushes it further back. It costs a little while something is moving.',
+    kind: 'slider',
+    min: 0,
+    max: 24,
+    fallback: () => 0,
   },
   {
     id: 'opening',
@@ -199,6 +228,15 @@ export async function set(id, value) {
 
   let clean = value;
   if (known.kind === 'yesNo' || known.kind === 'hidden') clean = !!value;
+  if (known.kind === 'slider') {
+    // Held to its own ends rather than trusted. A number arriving from a page
+    // is a number somebody could have typed into the address bar.
+    const n = Number(value);
+    if (!Number.isFinite(n)) {
+      return { ok: false, sentence: `${known.name} has to be a number.`, action: 'Move the slider instead.' };
+    }
+    clean = Math.min(known.max, Math.max(known.min, Math.round(n)));
+  }
   if (known.kind === 'text' || known.kind === 'secret') {
     clean = String(value ?? '').trim().slice(0, known.longest ?? 60);
   }
