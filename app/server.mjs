@@ -694,6 +694,13 @@ const routes = {
     return github.destinationFor(current.dir);
   },
 
+  /** What one project is bound to, for the panel beside the list. */
+  async 'GET /project/binding'({ url }) {
+    const at = url.searchParams.get('path');
+    if (!at || !existsSync(at)) return { bound: false };
+    return github.bindingOf(at);
+  },
+
   async 'POST /publish'({ body }) {
     if (!current) return noProject;
 

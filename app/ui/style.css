@@ -366,11 +366,103 @@ body {
   min-height: 0;
 }
 
+/*
+ * The work, and the thing beside it.
+ *
+ * The inspector is a column that exists only when something is selected, and it
+ * takes its own space rather than floating over the work — a panel that covers
+ * what you selected is a panel you have to close to see what you selected.
+ *
+ * Two scroll containers, each owning its own: the work scrolls, the inspector
+ * scrolls, and neither moves the other. Opening it changes the width of the
+ * work, which is exactly what a resize is, and the scroll position survives one
+ * because `main` keeps its own.
+ */
+#work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0;
+  min-height: 0;
+  min-width: 0;
+  transition: grid-template-columns var(--m-panel) var(--ease);
+}
+#work.with-inspector { grid-template-columns: minmax(0, 1fr) var(--inspector); }
+:root { --inspector: 300px; }
+
 main {
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--s6) var(--s7) var(--s8);
   min-width: 0;
+}
+
+#inspector {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-width: 0;
+  border-left: 1px solid var(--line);
+  background: var(--card);
+  padding: var(--s5);
+}
+#inspector[hidden] { display: none; }
+
+.insp-head {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+  min-width: 0;
+}
+.insp-head .grow { min-width: 0; }
+.insp-head b {
+  display: block;
+  font-size: var(--t-sect);
+  font-weight: var(--w-semi);
+  letter-spacing: -.012em;
+  overflow-wrap: anywhere;
+}
+.insp-head .what { font-size: var(--t-meta); color: var(--faint); }
+
+.insp-fact { padding: var(--s3) 0; border-top: 1px solid var(--line-soft); min-width: 0; }
+.insp-fact:first-of-type { border-top: 0; }
+.insp-fact dt {
+  font-size: var(--t-tiny);
+  font-weight: var(--w-mid);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: 2px;
+}
+.insp-fact dd {
+  margin: 0;
+  font-size: var(--t-sub);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.insp-fact dd.mono { font-family: var(--mono); font-size: var(--t-meta); color: var(--quiet); }
+.insp-fact dd.dim { color: var(--dim); }
+
+.insp-acts { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s5); }
+.insp-acts button { width: 100%; justify-content: flex-start; }
+
+/*
+ * Narrower, it becomes a drawer over the work rather than a column beside it.
+ * At that width taking three hundred pixels from the table would leave the
+ * table unusable, and a thing you opened deliberately is allowed to cover
+ * something while it is open.
+ */
+@media (max-width: 74rem) {
+  #work.with-inspector { grid-template-columns: minmax(0, 1fr) 0; }
+  #inspector {
+    position: fixed;
+    top: var(--top);
+    right: 0;
+    bottom: 0;
+    width: min(320px, 86vw);
+    z-index: 80;
+    box-shadow: var(--shadow-lift);
+    animation: slide-in var(--m-panel) var(--ease);
+  }
+  @keyframes slide-in { from { transform: translateX(100%); } }
 }
 .hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
 .hold.reading { max-width: var(--hold-read); }
@@ -776,8 +868,7 @@ h2:first-of-type { margin-top: 0; }
   width: 26px;
   height: 26px;
   flex: none;
-  align-self: flex-start;
-  margin-top: 1px;
+  align-self: center;
   border: 1px solid var(--line);
   border-radius: var(--r-button);
   background: var(--raised);
@@ -1062,29 +1153,41 @@ h2:first-of-type { margin-top: 0; }
 .projects-cols {
   grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, 8.5rem) minmax(0, auto);
 }
+/*
+ * The mark column is wider than the mark.
+ *
+ * A row carries its own padding, and a subgrid row's items are laid inside that
+ * padding while the tracks come from the table above it — so an item sized to
+ * exactly its track ends up a few pixels into the next one. Measured: a 26px
+ * mark in a 26px track overlapping the name beside it by six pixels, on every
+ * row of two tables.
+ *
+ * Giving the track room rather than chasing the padding is the version that
+ * cannot come back the next time a row's spacing changes.
+ */
 .apps-cols {
-  grid-template-columns: 26px minmax(0, 1fr) minmax(0, 10rem) minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 10rem) minmax(0, auto);
 }
 .term-cols {
-  grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto);
 }
 .offer-cols {
-  grid-template-columns: 26px minmax(0, 1fr) auto minmax(0, 6rem) auto minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 1fr) auto minmax(0, 6rem) auto minmax(0, auto);
 }
 .avail-cols {
-  grid-template-columns: 26px minmax(0, 1fr) auto auto minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 1fr) auto auto minmax(0, auto);
 }
 
 @media (max-width: 74rem) {
   .projects-cols { grid-template-columns: 8px minmax(0, 1fr) auto minmax(0, auto); }
   .projects-cols > :nth-child(4) { display: none; }
-  .offer-cols { grid-template-columns: 26px minmax(0, 1fr) auto auto minmax(0, auto); }
+  .offer-cols { grid-template-columns: 40px minmax(0, 1fr) auto auto minmax(0, auto); }
   .offer-cols > :nth-child(4) { display: none; }
 }
 @media (max-width: 58rem) {
-  .apps-cols { grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto); }
+  .apps-cols { grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto); }
   .apps-cols > :nth-child(3) { display: none; }
-  .avail-cols { grid-template-columns: 26px minmax(0, 1fr) auto minmax(0, auto); }
+  .avail-cols { grid-template-columns: 40px minmax(0, 1fr) auto minmax(0, auto); }
   .avail-cols > :nth-child(3) { display: none; }
 }
 

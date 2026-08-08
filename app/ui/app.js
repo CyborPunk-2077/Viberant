@@ -622,10 +622,64 @@ async function go(tab, { keepSaid = false } = {}) {
   at.tab = tab;
   if (!keepSaid) said = null;
   closePanels();
+  // It describes something on the page you are leaving, so it leaves with it.
+  closeInspector();
   view.classList.toggle('reading', READING.has(tab));
   drawNav();
   await draw();
 }
+
+// ---------------------------------------------------------------------------
+// The thing beside the work
+//
+// Open only when something is selected, and closed by selecting nothing. It
+// shows what is actually known and never invents a field to fill a column: a
+// machine whose address this computer has not been told is a machine with no
+// address line, not one reading "unknown".
+// ---------------------------------------------------------------------------
+
+let inspecting = null;
+
+/** Show something beside the work, or nothing at all. */
+function inspect(what) {
+  inspecting = what;
+  const box = $('#inspector');
+  const work = $('#work');
+  if (!box || !work) return;
+
+  if (!what) {
+    box.hidden = true;
+    box.innerHTML = '';
+    work.classList.remove('with-inspector');
+    for (const on of document.querySelectorAll('.trow.on')) on.classList.remove('on');
+    return;
+  }
+
+  box.hidden = false;
+  work.classList.add('with-inspector');
+  box.innerHTML = `
+    <div class="insp-head">
+      <span class="kindmark">${what.mark ?? ''}</span>
+      <span class="grow"><b>${esc(what.name)}</b><span class="what">${esc(what.kind ?? '')}</span></span>
+      <button class="quiet small icon" id="insp-close" aria-label="Close">✕</button>
+    </div>
+    ${(what.facts ?? []).filter((f) => f.value !== null && f.value !== undefined && f.value !== '')
+    .map((f) => `<dl class="insp-fact">
+        <dt>${esc(f.label)}</dt>
+        <dd class="${f.mono ? 'mono' : ''} ${f.dim ? 'dim' : ''}">${f.html ?? esc(String(f.value))}</dd>
+      </dl>`).join('')}
+    ${(what.acts ?? []).length ? `<div class="insp-acts">${
+  (what.acts ?? []).map((a, i) => `<button class="${a.danger ? 'danger ' : ''}small" data-insp="${i}">${esc(a.what)}</button>`).join('')
+}</div>` : ''}`;
+
+  $('#insp-close').onclick = () => inspect(null);
+  for (const b of box.querySelectorAll('[data-insp]')) {
+    b.onclick = () => what.acts[Number(b.dataset.insp)].run();
+  }
+}
+
+/** Close it when the page underneath changes to something it cannot describe. */
+const closeInspector = () => { if (inspecting) inspect(null); };
 
 // ---------------------------------------------------------------------------
 // Everything by typing
@@ -814,6 +868,7 @@ addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     if (layer.innerHTML) return closeLayer();
     if (document.querySelector('.panel:not([hidden])')) return closePanels();
+    if (inspecting) return inspect(null);
     if (at.inside) {
       at.inside = false;
       post('/close').then(refreshMe).then(() => draw());
@@ -1311,7 +1366,16 @@ SCREENS.projects = async () => {
   lastMarks = d.marks;
 
   for (const el of document.querySelectorAll('[data-open]')) {
-    el.onclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
+    // One press selects and shows what is known about it; two opens it. A row
+    // that opened a project on a single press meant you could not look at one
+    // without leaving the list you were looking at it from.
+    el.onclick = (e) => {
+      if (e.target.closest('button')) return;
+      for (const other of document.querySelectorAll('.trow.on')) other.classList.remove('on');
+      el.classList.add('on');
+      inspectProject(d.projects.find((p) => p.path === el.dataset.open));
+    };
+    el.ondblclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
     // The same items the overflow button opens. Never the only way to reach them.
     el.oncontextmenu = (e) => {
       e.preventDefault();
@@ -1338,6 +1402,64 @@ SCREENS.projects = async () => {
     };
   }
 };
+
+/**
+ * One project, beside the list it is in.
+ *
+ * Only what this computer actually knows. Where a project has no copy on GitHub
+ * there is no repository line at all — an empty field reading "none" is a field
+ * that costs a row and says nothing.
+ *
+ * The repository is asked for separately because it means going to the project
+ * on disk, and the rest of this appears at once.
+ */
+async function inspectProject(p) {
+  if (!p) return inspect(null);
+
+  const facts = [
+    { label: 'Where it is', value: p.path, mono: true },
+    { label: 'State', value: MARK_LOOK[p.mark]?.name ?? 'Yet to start' },
+    { label: 'Last saved', value: p.saved },
+    { label: 'Unsaved changes', value: p.unsaved || null },
+    { label: 'Kind', value: p.kind },
+    { label: 'Your other computers', value: p.private ? 'Not offered' : 'Offered' },
+  ];
+
+  inspect({
+    name: p.name,
+    kind: 'Project',
+    mark: KIND_MARK.project,
+    facts,
+    acts: [
+      { what: 'Open it', run: () => openProject(p.path) },
+      { what: 'Show it in Explorer', run: () => post('/reveal', { path: p.path }) },
+      { what: 'What is in it', run: () => statusSheet(p.path) },
+      { what: 'Take it out of this list', run: () => forgetProject(p.path) },
+      { what: 'Delete it from this computer…', danger: true, run: () => deleteProject(p.path) },
+    ],
+  });
+
+  // The binding, once the project has been asked. Added to what is already on
+  // screen rather than replacing it, so nothing moves when it arrives.
+  const b = await get(`/project/binding?path=${encodeURIComponent(p.path)}`);
+  if (inspecting?.name !== p.name) return;
+  if (!b?.bound) return;
+
+  inspect({
+    ...inspecting,
+    facts: [
+      ...facts.slice(0, 1),
+      {
+        label: 'GitHub',
+        mono: true,
+        value: `${b.owner}/${b.repo}`,
+        html: `<a href="${esc(b.url ?? '#')}" target="_blank" rel="noreferrer">${esc(b.owner)}/${esc(b.repo)}</a>`,
+      },
+      { label: 'Line', value: b.branch, mono: true },
+      ...facts.slice(1),
+    ],
+  });
+}
 
 /**
  * The four marks, kept from the last time the list was drawn.
