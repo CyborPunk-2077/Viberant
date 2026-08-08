@@ -227,9 +227,20 @@ export async function whatItCanDo(dir) {
   const scripts = look?.scripts ?? {};
   const manager = look?.manager ?? 'npm';
 
-  const named = {};
+  /**
+   * A bare object, with no inherited anything.
+   *
+   * An ordinary `{}` answers to `__proto__` and `constructor` because every
+   * object does, so a name arriving from another computer reached straight
+   * through the "is this one of ours" check and came back holding a function.
+   * It threw rather than running anything, which is luck rather than design.
+   * Nothing is inherited here, and the lookup below asks for an own property.
+   */
+  const named = Object.create(null);
   for (const name of ['build', 'dev', 'start', 'test', 'preview']) {
-    if (scripts[name]) named[name] = `${manager} run ${name}`;
+    if (Object.hasOwn(scripts, name) && typeof scripts[name] === 'string') {
+      named[name] = `${manager} run ${name}`;
+    }
   }
 
   return {
@@ -260,8 +271,8 @@ export async function doNamed({
   }
 
   const can = await whatItCanDo(dir);
-  const command = can.commands[name];
-  if (!command) {
+  const command = Object.hasOwn(can.commands, String(name)) ? can.commands[String(name)] : null;
+  if (typeof command !== 'string' || !command) {
     return {
       ok: false,
       sentence: `This project has nothing called ${name} to run.`,

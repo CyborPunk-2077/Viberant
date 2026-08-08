@@ -217,7 +217,12 @@ describe('what a project may be asked to do comes out of the project', () => {
 
     // `runner` may only ever come from the project's own list.
     assert.match(code, /const \[runner, \.\.\.args\] = command\.split\(' '\)/);
-    assert.match(code, /const command = can\.commands\[name\]/);
+
+    // And the lookup that produces it asks for an own property of a bare
+    // object, so a name from the wire cannot reach through to anything the
+    // project did not put there.
+    assert.match(code, /Object\.hasOwn\(can\.commands, String\(name\)\)/);
+    assert.match(code, /Object\.create\(null\)/);
   });
 
   test('a project that is not here says so rather than failing oddly', async () => {
