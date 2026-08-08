@@ -776,6 +776,22 @@ const routes = {
   },
 
   /**
+   * Ask for a change. Nothing is written — what comes back is a proposal.
+   *
+   * Separate from applying it, and it has to stay separate: this one can be
+   * reached by typing a sentence, and the other one cannot be reached at all
+   * except by pressing something that has already listed every file it touches.
+   */
+  async 'POST /ai/propose'({ body }) {
+    if (!current) return noProject;
+    const wanted = String(body?.wanted ?? '').trim();
+    if (wanted.length < 4) {
+      return { ok: false, sentence: 'There was nothing to ask for.', action: 'Say what you want changed.' };
+    }
+    return assistant.proposeChange({ dir: current.dir, wanted });
+  },
+
+  /**
    * Do what was suggested.
    *
    * Its own route, reached only from a screen that has already shown every file

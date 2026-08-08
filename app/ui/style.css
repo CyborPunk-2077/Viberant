@@ -1373,6 +1373,48 @@ h2:first-of-type { margin-top: 0; }
   background: var(--raised);
 }
 
+/*
+ * A change that has been offered but not made.
+ *
+ * Every file it would write is listed and openable before there is anything to
+ * press, because approving a change you cannot see is not approving it.
+ */
+.proposal {
+  margin-top: var(--s4);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--attention);
+  border-radius: var(--r-input);
+  background: var(--deep);
+  min-width: 0;
+}
+.proposal > .head {
+  font-size: var(--t-tiny);
+  font-weight: var(--w-mid);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--faint);
+  margin-bottom: var(--s2);
+}
+.change { border-top: 1px solid var(--line-soft); }
+.change:first-of-type { border-top: 0; }
+.change summary {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s2) 0;
+  cursor: pointer;
+  font-size: var(--t-sub);
+  min-width: 0;
+}
+.change summary .mono {
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.change pre { margin: 0 0 var(--s3); max-height: 16rem; }
+
 /* Where it came from, said quietly and always. */
 .ai-from {
   margin-top: var(--s3);

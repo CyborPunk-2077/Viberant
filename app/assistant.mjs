@@ -372,6 +372,100 @@ async function lookInside(dir, question) {
 const STOP = new Set(['where', 'what', 'which', 'this', 'that', 'does', 'from', 'with',
   'here', 'there', 'have', 'file', 'files', 'project', 'handled', 'happens', 'work']);
 
+/**
+ * Ask for a change, and get it back as something to approve.
+ *
+ * The model is asked for whole files rather than for a patch. A patch has to
+ * apply cleanly against text it was not shown all of, and when it does not the
+ * failure is a half-edited file — which is the worst outcome available here.
+ * A whole file either replaces the old one or does not.
+ *
+ * What comes back is *read* into a proposal and never executed. If it is not
+ * the shape asked for, that is a refusal rather than a best effort: guessing at
+ * a malformed answer is how something writes a file nobody meant.
+ */
+export async function proposeChange({ dir, wanted }) {
+  const context = await contextFor(dir);
+  const only = (context.files ?? []).map((f) => f.name);
+
+  const out = await askModel({
+    mostTokens: 4000,
+    system: [
+      VOICE,
+      'You are being asked for a change to this project.',
+      'Answer with JSON and nothing else — no explanation outside it, no code fences.',
+      'Shape: {"what":"one sentence saying what this does","files":[{"path":"relative/path","becomes":"the entire new contents of that file"}]}',
+      'Give the COMPLETE new contents of each file, not a fragment and not a patch.',
+      'Change as few files as possible. Never touch a file you were not shown unless creating it.',
+      'If you cannot do it safely from what you were given, answer {"what":"...","files":[]} saying why.',
+    ].join(' '),
+    message: [
+      `Wanted: ${wanted}`,
+      '',
+      asPrompt(context),
+      '',
+      only.length ? `Files you have been shown in full: ${only.join(', ')}` : '',
+    ].join('\n'),
+  });
+
+  if (!out.ok) return out;
+
+  const said = readJson(out.text);
+  if (!said || !Array.isArray(said.files)) {
+    return {
+      ok: false,
+      sentence: 'The answer did not come back in a shape that can be applied, so nothing was changed.',
+      action: 'Ask again, or ask it to explain instead.',
+    };
+  }
+
+  const changes = said.files
+    .filter((f) => typeof f?.path === 'string' && typeof f?.becomes === 'string')
+    .map((f) => ({ path: f.path.replace(/^[./\\]+/, ''), becomes: f.becomes }));
+
+  if (!changes.length) {
+    return {
+      ok: true,
+      nothingToDo: true,
+      sentence: said.what || 'It did not find a change it could make safely.',
+      action: 'Try describing what you want differently.',
+      model: out.model,
+    };
+  }
+
+  // What each file is now, so the page can show the difference rather than
+  // only the result — approving a change you cannot see is not approving it.
+  for (const c of changes) {
+    const at = join(resolve(dir), c.path);
+    c.was = existsSync(at) ? await quiet(() => readFile(at, 'utf8'), null) : null;
+  }
+
+  const one = await propose({ dir, what: said.what || wanted, changes });
+  return { ok: true, proposal: one, model: out.model };
+}
+
+/**
+ * JSON out of an answer, whether or not it arrived on its own.
+ *
+ * Models put fences round things. Reading past them is worth four lines;
+ * refusing the whole answer because of punctuation is not.
+ */
+function readJson(text) {
+  const raw = String(text ?? '').trim()
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/, '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end <= start) return null;
+  try { return JSON.parse(raw.slice(start, end + 1)); } catch { return null; }
+}
+
+/**
+ * Reachable from a test, because reading somebody else's answer is where a
+ * mistake turns into a written file. Nothing in the app calls this directly.
+ */
+export const __testOnly = { readJson };
+
 // ---------------------------------------------------------------------------
 // Proposals, which are never applied on their own
 // ---------------------------------------------------------------------------

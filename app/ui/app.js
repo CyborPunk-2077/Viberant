@@ -717,6 +717,7 @@ const AI_STEPS = {
   diagnose: ['Reading the project', 'Looking for what would stop it'],
   review: ['Reading what you changed', 'Looking it over'],
   ask: ['Reading the project', 'Looking for what you asked about', 'Answering'],
+  propose: ['Reading the project', 'Working out the change', 'Writing it out'],
 };
 
 let asking = null;
@@ -767,9 +768,60 @@ async function askAssistant(kind, where, body = {}) {
     return;
   }
 
+  if (r.proposal) return showProposal(box, r);
+
+  if (r.nothingToDo) {
+    box.innerHTML = `
+      <div class="ai-state">
+        <span>${esc(r.sentence)}</span>
+      </div>
+      <div class="ai-from">${esc(r.action ?? '')}</div>`;
+    return;
+  }
+
   box.innerHTML = `
     <div class="ai-said">${asParagraphs(r.text)}</div>
     <div class="ai-from">Answered by ${esc(r.model ?? 'the model')}, from this project only.</div>`;
+}
+
+/**
+ * A change somebody has been offered, with every file it would touch.
+ *
+ * Approving a change you cannot see is not approving it, so this shows what
+ * each file becomes before there is anything to press. The button says how many
+ * files it will write, because "Apply" on its own does not say what it costs.
+ */
+function showProposal(box, r) {
+  const p = r.proposal;
+
+  box.innerHTML = `
+    <div class="ai-said"><p>${esc(p.what)}</p></div>
+    <div class="proposal">
+      <div class="head">Would change ${p.changes.length === 1 ? 'one file' : `${p.changes.length} files`}</div>
+      ${p.changes.map((c, i) => `
+        <details class="change">
+          <summary>
+            <span class="mono">${esc(c.path)}</span>
+            <span class="chip">${c.was === null ? 'new' : 'replaced'}</span>
+          </summary>
+          <pre class="log">${esc(c.becomes.slice(0, 4000))}${c.becomes.length > 4000 ? '\n…' : ''}</pre>
+        </details>`).join('')}
+      <div class="bar" style="margin:.7rem 0 0">
+        <button class="go small" id="prop-yes">Apply to ${p.changes.length === 1 ? 'the file' : `${p.changes.length} files`}</button>
+        <button class="quiet small" id="prop-no">Leave it</button>
+      </div>
+    </div>
+    <div class="ai-from">Suggested by ${esc(r.model ?? 'the model')}. Nothing has been changed yet.</div>`;
+
+  $('#prop-no').onclick = () => { box.innerHTML = ''; };
+  $('#prop-yes').onclick = async () => {
+    const b = $('#prop-yes');
+    b.disabled = true;
+    b.classList.add('working');
+    const out = await post('/ai/apply', { id: p.id });
+    say(out);
+    draw();
+  };
 }
 
 /**
@@ -2094,6 +2146,8 @@ async function drawOpenProject() {
           <input id="ai-q" placeholder="Where is signing in handled?" aria-label="Ask about this project">
         </label>
         <button class="small" id="ai-ask">Ask</button>
+        <button class="small" id="ai-change"
+          data-tip="Asks for a change and shows every file it would write, before anything happens">Ask for a change</button>
       </div>
       <div id="ai-out"></div>
     </div>
@@ -2143,6 +2197,11 @@ async function drawOpenProject() {
   };
   $('#ai-ask').onclick = askIt;
   $('#ai-q').onkeydown = (e) => { if (e.key === 'Enter') askIt(); };
+  $('#ai-change').onclick = () => {
+    const q = $('#ai-q').value.trim();
+    if (!q) return say({ ok: false, sentence: 'There was nothing to ask for.', action: 'Say what you want changed first.' }) && draw();
+    askAssistant('propose', '/ai/propose', { wanted: q });
+  };
 
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');

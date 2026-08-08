@@ -177,3 +177,44 @@ describe('nothing reaches a file without being agreed to', () => {
     assert.ok(set.where, 'and says where to get one');
   });
 });
+
+/**
+ * A change that was asked for, before it is a change.
+ *
+ * The dangerous moment is not the model being wrong — it is the product being
+ * clever about an answer it did not understand. A malformed reply has to be a
+ * refusal, because guessing at one is exactly how something writes a file
+ * nobody meant.
+ */
+describe('an answer that is not the shape asked for is refused', () => {
+  test('fenced JSON is still read, because punctuation is not a reason to fail', async () => {
+    const { __testOnly } = await import('../assistant.mjs');
+    const shapes = [
+      '{"what":"a","files":[]}',
+      '```json\n{"what":"a","files":[]}\n```',
+      '```\n{"what":"a","files":[]}\n```',
+      'Here you go:\n{"what":"a","files":[]}\nhope that helps',
+    ];
+    for (const text of shapes) {
+      assert.deepEqual(__testOnly.readJson(text), { what: 'a', files: [] }, text.slice(0, 24));
+    }
+  });
+
+  test('anything that is not JSON at all reads as nothing, rather than as something', async () => {
+    const { __testOnly } = await import('../assistant.mjs');
+    for (const text of ['I would change src/app.js', '', 'null', '{ broken']) {
+      assert.equal(__testOnly.readJson(text), null, text);
+    }
+  });
+
+  test('a proposal keeps what each file was, so a change can be looked at', async () => {
+    const assistant = await import('../assistant.mjs');
+    const one = await assistant.propose({
+      dir: project,
+      what: 'Change the readme',
+      changes: [{ path: 'README.md', was: 'old\n', becomes: 'new\n' }],
+    });
+    assert.equal(one.changes[0].was, 'old\n');
+    assert.equal(one.changes[0].becomes, 'new\n');
+  });
+});
