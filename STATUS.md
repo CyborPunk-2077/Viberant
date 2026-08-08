@@ -3,9 +3,10 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 296 passing on Windows, and the new ones are the ones that matter:
-a parcel that lies about its own size is caught, a folder that is empty on
-purpose survives, and two transfers cannot fight over one folder.
+**Tests:** 328 passing on Windows. The ones added last hold the two decisions
+that would be most expensive to lose: nothing that decides where work goes can
+read a Google account, and there is no code anywhere that could download an
+update and run it.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
@@ -174,31 +175,87 @@ shows what this computer actually knows, with its repository once the project
 has been asked; two presses opens it. Its own column above 74rem, a drawer
 below. Two scroll containers, neither moving the other. D-118.
 
+---
+
+## What was finished after that
+
+**Google is a list of names now, and names decide nothing.** A work address and
+a personal one can both be here; signing in to the second used to sign you out
+of the first, silently. Its own section in Settings, well away from GitHub,
+because the two are constantly confused and only one of them decides anything.
+A test asserts that no file which chooses an account, a remote or a place to
+deploy can even import the Google module. D-130.
+
+**The workspace stops growing forever.** Being about wrote a small save every
+couple of minutes and nothing ever pruned them — a quarter of a million saves a
+year in a project every computer keeps a copy of. Computers not heard from in
+ninety days have their word dropped, conversations are trimmed, and past five
+hundred saves the whole history is folded back into one. Every file survives
+exactly as it stands; what is lost is the list of moments they were written.
+A computer whose copy no longer lines up now takes the other one whole instead
+of never pulling again, silently, forever. D-131, closing O-9.
+
+That fold is the only irreversible step in the product, so it is guarded by four
+checks a test can stand on: the right folder by resolved path, an address
+carrying the workspace's own name, nothing unwritten, and nothing moved since it
+was last read. One test sends it at somebody's real project and proves it
+refuses and leaves the computer exactly as it found it.
+
+**It checks whether there is a newer Viberant, and refuses to install it.** It
+asks what has been released, says what is new in the words the release was
+written in, and opens the page in your browser. It does not download anything
+and it does not run anything, because the protection against a hijacked update
+is not care and not HTTPS — it is a signature this app does not have yet. What
+has to be true before that step can exist is on the Settings page rather than in
+a comment. A test reads the module and proves there is no way in it to fetch a
+file, write one, or start any program other than the one that asks what has been
+released. D-132.
+
+**The Workspace page had its design pass, and it found a fault everywhere
+else.** Its three lists became sheets with aligned columns like every other
+page, this computer moved into the list as its first row rather than sitting
+under its own heading below the others, and one press on a computer or an offer
+opens the inspector. D-133.
+
+The fault: dropping a column on a narrow window was written
+`.projects-cols > :nth-child(4)`, and a sheet's direct children are its **rows**.
+It was hiding the fourth project, the third computer, whichever row landed on
+that number, on any window under 74rem. It survived every audit this project has
+run because each list was short enough that the number fell past the last row.
+Found by measuring — an audit that walks every row and asks whether any has
+`display: none`. D-134.
+
+**Five more looks**, four of them with a picture: Andromeda, Deep Field, Event
+Horizon, Mars Horizon, and Tactical. Generated here rather than shipped, which
+keeps somebody else's artwork and somebody else's licence out of this entirely.
+A test fails on any look that leaves a variable out, because that does not error
+— it silently inherits the look above.
+
+**Asking about a project reached the command palette.** Those four buttons live
+at the bottom of the project page, which is the right place to find them and the
+wrong place to be when the thought arrives.
+
+---
+
 *Left, and stated plainly rather than glossed. In priority order.*
 
-- **No multi-Google.** GitHub supports several accounts; Google is still one.
-- **No auto-update, no diagnostics export.** §19 and §20 untouched. The updater
-  in particular should not be half-built: an update path that fetches and runs
-  code without verifying a signature is worse than none, so the honest options
-  are to do it properly or to say it is not there.
-- **AI proposes nothing yet.** The approval gate, the path check and the
-  proposal store are built and tested; what is missing is the errand that asks a
-  model for a change in that shape. Asking about a project works; asking it to
-  change one does not.
-- **No AI in the command palette**, and no per-provider choice beyond the one.
-- **Workspace's second polish pass.** It is structurally right — one canonical
-  list of remote offers, typed rows, transfer progress — and has not had the
-  individual design attention Projects, AI apps, Terminals, Deploy and Settings
-  have had.
+- **The installer has not been built since any of this.** `npm run build`.
+  Everything above is in the source; the installed copy still has the old code.
 - **Resuming an interrupted transfer.** It fails honestly and retries from the
   start. It does not pick up where it stopped. Per the brief's own priority,
   reliable transfer and honest retry came first and both are done.
+- **No custom wallpaper of your own.** Seventeen looks, four of them scenes, and
+  no way to point at a picture on this computer. Deliberately last: a picture
+  somebody chose is the one thing here that can be unreadable, and the answer to
+  that is more work than the picker.
 - **The scenes are barely visible** on a screen full of opaque panels. That is
   correct by the readability rule and still worth revisiting: a little more
   breathing room in the gutters would let them read without putting text on a
   picture.
-- **The inspector is on Projects only.** Machines and offered items on the
-  Workspace page would suit one and do not have one yet.
+- **No per-provider choice for asking.** One model, named in Settings.
+- **Signing an installer.** Until there is a certificate, the update path stops
+  at opening the download page, on purpose. Nothing to build here — something to
+  buy and keep safe.
 
 > **Read this first if you are running the installed copy.** Everything below was
 > fixed in the source. The installer in `dist/` still has the old code, and the
@@ -388,7 +445,7 @@ failing in silence.
 
 **The last step of a deploy has never run.** What is offered, what is missing, what builds, what came out — all tested. The step that actually reaches Vercel or cuts a release has not, because running it means putting something real into the world.
 
-**Nothing prunes the shared workspace.** Being about writes a small save every two minutes. Left running for a year that is a lot of saves in a project nobody reads.
+**~~Nothing prunes the shared workspace.~~** Done. It prunes computers not heard from in ninety days, trims what was said, and folds its whole history back into one save past five hundred. D-131.
 
 **Still no icon of its own.** It wears Electron's default. That needs a drawing, not code.
 
