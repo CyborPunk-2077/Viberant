@@ -701,3 +701,101 @@ export async function apply(id) {
     action: 'Look at what changed before you save it.',
   };
 }
+
+// ---------------------------------------------------------------------------
+// Two computers, and why one of them will not build
+// ---------------------------------------------------------------------------
+
+/**
+ * Why does this work here and not there?
+ *
+ * The question everybody has actually asked out loud, answered from facts
+ * rather than from guessing: two lists of versions, two package managers, two
+ * sets of setting *names*. `machines.mjs` gathers them and decides what a model
+ * may be told; this asks the question.
+ *
+ * **No secret value can reach this**, and not because the prompt is careful —
+ * because the comparison it is given has never held one. The only environment
+ * facts in it are names and counts, and the file with real values in it is
+ * never opened anywhere in this product (D-125).
+ */
+export async function whyDifferent({ mine, theirs, comparison, what = null }) {
+  const machines = await import('./machines.mjs');
+  const side = machines.forAModel(mine, theirs, comparison);
+
+  return askModel({
+    system: [
+      VOICE,
+      'You are comparing two developer machines to explain a difference in behaviour.',
+      'Name the most likely cause first, then the evidence for it from the list given.',
+      'If the list does not contain enough to be sure, say which fact would settle it.',
+      'Environment settings are given by name only. Never ask for their values.',
+    ].join(' '),
+    mostTokens: 900,
+    message: withoutSecrets([
+      what ? `What is happening: ${what}` : 'Something works on machine A and not on machine B.',
+      '',
+      side,
+    ].join('\n')),
+  });
+}
+
+/**
+ * Is this build likely to work over there?
+ *
+ * Asked before starting something that takes twenty minutes on somebody else's
+ * computer. It answers from the same two lists, and it answers with a
+ * recommendation rather than an instruction — **nothing here may start
+ * anything.** A model saying "this will work on RTX-PC" is a sentence on a
+ * screen next to a button a person presses.
+ */
+export async function likelyToBuildThere({ mine, theirs, comparison, project = null }) {
+  const machines = await import('./machines.mjs');
+
+  return askModel({
+    system: [
+      VOICE,
+      'You are judging whether a build that works on machine A would work on machine B.',
+      'Answer with: likely, unlikely, or cannot tell — then why, in one short paragraph.',
+      'Base it only on the differences listed. Do not invent versions or settings.',
+      'You are not able to run anything. Do not write instructions as though you were.',
+    ].join(' '),
+    mostTokens: 600,
+    message: withoutSecrets([
+      project ? `Project: ${project}` : '',
+      machines.forAModel(mine, theirs, comparison),
+    ].filter(Boolean).join('\n')),
+  });
+}
+
+/**
+ * Why did that fail over there?
+ *
+ * The same explanation `explainFailure` gives, with the difference between the
+ * two machines added — because on a remote build the difference between the
+ * machines *is* usually the answer, and without it a model is looking at a log
+ * from a computer it knows nothing about.
+ */
+export async function whyItFailedThere({ what, lines = [], mine, theirs, comparison }) {
+  const machines = await import('./machines.mjs');
+  const tail = lines.slice(-60).join('\n');
+
+  return askModel({
+    system: [
+      VOICE,
+      'A build or run failed on a different machine from the one it works on.',
+      'Say the likely cause, the evidence in the output, and one thing to try.',
+      'The two machines differ as listed. Consider that first before anything else.',
+    ].join(' '),
+    mostTokens: 900,
+    message: withoutSecrets([
+      `What was being done: ${what}`,
+      '',
+      'The two machines:',
+      machines.forAModel(mine, theirs, comparison),
+      '',
+      'What it said, at the end:',
+      tail,
+    ].join('\n')),
+  });
+}
