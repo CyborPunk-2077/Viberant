@@ -3,12 +3,37 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 278 passing on Windows, and the new ones are the ones that matter:
+**Tests:** 287 passing on Windows, and the new ones are the ones that matter:
 a parcel that lies about its own size is caught, a folder that is empty on
 purpose survives, and two transfers cannot fight over one folder.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
+
+**No account name decides anything.** The source was searched; one name exists —
+Viberant's own issue list — and it was called `HOME`, which beside an owner/name
+pair reads like somebody's account. A test now reads every file that decides
+where work goes and fails on any owner/name literal in it. D-119.
+
+**The account popover floats.** It hung inside the rail, which scrolls, so it was
+clipped by it and gave the rail a sideways scrollbar. Verified with a
+55-character account name at a 60px rail: fully inside the window, nothing
+clipped, no scrollbar anywhere. D-120.
+
+**A foreign remote no longer offers to switch accounts.** It states both facts
+and offers to connect *this project* to the account in use — one project rather
+than every project. The old address is kept under another name. D-121.
+
+**Vercel is a real provider.** One shape for places a website can go, so a second
+is a file rather than a rewrite. The first deploy connects it in the same errand;
+after that it is one press. The address is read out of what Vercel printed and
+remembered against that project. D-122.
+
+**A project knows what it is.** Next, Nuxt, Astro, SvelteKit, Remix, Vite, Vue
+and React from a real dependency; the package manager from the lock file. The
+names of environment settings are read and **the values never are** — held by a
+test that fails if any value appears in what inspection returns. D-123, D-124.
+
 
 **Work goes where the app says it goes.** Viberant showed one GitHub account and
 pushed as another, because those are two identity systems that nothing was
@@ -129,8 +154,20 @@ shows what this computer actually knows, with its repository once the project
 has been asked; two presses opens it. Its own column above 74rem, a drawer
 below. Two scroll containers, neither moving the other. D-118.
 
-*Left, and stated plainly rather than glossed.*
+*Left, and stated plainly rather than glossed. In priority order.*
 
+- **No AI integration.** §9 to §11 of the brief — the assistant, error
+  explanation, project Q&A, approval-gated change proposals — is not started.
+  It is the largest unbuilt block and the one with the most design in it: the
+  approval gate and the "context is this project only" rule have to be built
+  in from the first line, not added afterwards.
+- **No unified Jobs centre.** Transfers and errands each have their own
+  reporting; §12's single list across transfer, push, build, deploy and AI does
+  not exist. The top bar shows transfers only.
+- **No multi-Google.** GitHub supports several accounts; Google is still one.
+- **No project health panel.** The inspection that feeds it exists
+  (`providers.inspect`) and nothing renders it yet.
+- **No auto-update, no diagnostics export.** §19 and §20 untouched.
 - **Workspace's second polish pass.** It is structurally right — one canonical
   list of remote offers, typed rows, transfer progress — and has not had the
   individual design attention Projects, AI apps, Terminals, Deploy and Settings

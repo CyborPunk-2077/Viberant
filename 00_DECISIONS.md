@@ -1341,6 +1341,64 @@ Making that panel incremental was right: rebuilding it every second threw away t
 
 ---
 
+### D-119 `[LOCKED]` — One account name exists in the source, and it decides nothing
+
+**Decision.** Exactly one account name is written down: the address of Viberant's own issue list, named `ISSUES_FOR_VIBERANT`. A test reads every file that decides where work goes and fails on any owner/name literal in them.
+
+**Why.** A name left in the source from whichever computer the product was built on acts as a default nobody chose, and the reported fault was work reaching an account nobody chose. The search found only the issue list — but it was called `HOME`, and `HOME` beside an owner/name pair reads like somebody's account, which is exactly the confusion worth removing.
+
+**The test is the point, not the search.** Searching once proves today. The test is what makes it still true after the next person adds a convenience.
+
+---
+
+### D-120 `[DECIDED]` — A panel that hangs out of something that scrolls has to leave it
+
+**Decision.** Panels marked `data-floats` are positioned against the window, measured at the moment their contents are decided.
+
+**Why.** The account menu lives at the foot of the rail, and the rail scrolls. **An absolutely-positioned child of a scrolling box is clipped by that box and counts towards what it has to scroll** — so the menu was cut off at the rail's edge and gave the rail a sideways scrollbar. That is the reported protrusion, and no width fixes it because the container was the problem.
+
+**Measured when its size is decided, not when it appears.** The first attempt measured at opening, while it still said "looking…" — three lines tall. The real content then arrived at ten times that and hung off the bottom of the window. Placing something by its size means placing it whenever its size changes.
+
+---
+
+### D-121 `[LOCKED]` — A foreign remote is not an invitation to switch accounts
+
+**Decision.** When a project belongs to one account and Viberant is signed in as another, both facts are stated and the offer is to connect *this project* to the account in use. The old address is kept under another name, never replaced.
+
+**Why.** Offering "switch to whoever owns this" treats the account somebody deliberately signed in as as the thing that is wrong, and it is the one option that quietly changes what every *other* project on the computer will do. Connecting one project changes one project, which is what somebody in that situation actually meant.
+
+**Why the old address is kept.** Discarding where somebody's work used to go, in order to make a send succeed, is exactly the kind of quiet damage this product is not allowed to do. It is written into the project under `where-it-used-to-go`, before anything is repointed, so there is never a moment where it exists nowhere.
+
+---
+
+### D-122 `[LOCKED]` — The account is per computer; the binding is per project
+
+**Decision.** A deployment provider's sign-in belongs to the computer. Where a project deploys belongs to that project, kept by path and compared without case.
+
+**Why.** These have genuinely different lifetimes, and conflating them produces the failure that costs somebody a website: switch from project A to project B, press Deploy, and B goes over A's site because something about A was still held.
+
+**Held by a test** rather than by care: binding one leaves the other alone, and binding the second does not move the first.
+
+---
+
+### D-123 `[LOCKED]` — The names of settings are read; the values are not
+
+**Decision.** Project inspection reports which environment settings a project expects, from its example file. The file holding real values is never read.
+
+**Why.** Knowing `DATABASE_URL` is expected and missing is the entire useful half. The value is the half that must never enter this process — because what inspection returns is shown on a screen, written into logs, and, the moment anything here can ask a model about a project, sent somewhere.
+
+**A test fails if any value appears in what inspection returns**, which is the only version of this rule that survives somebody adding a field later.
+
+---
+
+### D-124 `[DECIDED]` — What a project is, is read out of the project
+
+**Decision.** Frameworks are recognised by a dependency actually present in `package.json`; the package manager by which lock file exists. A folder with none of those is not called a website.
+
+**Why.** Guessing from folder layout is right until somebody arranges their folders differently, and the cost of being wrong is offering to publish somebody's notes as a website. A folder of notes now gets no offer at all, which is the honest answer.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
