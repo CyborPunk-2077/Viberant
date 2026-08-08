@@ -62,7 +62,7 @@ export function all() {
  * matching words against "Bringing" is the sort of rule that breaks the day
  * somebody rewords a sentence.
  */
-export const KINDS = ['transfer', 'build', 'deploy', 'send', 'other'];
+export const KINDS = ['transfer', 'sync', 'git', 'build', 'remote', 'deploy', 'send', 'ai', 'other'];
 
 /** Start an errand. Returns straight away with something to watch. */
 export function begin({ what, where, kind = 'other', project = null }) {

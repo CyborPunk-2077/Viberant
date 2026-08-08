@@ -87,6 +87,10 @@ export async function inspect(dir) {
     output: kind?.out ?? (plainPage ? '.' : null),
     needsBuild: !!kind?.builds && !!scripts.build,
     hasPackage: !!pkg,
+    // The named things this project says it can do. Carried through so a
+    // computer being asked to build one can decide what "build" means by
+    // reading the project rather than by trusting the asker.
+    scripts,
     name: pkg?.name ?? null,
     version: pkg?.version ?? null,
     // The names only. A value here would be a secret in a place secrets do not go.
