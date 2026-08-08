@@ -3,12 +3,32 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 287 passing on Windows, and the new ones are the ones that matter:
+**Tests:** 296 passing on Windows, and the new ones are the ones that matter:
 a parcel that lies about its own size is caught, a folder that is empty on
 purpose survives, and two transfers cannot fight over one folder.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
+
+**You can ask about this project.** Four questions — why did this fail, is
+anything wrong here, look over my changes, and a question answered from a small
+local search. Each shows what it is doing while it works, and says where the
+answer came from. Not a chat: the question was the button. D-127.
+
+**Two rules were built before anything that stands on them.** A secret never
+leaves this computer in a prompt — one function does the redacting and
+everything goes through it, the file with real values is never opened, and a
+test puts real-looking credentials through every shape to check. And nothing a
+model suggests reaches a file without being agreed to: a proposal is applied by
+a separate route, cannot be applied twice, and one naming a path outside its
+project is refused entirely, including the parts that were fine. D-125, D-126.
+
+**One list of everything happening, and it follows you.** Every errand says what
+kind it is when it begins, so the corner groups them and a build stays visible
+when you walk away from Deploy. D-128.
+
+**How a project stands**, in the panel beside it: dependencies, runtime, build
+command, expected settings. Only what was actually checked. D-129.
 
 **No account name decides anything.** The source was searched; one name exists —
 Viberant's own issue list — and it was called `HOME`, which beside an owner/name
@@ -156,18 +176,16 @@ below. Two scroll containers, neither moving the other. D-118.
 
 *Left, and stated plainly rather than glossed. In priority order.*
 
-- **No AI integration.** §9 to §11 of the brief — the assistant, error
-  explanation, project Q&A, approval-gated change proposals — is not started.
-  It is the largest unbuilt block and the one with the most design in it: the
-  approval gate and the "context is this project only" rule have to be built
-  in from the first line, not added afterwards.
-- **No unified Jobs centre.** Transfers and errands each have their own
-  reporting; §12's single list across transfer, push, build, deploy and AI does
-  not exist. The top bar shows transfers only.
 - **No multi-Google.** GitHub supports several accounts; Google is still one.
-- **No project health panel.** The inspection that feeds it exists
-  (`providers.inspect`) and nothing renders it yet.
-- **No auto-update, no diagnostics export.** §19 and §20 untouched.
+- **No auto-update, no diagnostics export.** §19 and §20 untouched. The updater
+  in particular should not be half-built: an update path that fetches and runs
+  code without verifying a signature is worse than none, so the honest options
+  are to do it properly or to say it is not there.
+- **AI proposes nothing yet.** The approval gate, the path check and the
+  proposal store are built and tested; what is missing is the errand that asks a
+  model for a change in that shape. Asking about a project works; asking it to
+  change one does not.
+- **No AI in the command palette**, and no per-provider choice beyond the one.
 - **Workspace's second polish pass.** It is structurally right — one canonical
   list of remote offers, typed rows, transfer progress — and has not had the
   individual design attention Projects, AI apps, Terminals, Deploy and Settings

@@ -1399,6 +1399,58 @@ Making that panel incremental was right: rebuilding it every second threw away t
 
 ---
 
+### D-125 `[LOCKED]` — A secret never leaves this computer in a prompt, and one function decides that
+
+**Decision.** Everything that builds text for a model passes through `withoutSecrets`. The file holding real values is never opened; the example file is read for its names. Held by tests that put real-looking credentials through every shape and check what survives.
+
+**Why.** This is the rule most easily broken by accident, because breaking it looks like nothing — the answer comes back fine and somebody's key is on a server. So it is not a rule anybody has to remember at each call site; it is one function everything goes through, applied at the last moment before text leaves.
+
+**Deliberately generous.** A false positive costs a model a little context. A false negative sends somebody's key to a company. Those are not comparable, so it errs the same way every time.
+
+**Locked**, alongside D-96 and D-107, because the failure is silent and the damage is not recoverable by pressing something afterwards.
+
+---
+
+### D-126 `[LOCKED]` — Nothing a model suggests reaches a file without being agreed to
+
+**Decision.** A suggestion is written down as a proposal and applied by a separate route. Applying twice is refused. A proposal naming a path outside its project is refused entirely — including the parts of it that were fine.
+
+**Why.** Reading is free and changing is not, and that line has to be structural rather than a habit. There is no path from an answer to a changed file that does not pass through somebody pressing something that says what will change.
+
+**Why the whole proposal is refused, not the bad part.** It is one decision, not a list of them. Applying the acceptable half of something that also tried to write outside the project means a partial change nobody asked for, from a source that has just demonstrated it cannot be trusted with paths.
+
+**A model is not more trusted than the network.** The path check is the same one a parcel from another computer gets, for the same reason.
+
+---
+
+### D-127 `[DECIDED]` — Asking is a set of questions, not a conversation
+
+**Decision.** Four specific questions — why did this fail, is anything wrong here, look over my changes, and a question about this project — each with a known answer shape and a state while it works. No text box waiting, no history, no bubbles.
+
+**Why.** The question is the button that was pressed, so there is nothing to re-read. Showing a state while it works is not decoration: these take seconds, and a blank panel for seconds is indistinguishable from a broken one. The states are also the honest account of what was looked at — "reading the project" is a real step, and saying it is how somebody knows what was sent.
+
+**Context is this project, and only what the question needs.** A build failure gets the build output and the files that decide how it builds. A question gets a small local search of text files, capped at five. Never the folder.
+
+---
+
+### D-128 `[DECIDED]` — Every errand says what kind it is, when it begins
+
+**Decision.** `transfer`, `build`, `deploy`, `send` — written down at the start, not read back out of the sentence describing it.
+
+**Why.** The corner recognised a transfer by matching its sentence against "Bringing", which breaks the day somebody rewords a sentence, and left a build or a deploy invisible the moment you walked away from the page that started it. Errands belong to the application, not to a screen.
+
+**And the corner disappearing is the transition that must never be missed.** The repaint check was keyed on line counts, which do not change for an errand reporting progress as steps — so it could hold a count of things that had already finished. It now compares what is shown, and always repaints when the list empties.
+
+---
+
+### D-129 `[DECIDED]` — A health panel states what was checked, or says nothing
+
+**Decision.** Each line names something actually looked at and what was found. Anything that could not be checked is absent rather than assumed.
+
+**Why.** A green tick nobody verified is worse than a blank line: it is the thing somebody believes right up until they press Build and find out otherwise. Not a score, not a percentage — a percentage of what?
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
