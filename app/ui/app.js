@@ -762,7 +762,7 @@ async function setUpAi(andThen = null) {
   const who = await get('/ai');
 
   const row = (m) => `
-    <div class="card ai-one" data-one="${esc(m.id)}">
+    <div class="card ai-one">
       <div class="line1">
         <b>${esc(m.name)}</b>
         ${m.ready
@@ -1736,14 +1736,27 @@ addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels()
 let closingJobs = [];
 const whenLayerCloses = (fn) => { closingJobs.push(fn); };
 
-function closeLayer() {
+/**
+ * Stop whatever the thing on top had running.
+ *
+ * Called from both ways a layer goes away, and that second way is the one that
+ * was missing: writing a new sheet over an old one replaces the old one just as
+ * finally as closing it does, and anything the old one had ticking went on
+ * ticking against elements that no longer existed.
+ */
+function runClosingJobs() {
   for (const fn of closingJobs) { try { fn(); } catch { /* it is going anyway */ } }
   closingJobs = [];
+}
+
+function closeLayer() {
+  runClosingJobs();
   layer.innerHTML = '';
   paletteOpen = false;
 }
 
 function sheet({ title, body, foot = '', narrow = false, onOpen }) {
+  runClosingJobs();
   layer.innerHTML = `
     <div class="veil">
       <div class="sheet ${narrow ? 'narrow' : ''}" role="dialog" aria-modal="true">
@@ -4761,6 +4774,16 @@ async function openRemoteTerminal(deviceId, who) {
     }
   }, 500);
 
+  /**
+   * Reading what it says back stops the moment this window goes away.
+   *
+   * Closing this window does not close the session on the other computer, and
+   * that is deliberate — something left running there is still running, and
+   * saying otherwise would be the dishonest half of the two. It appears under
+   * Activity for as long as it lasts, which is where it can be stopped.
+   */
+  whenLayerCloses(() => clearInterval(tick));
+
   line.onkeydown = async (e) => {
     if (e.key !== 'Enter') return;
     const text = line.value;
@@ -6352,6 +6375,11 @@ async function signInToGitHub({ inGate = false } = {}) {
           </div>` : ''}`,
       foot: '<button class="quiet" id="in-cancel">Never mind</button>',
       onOpen: () => {
+        // Dismissing this any other way — the corner, the darkened background
+        // — used to leave the asking running for as long as the app was open,
+        // and then have it announce a sign-in over whatever screen you had moved
+        // on to. Whichever way it goes, it stops.
+        whenLayerCloses(() => clearInterval(watching));
         $('#in-again')?.addEventListener('click', () => post('/open/page', { at: where }));
         $('#in-cancel').onclick = async () => {
           await stop({ giveUp: true, backToWelcome: true });
@@ -6473,6 +6501,8 @@ async function signInToGoogle({ inGate = false } = {}) {
         </div>` : ''}`,
     foot: '<button class="quiet" id="g-cancel">Never mind</button>',
     onOpen: () => {
+      // The same rule as the other way in: closed is closed, however it closed.
+      whenLayerCloses(() => clearInterval(watching));
       $('#g-again')?.addEventListener('click', () => post('/open/page', { at: where }));
       $('#g-cancel').onclick = () => { stop(); backWhereYouWere(); };
     },
