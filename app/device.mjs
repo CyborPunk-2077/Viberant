@@ -49,6 +49,18 @@ let secret = null;
 let mine = null;
 
 /**
+ * The one attempt to make or read the keys, shared by everybody who asks.
+ *
+ * Without this, two things asking at once on a fresh install each find no file,
+ * each generate a key pair, and each write one — and whichever lands second
+ * wins the file while the first caller is already holding the card from the
+ * other. The card then does not match the signature, and every handshake fails
+ * with nothing in the logs to say why. Found by a handshake between two halves
+ * of the same process, which is exactly the shape of a real startup.
+ */
+let making = null;
+
+/**
  * Make a device identity, or read the one already here.
  *
  * Two key pairs rather than one, because signing and key agreement are
@@ -56,6 +68,12 @@ let mine = null;
  * fine until somebody finds the paper about why it is not.
  */
 export async function identity() {
+  if (mine) return mine;
+  making ??= makeOrRead().finally(() => { making = null; });
+  return making;
+}
+
+async function makeOrRead() {
   if (mine) return mine;
 
   if (existsSync(KEYS)) {
@@ -232,6 +250,6 @@ export function same(a, b) {
  * The file stays: a device that forgets its own identity is a new device, and
  * every workspace it was in would have to be told about it again.
  */
-export const forget = () => { secret = null; mine = null; };
+export const forget = () => { secret = null; mine = null; making = null; };
 
 export const KEY_FILE = KEYS;
