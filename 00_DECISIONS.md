@@ -1876,6 +1876,55 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-168 `[LOCKED]` — A folder keeps its name; the hosting service gets one it will take
+
+**Decision.** One function turns a project's name into a name Vercel accepts: lower case, digits, dots and hyphens, separators collapsed, no run of three, at most a hundred characters, deterministic. The folder is never renamed, and a test reads the module and fails on any rename in it.
+
+**Why.** `ValoVault` was refused with "Project names must be lowercase" — a rule nobody broke, about a name nobody chose. The tool names a project after the folder it runs in, so a capital letter in somebody's folder name became a deploy that could not work and a sentence blaming them for it.
+
+**Deterministic is the load-bearing word.** It is what makes the second deploy find the first site instead of making another one.
+
+---
+
+### D-169 `[DECIDED]` — What a deploy will do is worked out before it starts
+
+**Decision.** Before anything is built: whether there is a website here at all, where it is, what builds it, which settings it expects, and which project at Vercel it belongs to — found, reused or made deliberately. The deploy then runs in that folder and nowhere else.
+
+**Why.** Not everything belongs on a hosting service, and running a deploy against a desktop application is a slow and confusing way to find that out. A desktop application says so instead, found by any script that starts Electron — this project's own is called `desktop`, and looking for the name rather than the thing missed it. A desktop application with a website inside it deploys the website. A folder of pages with no `index.html` is a website, because it is one.
+
+---
+
+### D-170 `[DECIDED]` — What a company sends is read in the shape it sends it
+
+**Decision.** A refusal is unwrapped before it is read, and an answer with nothing in it is not an answer.
+
+**Why, both found by asking a real question.** Google sends its refusal as a list holding one object where the shape it is copying sends the object; read as the object it is not, the reason is simply absent, so every Gemini refusal arrived saying nothing and an account genuinely out of allowance came back as "asking too fast" — the opposite advice. And the newer models think before they speak out of the same allowance as the reply, so a short one can return with a `length` on it and no words in it, which was rendered as success. An empty box is worse than a refusal: there is nothing to act on.
+
+**Model names now move.** `gemini-2.0-flash` was retired for new accounts without being removed from anything, and answers "no longer available to new users" — which reads like a broken key. The names Google keeps pointed at their current models are the only kind that do not quietly stop working, and this is installed once.
+
+---
+
+### D-171 `[LOCKED]` — Writing the same page again is free
+
+**Decision.** A page is compared against what a screen last **produced** before it is written. Identical productions are not written at all.
+
+**Why.** Setting a page's contents to the same string still throws every element away and rebuilds them — the browser does not compare, it obeys. Measured: nine rebuilds in fifty idle seconds on a screen where nothing had happened. That is the flicker.
+
+**Comparing against the page is the version that does not work,** and only measuring shows why: several screens draw in two stages, so the page is never equal to what the screen produces and the guard never matches.
+
+**One thing this broke, fixed with it:** Activity used to notice a new errand only because something else redrew the page. Screens that need to notice now ask on their own — affordable precisely because the answer costs nothing when there is nothing new.
+
+---
+
+### D-172 `[DECIDED]` — The inspector is placed against the window, not given a column
+
+**Decision.** The panel about a selected thing is fixed to the right edge; the work is given room by padding.
+
+**Why.** As the second track of a grid it never opened — measured, the columns stayed `1060px 0px` whatever that track was set to, so the panel was laid out past the right edge at thirty-three pixels wide. Open, correct, full of the right words, entirely off the screen, with nothing visible to say anything was wrong. It survived two passes for exactly that reason. Placed against the window there is no track to fail to open.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

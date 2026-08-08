@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 503 in the app and 107 in core — 610 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 536 in the app and 107 in core — 643 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,55 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## Four things that were true and could not be seen
+
+**ValoVault deploys.** It failed with "Project names must be lowercase" — a
+rule nobody broke, about a name nobody chose, because the tool names a project
+after the folder it runs in. One function now turns a project's name into one
+Vercel takes: `ValoVault` becomes `valovault`, `My Cool App` becomes
+`my-cool-app`. Deterministic, so the second deploy finds the first site. The
+folder is never renamed, held by a test that reads the module. D-168.
+
+What a deploy will do is worked out before anything starts: whether there is a
+website here at all, where it is, what builds it, and which project at Vercel it
+belongs to. A desktop application says so instead of being deployed. One with a
+website inside it deploys the website. A folder of pages with no `index.html` is
+a website, because it is one. D-169.
+
+**Verified:** ValoVault deployed through the app, live at
+`valovault-topaz.vercel.app`, a page fetched back at 200 with 36KB of real
+content in it. Its front page is missing and the result says so rather than
+handing over an address that shows a not-found page.
+
+**Gemini answers.** A good key was accepted and no question ever got an answer,
+for three reasons each hiding the next. Google sends its refusal as a list
+holding one object where the shape it copies sends the object — so every
+refusal arrived saying nothing, and an account out of allowance came back as
+"asking too fast". The model this offered had been retired for new accounts,
+which reads like a broken key. And an answer with nothing in it was rendered as
+an answer. D-170.
+
+**Verified inside the app:** asked for `VIBERANT_AI_OK` and got exactly that
+back from Gemini Flash in three seconds, then asked what this project does and
+got two correct sentences citing real files.
+
+**The flicker is gone.** Setting a page's contents to the same string still
+throws every element away and rebuilds them — the browser does not compare, it
+obeys. Measured: nine rebuilds in fifty idle seconds where nothing had happened.
+Now none, and none during a live deploy, with the rail and the bar and the
+picture behind everything never replaced once. D-171.
+
+**The inspector was off the side of the screen.** Thirty-three pixels wide, laid
+out past the right edge, open and correct and invisible — the worst kind of
+layout bug, and it survived two passes because it answered every question except
+whether it could be seen. It is placed against the window now: 320 pixels, on
+screen at every width, with the table ending before it starts. What it holds
+matches what it is for — three counts, the things you can do as a list, and
+the two computers with the line between them, whose shape and colour are both
+facts. D-172.
 
 ---
 
