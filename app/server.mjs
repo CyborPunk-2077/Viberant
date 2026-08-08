@@ -46,6 +46,13 @@ import * as google from './google.mjs';
 import * as providers from './providers.mjs';
 import * as assistant from './assistant.mjs';
 import * as newer from './newer.mjs';
+import * as device from './device.mjs';
+import * as membersOf from './members.mjs';
+import * as anywhere from './anywhere.mjs';
+import * as remote from './remote.mjs';
+import * as machines from './machines.mjs';
+import * as syncing from './sync.mjs';
+import * as snapshots from './snapshots.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -680,6 +687,231 @@ const routes = {
     return { ...(await newer.check(VERSION, { force: true })), signing: newer.signing() };
   },
 
+  // -- your computers, wherever they are ------------------------------------
+  //
+  // One shape for all of it. Nothing below knows whether a computer is in the
+  // next room or on the other side of the country, because `anywhere.reach`
+  // answers the same way either way.
+
+  /** This computer, and the workspace it takes part in. */
+  async 'GET /me/device'() {
+    const me = await device.card();
+    const ws = await membersOf.current();
+    return {
+      ...me,
+      workspace: ws ? { id: ws.id, name: ws.name } : null,
+      // Every workspace this computer knows about, for the switcher.
+      all: (await membersOf.all()).map((w) => ({ id: w.id, name: w.name })),
+    };
+  },
+
+  async 'POST /me/device/name'({ body }) {
+    return device.rename(body?.name);
+  },
+
+  /** Everybody in this workspace, and how each can be reached right now. */
+  async 'GET /team'() {
+    return anywhere.around();
+  },
+
+  async 'POST /team/start'() {
+    const out = await anywhere.beAbout();
+    return { ...out, ...(await anywhere.around()) };
+  },
+
+  async 'POST /team/stop'() {
+    return { ...(await anywhere.stop()), ...(await anywhere.around()) };
+  },
+
+  // -- making a workspace, and letting somebody in ---------------------------
+
+  async 'POST /team/create'({ body }) {
+    const me = await device.card();
+    const out = await membersOf.create({
+      name: body?.name,
+      owner: (await github.session())?.login || me.displayName,
+      device: me,
+    });
+    if (out.ok) await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+    return { ...out, ...(await anywhere.around()) };
+  },
+
+  async 'POST /team/invite'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: 'Make one first.' };
+
+    const me = await device.card();
+    if (!membersOf.may(ws, me.deviceId, 'manageMembers')) {
+      return {
+        ok: false,
+        sentence: 'Only whoever owns this workspace can invite somebody.',
+        action: 'Ask them to send you a code.',
+      };
+    }
+    return membersOf.invite({ workspace: ws, by: me.displayName, role: body?.role ?? 'member' });
+  },
+
+  async 'POST /team/invite/cancel'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: null };
+    return membersOf.cancelInvite(ws, body?.of);
+  },
+
+  async 'POST /team/join'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) {
+      return {
+        ok: false,
+        sentence: 'A code joins a workspace this computer can already see.',
+        action: 'Ask whoever owns it to add the address of their service in Settings first.',
+      };
+    }
+    const me = await device.card();
+    const out = await membersOf.redeem({
+      workspace: ws,
+      code: body?.code,
+      person: (await github.session())?.login || me.displayName,
+      device: me,
+    });
+    if (out.ok) await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+    return { ...out, ...(await anywhere.around()) };
+  },
+
+  // -- who may do what -------------------------------------------------------
+
+  async 'POST /team/allow'({ body }) {
+    const ws = await membersOf.current();
+    const me = await device.card();
+    if (!ws || !membersOf.may(ws, me.deviceId, 'manageMembers')) {
+      return {
+        ok: false,
+        sentence: 'Only whoever owns this workspace can change what a computer may do.',
+        action: null,
+      };
+    }
+    return { ...(await membersOf.allow(ws, body?.device, body?.capability, body?.yes)),
+      ...(await anywhere.around()) };
+  },
+
+  async 'POST /team/revoke'({ body }) {
+    const ws = await membersOf.current();
+    const me = await device.card();
+    if (!ws || !membersOf.may(ws, me.deviceId, 'manageMembers')) {
+      return { ok: false, sentence: 'Only whoever owns this workspace can do that.', action: null };
+    }
+    return { ...(await membersOf.revoke(ws, body?.what)), ...(await anywhere.around()) };
+  },
+
+  // -- doing something on a computer of yours --------------------------------
+  //
+  // Everything here goes through `remote.mayAsk` on the machine that would do
+  // the work. This route is the near end asking; it is never the authority.
+
+  /** What this computer would let this project be asked to do. */
+  async 'GET /remote/can'({ url }) {
+    const at = url.searchParams.get('path') || current?.dir;
+    if (!at || !existsSync(at)) return { ok: false, sentence: 'No project chosen.', action: null };
+    return { ok: true, ...(await remote.whatItCanDo(at)) };
+  },
+
+  /** What is happening on this computer at somebody else's asking. */
+  async 'GET /remote/sessions'() {
+    return { ok: true, sessions: remote.openSessions() };
+  },
+
+  async 'POST /remote/terminal'({ body }) {
+    const ws = await membersOf.current();
+    const me = await device.card();
+    const out = remote.openTerminal({
+      workspace: ws,
+      fromDevice: body?.asDevice || me.deviceId,
+      whoName: me.displayName,
+      where: body?.where || current?.dir,
+      onOutput: (text) => terminalSaid(out?.session, text),
+    });
+    return out;
+  },
+
+  async 'POST /remote/terminal/type'({ body }) {
+    return remote.typeInto(body?.session, body?.text);
+  },
+
+  async 'POST /remote/terminal/close'({ body }) {
+    return remote.closeTerminal(body?.session);
+  },
+
+  async 'GET /remote/terminal/said'({ url }) {
+    return { ok: true, text: terminalSince(url.searchParams.get('session')) };
+  },
+
+  async 'POST /remote/do'({ body }) {
+    const ws = await membersOf.current();
+    const me = await device.card();
+    return remote.doNamed({
+      workspace: ws,
+      fromDevice: body?.asDevice || me.deviceId,
+      whoName: me.displayName,
+      dir: body?.path || current?.dir,
+      name: body?.name,
+      kind: body?.name === 'build' ? remote.BUILD : remote.RUN,
+    });
+  },
+
+  async 'POST /remote/stop'({ body }) {
+    return remote.stopNamed(body?.session);
+  },
+
+  // -- comparing two computers ----------------------------------------------
+
+  /** What this computer is, for a comparison. Names only, never values. */
+  async 'GET /machine'({ url }) {
+    const at = url.searchParams.get('path') || current?.dir || null;
+    return { ok: true, machine: await machines.whatThisIs({ dir: at }) };
+  },
+
+  /**
+   * Two computers, side by side.
+   *
+   * The far end is asked what it is over the same connection everything else
+   * uses. With nobody reachable, this says so rather than inventing a machine.
+   */
+  async 'POST /machine/compare'({ body }) {
+    const mine = await machines.whatThisIs({ dir: current?.dir ?? null });
+    const found = await anywhere.reach(body?.device);
+    if (!found.ok) return found;
+
+    const theirs = await askPeer(found.peer, { what: 'machine', path: body?.theirPath ?? null });
+    found.peer.close();
+    if (!theirs?.machine) {
+      return {
+        ok: false,
+        sentence: 'That computer did not say what it is.',
+        action: 'Try again in a moment.',
+      };
+    }
+    return { ok: true, mine, theirs: theirs.machine, ...machines.compare(mine, theirs.machine) };
+  },
+
+  // -- sending only what changed ---------------------------------------------
+
+  /** What this computer holds of a project, so another can send only the rest. */
+  async 'GET /sync/manifest'({ url }) {
+    const at = url.searchParams.get('path');
+    if (!at || !existsSync(at)) return { ok: false, sentence: 'That project is not here.', action: null };
+    return { ok: true, ...(await syncing.manifest(at, { everything: false })) };
+  },
+
+  /** The ways back this project has, and putting one back. */
+  async 'GET /waysback'({ url }) {
+    const at = url.searchParams.get('path') || current?.dir;
+    if (!at) return { ok: true, waysBack: [] };
+    return { ok: true, waysBack: await snapshots.forProject(at) };
+  },
+
+  async 'POST /waysback/restore'({ body }) {
+    return snapshots.restore(body?.id);
+  },
+
   async 'GET /feedback'() {
     return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.ISSUES_FOR_VIBERANT };
   },
@@ -823,6 +1055,32 @@ const routes = {
    * Its own route, reached only from a screen that has already shown every file
    * it would change. Nothing above this line can reach it.
    */
+  /**
+   * Why do these two computers behave differently?
+   *
+   * Both halves are gathered first, then handed to a model. What it is given
+   * has never held a secret value — the comparison is names and counts — so the
+   * redaction is a second line of defence rather than the only one.
+   */
+  async 'POST /ai/why-different'({ body }) {
+    const mine = await machines.whatThisIs({ dir: current?.dir ?? null });
+    const found = await anywhere.reach(body?.device);
+    if (!found.ok) return found;
+
+    const theirs = await askPeer(found.peer, { what: 'machine', path: null });
+    found.peer.close();
+    if (!theirs?.machine) {
+      return { ok: false, sentence: 'That computer did not say what it is.', action: 'Try again in a moment.' };
+    }
+
+    return assistant.whyDifferent({
+      mine,
+      theirs: theirs.machine,
+      comparison: machines.compare(mine, theirs.machine),
+      what: body?.what ?? null,
+    });
+  },
+
   async 'POST /ai/apply'({ body }) {
     const out = await assistant.apply(String(body?.id ?? ''));
     projects.forgetSituations();
@@ -866,6 +1124,34 @@ const routes = {
         account: now.login,
       },
       workspace: { joined: ws.joined, account: ws.account, reachable: lan.isOn() },
+      /**
+       * The new half, in the safe form of everything.
+       *
+       * The device identifier is the public fingerprint, which is what other
+       * computers already know. No addresses, because an address is where
+       * somebody lives, and no keys, because keys.
+       */
+      thisDevice: await (async () => {
+        const me = await device.card();
+        const ws2 = await membersOf.current();
+        const team = ws2 ? await anywhere.around({ workspace: ws2 }) : null;
+        return {
+          id: me.deviceId,
+          name: me.displayName,
+          workspace: ws2 ? ws2.name : 'none',
+          service: team?.service ?? 'not in a workspace',
+          computers: team ? team.mine.length + team.team.length : 0,
+          online: team ? [...team.mine, ...team.team].filter((o) => o.online).length : 0,
+          // How each reachable one is reached, counted rather than listed.
+          connections: team
+            ? [...team.mine, ...team.team].filter((o) => o.online && !o.you)
+              .reduce((all, o) => ({ ...all, [o.how]: (all[o.how] ?? 0) + 1 }), {})
+            : {},
+        };
+      })(),
+      runningHere: remote.openSessions().map((one) => ({
+        kind: one.kind, who: one.who, began: one.began,
+      })),
       network: { others: lan.around().length, offering: (await lan.offers()).length },
       deploy: { vercel: vercelState.here ? (vercelState.connected ? 'connected' : 'not connected') : 'not installed' },
       assistant: ai.ok ? `${ai.name}, set up` : `${ai.name}, no key`,
@@ -1614,6 +1900,146 @@ function tellTheOthers() {
  * waiting for it.
  */
 let listening = null;
+/**
+ * Asking one of your computers a question, and hearing the answer.
+ *
+ * One small errand shape on top of `peers`: a question with a name, an answer
+ * with the same name. Everything the app asks another machine goes through
+ * this, so there is one place where a request from somewhere else is turned
+ * into a decision — and that place calls the same `remote.mayAsk` a local
+ * request calls, because the far end deciding is the whole security model.
+ */
+const ANSWER_WITHIN = 20000;
+
+function askPeer(peer, question) {
+  return new Promise((done) => {
+    const id = ulid();
+    let held = '';
+
+    const onData = (chunk) => {
+      held += chunk.toString();
+      const at = held.indexOf('\n');
+      if (at === -1) return;
+      const line = held.slice(0, at);
+      held = held.slice(at + 1);
+      let said;
+      try { said = JSON.parse(line); } catch { return finish(null); }
+      if (said?.id === id) finish(said);
+    };
+
+    let settled = false;
+    const finish = (v) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(waiting);
+      peer.incoming.off('data', onData);
+      done(v);
+    };
+
+    const waiting = setTimeout(() => finish(null), ANSWER_WITHIN);
+    peer.incoming.on('data', onData);
+    peer.send(`${JSON.stringify({ id, ...question })}\n`).catch(() => finish(null));
+  });
+}
+
+/**
+ * What this computer does when one of yours asks it something.
+ *
+ * Every branch checks with `remote.mayAsk` before doing anything, on this
+ * machine, from what this machine believes. A caller that has already decided
+ * it is allowed is not consulted.
+ */
+async function answerPeer(peer, asked) {
+  const ws = await membersOf.current();
+  const from = peer.who?.deviceId;
+
+  const reply = (body) => peer.send(`${JSON.stringify({ id: asked.id, ...body })}\n`).catch(() => {});
+
+  if (asked.what === 'machine') {
+    // Saying what this computer is needs no special permission — it is names
+    // and versions, and being in the workspace at all is the check.
+    if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
+    return reply({ ok: true, machine: await machines.whatThisIs({ dir: asked.path || null }) });
+  }
+
+  if (asked.what === 'manifest') {
+    if (!membersOf.may(ws, from, 'seeOffered')) return reply({ ok: false });
+    const one = (await lan.offers()).find((o) => o.id === asked.offer);
+    if (!one) return reply({ ok: false });
+    return reply({ ok: true, ...(await syncing.manifest(one.path, { everything: one.everything })) });
+  }
+
+  if (asked.what === 'can') {
+    if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
+    const one = (await lan.offers()).find((o) => o.id === asked.offer);
+    if (!one) return reply({ ok: false });
+    return reply({ ok: true, ...(await remote.whatItCanDo(one.path)) });
+  }
+
+  if (asked.what === 'do') {
+    const one = (await lan.offers()).find((o) => o.id === asked.offer);
+    if (!one) return reply({ ok: false, sentence: 'That project is not offered from this computer.' });
+
+    const out = await remote.doNamed({
+      workspace: ws,
+      fromDevice: from,
+      whoName: ws?.devices?.[from]?.displayName ?? 'somebody',
+      dir: one.path,
+      name: asked.name,
+      kind: asked.name === 'build' ? remote.BUILD : remote.RUN,
+    });
+    return reply(out);
+  }
+
+  if (asked.what === 'said') {
+    if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
+    return reply(remote.whatItSaid(asked.session));
+  }
+
+  return reply({ ok: false, sentence: 'This computer does not know how to do that.' });
+}
+
+// Somebody arriving is handed to the answering side, and nothing else.
+anywhere.whenSomebodyArrives((peer) => {
+  let held = '';
+  peer.incoming.on('data', (chunk) => {
+    held += chunk.toString();
+    for (;;) {
+      const at = held.indexOf('\n');
+      if (at === -1) return;
+      const line = held.slice(0, at);
+      held = held.slice(at + 1);
+      if (!line.trim()) continue;
+      let asked;
+      try { asked = JSON.parse(line); } catch { return peer.close(); }
+      answerPeer(peer, asked).catch(() => {});
+    }
+  });
+});
+
+/**
+ * What a terminal has said since the page last looked.
+ *
+ * Held here rather than pushed, because the page asks for everything on a
+ * timer already and one more thing to ask for is cheaper than one more way for
+ * the server to talk. Bounded, so a session that produces a great deal cannot
+ * grow this without limit.
+ */
+const terminalBuffers = new Map();
+const MOST_HELD = 200_000;
+
+function terminalSaid(session, text) {
+  if (!session) return;
+  const held = (terminalBuffers.get(session) ?? '') + text;
+  terminalBuffers.set(session, held.length > MOST_HELD ? held.slice(-MOST_HELD) : held);
+}
+
+function terminalSince(session) {
+  const held = terminalBuffers.get(session) ?? '';
+  terminalBuffers.set(session, '');
+  return held;
+}
+
 function listenForTheOthers() {
   if (listening) return;
   listening = (async () => {

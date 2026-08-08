@@ -2640,3 +2640,43 @@ select { cursor: pointer; }
   pointer-events: none;
 }
 @media (prefers-reduced-motion: reduce) { #grains { display: none; } }
+
+/* ------------------------------------------------------------------------- */
+/* Your computers, wherever they are                                          */
+/*                                                                            */
+/* The same rows as everything else. A computer on another continent is not a */
+/* different kind of thing from one in the next room, and giving it its own   */
+/* look would be showing somebody the plumbing.                               */
+/* ------------------------------------------------------------------------- */
+
+.compare-cols {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 9rem) minmax(0, 9rem);
+}
+.compare-cols .metric { justify-content: flex-start; }
+
+/*
+ * A terminal on another computer.
+ *
+ * Deliberately plain, and deliberately tall enough to be useful. The one
+ * mistake this makes possible is forgetting which machine you are on, which is
+ * why the name sits above it in a band rather than in the title alone.
+ */
+.termout {
+  margin: var(--s3) 0 0;
+  padding: var(--s3);
+  height: min(52vh, 30rem);
+  overflow: auto;
+  background: var(--deep);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  font-family: var(--mono);
+  font-size: var(--t-meta);
+  line-height: 1.5;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 58rem) {
+  .compare-cols { grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, auto); }
+}

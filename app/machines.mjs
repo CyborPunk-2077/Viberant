@@ -26,9 +26,34 @@ import * as providers from './providers.mjs';
 const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
-/** The version of one command, or nothing if it is not here. */
+/**
+ * The version of one command, or nothing if it is not here.
+ *
+ * On Windows most of these are not programs at all — `npm` is `npm.cmd`, a
+ * batch file, and asking for `npm` finds nothing. Which is how the first run of
+ * this reported a computer with npm on it as having no npm, on the one platform
+ * this product targets. Both names are tried, the real one first.
+ */
 async function versionOf(command, args = ['--version']) {
-  const out = await quiet(() => run(command, args, { timeout: 5000, windowsHide: true }));
+  /**
+   * Asked through a shell on Windows, and only here.
+   *
+   * Most of these are not programs on Windows — `npm` is `npm.cmd`, a batch
+   * file — and starting one without a shell finds nothing, which is how the
+   * first run of this reported a computer with npm on it as having no npm, on
+   * the one platform this product targets.
+   *
+   * A shell is used nowhere else in this product for exactly the reason it is
+   * safe here: **nothing in this line comes from anybody.** The command is one
+   * of seven names written above, the arguments are `--version`, and there is
+   * no path from a request to either.
+   */
+  const onWindows = process.platform === 'win32';
+  const out = await quiet(() => run(
+    onWindows ? `${command} ${args.join(' ')}` : command,
+    onWindows ? [] : args,
+    { timeout: 5000, windowsHide: true, shell: onWindows },
+  ));
   if (!out) return null;
   const said = `${out.stdout ?? ''}${out.stderr ?? ''}`.trim();
   const m = /(\d+\.\d+(?:\.\d+)?)/.exec(said);

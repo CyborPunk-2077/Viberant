@@ -1080,6 +1080,49 @@ function everything() {
   out.push({ group: 'Do', glyph: '＋', what: 'Add a project', run: async () => { await go('projects'); $('#add')?.click(); } });
   out.push({ group: 'Do', glyph: '⟳', what: 'Check the other computers again', run: async () => { await go('workspace'); $('#w-refresh')?.click(); } });
 
+  /**
+   * Everything about a workspace, reachable by typing.
+   *
+   * Every one of these presses the same control the page has, rather than
+   * calling a route of its own — a palette that is a second way to do
+   * something is a second thing to keep correct.
+   */
+  out.push({ group: 'Your team', glyph: '✉', what: 'Invite somebody', run: async () => { await go('workspace'); $('#team-invite')?.click(); } });
+  out.push({ group: 'Your team', glyph: '⊕', what: 'Make a workspace', run: async () => { await go('workspace'); $('#team-make')?.click(); } });
+  out.push({ group: 'Your team', glyph: '→', what: 'Join a workspace with a code', run: async () => { await go('workspace'); $('#team-join')?.click(); } });
+  out.push({
+    group: 'Your team',
+    glyph: '▸',
+    what: 'Do something on another computer',
+    run: async () => {
+      await go('workspace');
+      const first = document.querySelector('[data-remote]');
+      if (first) return first.click();
+      say({
+        ok: false,
+        sentence: 'No other computer of yours is online.',
+        action: 'Open Viberant on one of them.',
+      });
+      draw();
+    },
+  });
+  out.push({
+    group: 'Your team',
+    glyph: '≡',
+    what: 'Compare two computers',
+    run: async () => {
+      await go('workspace');
+      const first = document.querySelector('[data-compare]');
+      if (first) return first.click();
+      say({
+        ok: false,
+        sentence: 'There is nothing to compare this computer with yet.',
+        action: 'Invite somebody, or open Viberant on another computer of yours.',
+      });
+      draw();
+    },
+  });
+
   return out;
 }
 
@@ -3771,12 +3814,376 @@ const KIND_MARK = {
 
 const KIND_WORD = { file: 'File', folder: 'Folder', project: 'Project' };
 
+/**
+ * Your computers and your team, wherever they are.
+ *
+ * The same list whether a computer is in the next room or on another
+ * continent — because from where somebody is sitting it is the same list, and
+ * splitting it into "local" and "remote" would be showing them the plumbing.
+ *
+ * What each row says about how it is connected is three words. Everything
+ * underneath — addresses, which way was tried, whether a relay was needed —
+ * lives in diagnostics, where somebody goes on purpose.
+ */
+async function drawTeam() {
+  const box = $('#team');
+  if (!box) return;
+
+  const t = await get('/team');
+  if (!box.isConnected) return;
+
+  if (!t.workspace) {
+    box.innerHTML = `
+      <div class="sect"><h2>Your team</h2></div>
+      <div class="empty"><b>No workspace yet.</b>
+        A workspace is how your own computers, and anybody you invite, see each
+        other — on this network or from anywhere.
+        <span class="acts">
+          <button class="go" id="team-make">Make one</button>
+          <button class="small" id="team-join">I have a code</button>
+        </span>
+      </div>`;
+    $('#team-make').onclick = makeWorkspace;
+    $('#team-join').onclick = joinWorkspace;
+    return;
+  }
+
+  const row = (one) => `
+    <div class="trow tap" data-teamdev="${esc(one.deviceId)}">
+      <span class="dot ${one.online ? 'live' : 'off'}"></span>
+      <span class="tname">
+        <b>${esc(one.displayName)}</b>
+        <span class="where">${one.online ? esc(one.how) : `Last here ${one.lastHere ? ago(one.lastHere) : 'a while ago'}`}</span>
+      </span>
+      <span class="chip">${one.online ? 'Online' : 'Offline'}</span>
+      <span class="tacts"><span class="onhover">
+        ${one.you ? '' : `<button class="small" data-compare="${esc(one.deviceId)}">Compare</button>`}
+        ${one.you || !one.online ? '' : `<button class="small" data-remote="${esc(one.deviceId)}">Do something…</button>`}
+      </span></span>
+    </div>`;
+
+  box.innerHTML = `
+    <div class="sect"><h2>${esc(t.workspace.name)}</h2>
+      <span class="count">${t.mine.length + t.team.length}</span>
+      <span class="grow"></span>
+      <button class="small" id="team-invite">Invite somebody</button>
+    </div>
+
+    ${t.stillWorks ? `<div class="said"><b>${esc(t.stillWorks.sentence)}</b></div>` : ''}
+
+    <div class="label-tiny" style="padding:0 0 .4rem">My devices</div>
+    <div class="sheetlist machine-cols">${t.mine.map(row).join('')}</div>
+
+    ${t.team.length ? `
+      <div class="label-tiny" style="padding:.9rem 0 .4rem">Team</div>
+      <div class="sheetlist machine-cols">${t.team.map(row).join('')}</div>` : ''}`;
+
+  $('#team-invite').onclick = inviteSomebody;
+
+  for (const b of box.querySelectorAll('[data-compare]')) {
+    b.onclick = (e) => { e.stopPropagation(); compareWith(b.dataset.compare); };
+  }
+  for (const b of box.querySelectorAll('[data-remote]')) {
+    b.onclick = (e) => { e.stopPropagation(); doSomethingOn(b.dataset.remote, t); };
+  }
+
+  wireInspect('[data-teamdev]', (r) => {
+    const id = r.dataset.teamdev;
+    inspectTeamDevice([...t.mine, ...t.team].find((one) => one.deviceId === id), t);
+  });
+}
+
+/** What is known about one computer in the workspace. */
+function inspectTeamDevice(one, t) {
+  if (!one) return inspect(null);
+
+  inspect({
+    name: one.displayName,
+    kind: one.you ? 'This computer' : 'In this workspace',
+    mark: one.online ? '\u25c9' : '\u25cb',
+    facts: [
+      { label: 'Right now', value: one.online ? 'Online' : 'Offline' },
+      { label: 'Connected', value: one.online ? one.how : null },
+      {
+        label: 'What that means',
+        value: one.how === 'This network'
+          ? 'On the same network as this one, so folders move at full speed and never leave the building.'
+          : one.how === 'Direct \u00b7 Internet'
+            ? 'Straight to that computer across the internet.'
+            : one.how === 'Relay'
+              ? 'Through a machine in the middle, which cannot read any of it.'
+              : null,
+      },
+      { label: 'Last here', value: one.you ? 'Now' : (one.lastHere ? ago(one.lastHere) : 'a while ago') },
+      { label: 'Belongs to', value: one.person },
+      {
+        label: 'May run things here',
+        value: one.you ? 'It is this computer' : (one.trusted ? 'Yes' : 'No'),
+      },
+      { label: 'Known by', value: one.deviceId, mono: true, dim: true },
+    ],
+    acts: one.you ? [] : [
+      { what: 'Compare with this computer', run: () => compareWith(one.deviceId) },
+      ...(one.online ? [{ what: 'Do something on it\u2026', run: () => doSomethingOn(one.deviceId, t) }] : []),
+      { what: 'Take it out of the workspace\u2026', danger: true, run: () => revokeDevice(one) },
+    ],
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Making one, joining one, inviting somebody
+// ---------------------------------------------------------------------------
+
+async function makeWorkspace() {
+  const name = await ask({
+    title: 'Make a workspace',
+    label: 'What should it be called?',
+    value: 'My workspace',
+    confirm: 'Make it',
+  });
+  if (!name) return;
+  say(await post('/team/create', { name }));
+  draw();
+}
+
+async function joinWorkspace() {
+  const code = await ask({
+    title: 'Join a workspace',
+    label: 'The code somebody read you',
+    value: '',
+    confirm: 'Join',
+  });
+  if (!code) return;
+  say(await post('/team/join', { code }));
+  draw();
+}
+
+/**
+ * A code, shown once, with what it is and is not said next to it.
+ *
+ * It is bootstrap and not a password: ten minutes, one use. Saying so on the
+ * sheet is the difference between somebody treating it carefully for the right
+ * reason and treating it carelessly for the wrong one.
+ */
+async function inviteSomebody() {
+  const made = await post('/team/invite', {});
+  if (!made.ok) return say(made), draw();
+
+  const minutes = Math.max(1, Math.round((made.expiresAt - Date.now()) / 60000));
+
+  sheet({
+    title: 'Invite somebody',
+    narrow: true,
+    body: `
+      <p style="margin-top:0">Read this to them. They type it into Viberant on their
+        own computer, and their computers appear here.</p>
+      <div class="card" style="text-align:center;padding:1.4rem">
+        <div class="mono" style="font-size:2rem;letter-spacing:.18em">${esc(made.code)}</div>
+        <div style="color:var(--faint);margin-top:.5rem">Runs out in ${minutes} minutes</div>
+      </div>
+      <p style="color:var(--quiet);font-size:.89rem">It works once, and it is a way in
+        rather than a key \u2014 nothing that travels between your computers is protected
+        by it. Each computer proves who it is with a key it made itself and never sends.</p>`,
+    foot: `<button class="quiet" id="inv-copy">Copy it</button>
+           <button class="go" id="inv-done">Done</button>`,
+  });
+
+  $('#inv-copy').onclick = () => navigator.clipboard?.writeText(made.code);
+  $('#inv-done').onclick = () => { closeLayer(); draw(); };
+}
+
+async function revokeDevice(one) {
+  const sure = await confirmThat({
+    title: `Take ${one.displayName} out?`,
+    what: 'It stops being able to reach anything in this workspace.',
+    why: 'Nothing on that computer is touched, nothing of theirs is deleted, and their own GitHub is untouched.',
+    confirm: 'Take it out',
+    danger: true,
+  });
+  if (!sure) return;
+  say(await post('/team/revoke', { what: one.deviceId }));
+  inspect(null);
+  draw();
+}
+
+// ---------------------------------------------------------------------------
+// Two computers, side by side
+// ---------------------------------------------------------------------------
+
+/**
+ * Why does this work here and not there?
+ *
+ * Shown as two columns of facts with the differences first, because that is
+ * the shape of the answer. The row about settings says on itself that it is
+ * names only, so nobody has to wonder whether a value is about to appear.
+ */
+async function compareWith(deviceId) {
+  sheet({
+    title: 'Comparing two computers',
+    narrow: true,
+    body: '<div class="ai-state"><span class="spin"></span> Asking that computer what it is\u2026</div>',
+    foot: '<button class="quiet" id="cmp-close">Close</button>',
+  });
+  $('#cmp-close').onclick = closeLayer;
+
+  const out = await post('/machine/compare', { device: deviceId });
+  const body = document.querySelector('.sheet .body');
+  if (!body) return;
+
+  if (!out.ok) {
+    body.innerHTML = `<div class="said bad"><b>${esc(out.sentence)}</b>
+      <span>${esc(out.action ?? '')}</span></div>`;
+    return;
+  }
+
+  const line = (d) => `
+    <div class="trow">
+      <span class="tname"><b>${esc(d.what)}</b>${d.note ? `<span class="where">${esc(d.note)}</span>` : ''}</span>
+      <span class="metric">${esc(d.mine)}</span>
+      <span class="metric">${esc(d.theirs)}</span>
+    </div>`;
+
+  body.innerHTML = `
+    <p style="margin-top:0">${esc(out.sentence)}</p>
+    <div class="sheetlist compare-cols">
+      <div class="thead">
+        <span></span>
+        <span>${esc(out.mine.name)}</span>
+        <span>${esc(out.theirs.name)}</span>
+      </div>
+      ${out.differences.map(line).join('')}
+    </div>
+    ${out.same.length ? `
+      <div class="label-tiny" style="padding:1rem 0 .4rem">The same on both</div>
+      <div class="fact">${out.same.map((s) => esc(s.what)).join(' \u00b7 ')}</div>` : ''}
+    <div class="bar" style="margin-top:1rem">
+      <button class="small" id="cmp-ask">Ask why they differ</button>
+    </div>
+    <div id="cmp-said"></div>`;
+
+  $('#cmp-ask').onclick = async () => {
+    const said = $('#cmp-said');
+    said.innerHTML = '<div class="ai-state"><span class="spin"></span> Looking at the difference\u2026</div>';
+    const answer = await post('/ai/why-different', { device: deviceId });
+    said.innerHTML = answer.ok
+      ? `<div class="ai-said">${asParagraphs(answer.text)}<div class="ai-from">${esc(answer.model ?? '')}</div></div>`
+      : `<div class="said bad"><b>${esc(answer.sentence)}</b><span>${esc(answer.action ?? '')}</span></div>`;
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Doing something on a computer of yours
+// ---------------------------------------------------------------------------
+
+/**
+ * The three things, offered together, with what each needs said plainly.
+ *
+ * Nothing here decides whether it is allowed. That is decided on the computer
+ * being asked, and a refusal comes back as a sentence — which is why the menu
+ * offers everything and does not grey anything out on a guess.
+ */
+async function doSomethingOn(deviceId, t) {
+  const one = [...t.mine, ...t.team].find((d) => d.deviceId === deviceId);
+  sheet({
+    title: `On ${one?.displayName ?? 'that computer'}`,
+    narrow: true,
+    body: `
+      <p style="margin-top:0">${esc(one?.how ?? '')}. Whatever you ask for happens on that
+        computer, and it decides whether to \u2014 not this one.</p>
+      <div class="menu">
+        <button class="pick" data-on="terminal"><b>Open a terminal</b>
+          <span>A shell on that computer, in this project's folder.</span></button>
+        <button class="pick" data-on="run"><b>Run it there</b>
+          <span>Whatever the project calls its dev command.</span></button>
+        <button class="pick" data-on="build"><b>Build it there</b>
+          <span>Runs the project's own build, and tells you how it went.</span></button>
+      </div>`,
+    foot: '<button class="quiet" id="on-close">Close</button>',
+  });
+  $('#on-close').onclick = closeLayer;
+
+  for (const b of document.querySelectorAll('[data-on]')) {
+    b.onclick = async () => {
+      const which = b.dataset.on;
+      closeLayer();
+      if (which === 'terminal') return openRemoteTerminal(deviceId, one);
+      const out = await post('/remote/do', { asDevice: deviceId, name: which === 'run' ? 'dev' : 'build' });
+      say(out);
+      draw();
+    };
+  }
+}
+
+/**
+ * A terminal on another computer.
+ *
+ * Deliberately plain: a monospace box, what it says, and a line to type into.
+ * The name of the computer is at the top and stays there, because the one
+ * mistake this makes possible is forgetting which machine you are on.
+ */
+async function openRemoteTerminal(deviceId, who) {
+  const out = await post('/remote/terminal', { asDevice: deviceId });
+  if (!out.ok) return say(out), draw();
+
+  sheet({
+    title: `${who?.displayName ?? 'That computer'} \u00b7 terminal`,
+    body: `
+      <div class="said"><b>${esc(who?.displayName ?? 'That computer')}</b>
+        <span>${esc(out.sentence)}</span></div>
+      <pre id="term-out" class="termout"></pre>
+      <div class="bar" style="margin:.6rem 0 0">
+        <input id="term-in" class="mono" placeholder="Type here, then press enter" style="flex:1">
+      </div>`,
+    foot: '<button class="quiet danger" id="term-close">Close this session</button>',
+  });
+
+  const out_ = $('#term-out');
+  const line = $('#term-in');
+  line?.focus();
+
+  const tick = setInterval(async () => {
+    if (!out_.isConnected) return clearInterval(tick);
+    const said = await get(`/remote/terminal/said?session=${encodeURIComponent(out.session)}`);
+    if (said.text) {
+      out_.textContent += said.text;
+      out_.scrollTop = out_.scrollHeight;
+    }
+  }, 500);
+
+  line.onkeydown = async (e) => {
+    if (e.key !== 'Enter') return;
+    const text = line.value;
+    line.value = '';
+    out_.textContent += `${text}\n`;
+    await post('/remote/terminal/type', { session: out.session, text: `${text}\n` });
+  };
+
+  $('#term-close').onclick = async () => {
+    clearInterval(tick);
+    await post('/remote/terminal/close', { session: out.session });
+    closeLayer();
+    draw();
+  };
+}
+
 SCREENS.workspace = async () => {
   clearTimeout(workspaceTimer);
   const w = await get('/workspace');
 
   if (!w.joined) {
+    /**
+     * Two different things, and only one of them needs GitHub.
+     *
+     * The workspace built on a GitHub project came first and is still how your
+     * own computers keep a note for each other. The team below is Viberant's
+     * own, stands on device keys, and needs no account anywhere — so it is
+     * drawn whether or not the other one has been joined. Tying it to the
+     * older one would have meant needing GitHub to reach a computer in the
+     * next room, which is the opposite of the point.
+     */
     view.innerHTML = `
+      <div id="team"></div>
+
       <h1>Shared workspace</h1>
       <p class="sub">Every computer signed in to the same GitHub account, in one place —
         and folders that go straight from one to another across your own network.</p>
@@ -3799,6 +4206,7 @@ SCREENS.workspace = async () => {
         </div>
       </div>`;
     said = null;
+    drawTeam();
     $('#w-join')?.addEventListener('click', async () => {
       const b = $('#w-join');
       b.disabled = true;
@@ -3863,7 +4271,9 @@ SCREENS.workspace = async () => {
       </div>
     </div>
 
-    <div class="sect"><h2>Your computers</h2><span class="count">${known.length}</span></div>
+    <div id="team"></div>
+
+    <div class="sect"><h2>Your computers on this network</h2><span class="count">${known.length}</span></div>
     <div class="sheetlist machine-cols">
       <div class="trow tap on-this" data-machine="${esc(mine.id)}">
         <span class="dot ${w.sharingHere ? 'live' : 'off'}"></span>
@@ -4026,6 +4436,8 @@ SCREENS.workspace = async () => {
     await refreshMe();
     draw();
   };
+
+  drawTeam();
 
   for (const b of document.querySelectorAll('[data-peek]')) {
     b.onclick = (e) => { e.stopPropagation(); peekAt(b.dataset.peek, w); };
