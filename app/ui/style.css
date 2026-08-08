@@ -2589,6 +2589,20 @@ select { cursor: pointer; }
 .has-wall #wall, .has-wall #wall-veil { display: block; }
 
 /*
+ * A little more of the picture while something is genuinely happening.
+ *
+ * Four percent, eased over two seconds, and nothing else moves. The whole
+ * design brief for this is "you should not be able to say what changed, only
+ * that the room is not asleep" — anything more is a gaming keyboard, and a
+ * background that demands attention has stopped being a background.
+ */
+:root { --wall-awake: 0; }
+#wall-veil {
+  opacity: calc(var(--wall-dim, .55) - var(--wall-awake, 0));
+  transition: none;
+}
+
+/*
  * With a picture behind it, the app stops painting its own background and the
  * surfaces take some of it.
  *

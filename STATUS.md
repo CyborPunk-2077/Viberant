@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 496 passing on Windows. The ones added last hold the two decisions
+**Tests:** 519 passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -216,6 +216,26 @@ copied and can be put back. D-146.
 **Why does this work here and not there.** Two computers side by side —
 versions, package manager, what the project expects. Names and counts, never
 values, held by a test that fails if the module can open a file. D-147.
+
+**What a build made comes back**, beside the project rather than into it and
+named for the machine that made it, as an ordinary parcel with every integrity
+check that implies. The output folder is read from the project and checked to be
+inside it — a caller who could name one could name anything. D-150.
+
+**Looking at something running there** opens an address on this computer only.
+Each request is carried over the connection those two machines already have; the
+far half talks to loopback and only to ports something running there has printed.
+Nothing is put on the internet, and turning Viberant off turns it off. D-149.
+
+All of it over one connection split into channels — question and answer, build
+output, and a page — rather than three connections with three protocols. D-148.
+
+**What a relay carried is counted**, in memory and one file here, by day for a
+month and then folded into a total. Nothing about who or what, and a test
+asserts the module cannot reach the network at all. D-151.
+
+**The background is four percent brighter while something is running**, eased
+over two seconds, from the same list the jobs corner uses. D-152.
 
 **Nineteen hostile tests**, written as the attempt rather than as the rule: path
 traversal, absolute paths, a parcel that lies about its size, a forged proof, a

@@ -753,3 +753,56 @@ export const SCENE_FOR = {
 };
 
 fit();
+
+// ---------------------------------------------------------------------------
+// Something is happening
+// ---------------------------------------------------------------------------
+
+/**
+ * The background, very slightly awake while something real is going on.
+ *
+ * The temptation here is obvious and wrong: pulse the whole screen while a
+ * build runs, throb during a transfer, make the app *feel busy*. That is a
+ * gaming keyboard, and it costs the one thing a background is for — being
+ * ignorable.
+ *
+ * So this is one number, and it moves one thing: how bright the scene is drawn,
+ * by four percent, easing over about two seconds. On a still look it does
+ * nothing at all, because a look with no picture behind it has nothing to
+ * brighten and inventing something would be a second design.
+ *
+ * **It is never decoration.** It rises only while an errand is genuinely
+ * running — a transfer moving bytes, a build going, a computer connecting — and
+ * it falls back the moment nothing is. A signal that is on when nothing is
+ * happening is not a signal.
+ */
+let awake = 0;
+let want = 0;
+let easing = null;
+
+const AWAKE_BY = 0.04;
+const OVER = 2000;
+
+export function somethingIsHappening(howMany = 0) {
+  want = Math.min(1, Math.max(0, Number(howMany) || 0) / 3) * AWAKE_BY;
+  if (easing || Math.abs(want - awake) < 0.002) return;
+
+  const from = awake;
+  const began = performance.now();
+
+  const step = () => {
+    const along = Math.min(1, (performance.now() - began) / OVER);
+    // Eased rather than linear, so it never reads as a switch being thrown.
+    awake = from + (want - from) * (along * along * (3 - 2 * along));
+    document.documentElement.style.setProperty('--wall-awake', String(awake));
+
+    if (along < 1) { easing = requestAnimationFrame(step); return; }
+    easing = null;
+    // The target may have moved while this was running.
+    if (Math.abs(want - awake) > 0.002) somethingIsHappening(want / AWAKE_BY * 3);
+  };
+  easing = requestAnimationFrame(step);
+}
+
+/** How awake it is, for a test to read rather than for anybody to look at. */
+export const howAwake = () => awake;

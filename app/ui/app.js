@@ -474,6 +474,10 @@ const KIND_WORDS = {
   build: { one: 'build', many: 'builds', mark: '⚒' },
   deploy: { one: 'deploy', many: 'deploys', mark: '↗' },
   send: { one: 'send', many: 'sends', mark: '↑' },
+  sync: { one: 'sync', many: 'syncs', mark: '⇄' },
+  git: { one: 'save', many: 'saves', mark: '✓' },
+  remote: { one: 'errand on another computer', many: 'errands on your other computers', mark: '▸' },
+  ai: { one: 'question', many: 'questions', mark: '◇' },
   other: { one: 'errand', many: 'errands', mark: '●' },
 };
 
@@ -493,6 +497,11 @@ async function checkMoving() {
   const before = shape(moving);
   const after = shape(now);
   moving = now;
+
+  // The background, very slightly awake while something is genuinely running.
+  // The same list the corner is drawn from, so it can never say one thing while
+  // the room says another — and it is nothing at all when nothing is going on.
+  wall.somethingIsHappening(now.length);
 
   // Painted whenever what is shown changed, and always when it becomes empty:
   // the corner disappearing is the one transition that must never be missed,
@@ -4097,6 +4106,10 @@ async function doSomethingOn(deviceId, t) {
           <span>Whatever the project calls its dev command.</span></button>
         <button class="pick" data-on="build"><b>Build it there</b>
           <span>Runs the project's own build, and tells you how it went.</span></button>
+        <button class="pick" data-on="bring"><b>Bring back what it built</b>
+          <span>Lands beside your project rather than in it, so nothing of yours is replaced.</span></button>
+        <button class="pick" data-on="preview"><b>Look at what is running there</b>
+          <span>Opens on this computer only. Nothing is put on the internet.</span></button>
       </div>`,
     foot: '<button class="quiet" id="on-close">Close</button>',
   });
@@ -4107,11 +4120,71 @@ async function doSomethingOn(deviceId, t) {
       const which = b.dataset.on;
       closeLayer();
       if (which === 'terminal') return openRemoteTerminal(deviceId, one);
+
+      if (which === 'bring') {
+        say({ ok: true, sentence: 'Asking for what it built…' });
+        draw();
+        say(await post('/remote/bring-built', { device: deviceId }));
+        return draw();
+      }
+
+      if (which === 'preview') return openPreview(deviceId, one);
+
       const out = await post('/remote/do', { asDevice: deviceId, name: which === 'run' ? 'dev' : 'build' });
       say(out);
       draw();
     };
   }
+}
+
+/**
+ * Looking at something running on another computer.
+ *
+ * The address that comes back works on this computer and nowhere else, and the
+ * sheet says so — because the reasonable assumption on being handed a link is
+ * that it is a link, and this one is not.
+ */
+async function openPreview(deviceId, who) {
+  const port = await ask({
+    title: 'Look at what is running there',
+    label: `Which address is it on, on ${who?.displayName ?? 'that computer'}?`,
+    value: '5173',
+    confirm: 'Open it',
+  });
+  if (!port) return;
+
+  const out = await post('/remote/preview', { device: deviceId, port: Number(port), name: me.currentName });
+  if (!out.ok) return say(out), draw();
+
+  sheet({
+    title: 'Running there',
+    narrow: true,
+    body: `
+      <p style="margin-top:0">${esc(out.sentence)}</p>
+      <div class="card" style="text-align:center;padding:1.2rem">
+        <div class="mono" style="font-size:1.1rem">${esc(out.at)}</div>
+      </div>
+      <p style="color:var(--quiet);font-size:.89rem">${esc(out.action)} It goes through the
+        connection those two computers already have, so nothing about it is reachable
+        by anybody else.</p>`,
+    foot: `<button class="quiet" id="pv-close">Close it</button>
+           <button class="go" id="pv-open">Open it</button>`,
+  });
+
+  /**
+   * Opened here rather than through the manager.
+   *
+   * The route that opens an address in a browser only ever takes ones on the
+   * web, on purpose — it is for GitHub and sign-in pages, and letting it open
+   * anything would make it a way to point somebody's browser wherever you like.
+   * A preview is on this computer, so the window opens it directly.
+   */
+  $('#pv-open').onclick = () => window.open(out.at, '_blank', 'noopener');
+  $('#pv-close').onclick = async () => {
+    say(await post('/remote/preview/close', { at: out.at }));
+    closeLayer();
+    draw();
+  };
 }
 
 /**

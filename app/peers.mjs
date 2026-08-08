@@ -311,6 +311,7 @@ export function conversation(socket, { key, who, kind, leftOver = [] }) {
   let shut = false;
 
   const feed = (frame) => {
+    counted?.(kind, frame.length);
     const plain = device.open(key, frame);
     // A box that will not open is not a hiccup. Either something changed it in
     // flight or it was never for us, and both mean this conversation is over.
@@ -344,6 +345,9 @@ export function conversation(socket, { key, who, kind, leftOver = [] }) {
     send(bytes) {
       if (shut) return Promise.reject(new Error('that connection is closed'));
       const box = framed(device.seal(key, bytes));
+      // Counted here because here is where the kind of connection is known.
+      // Nothing about what is in it, and nothing that leaves this computer.
+      counted?.(kind, box.length);
       return new Promise((done, fail) => {
         socket.write(box, (e) => (e ? fail(e) : done()));
       });
@@ -369,6 +373,15 @@ export function conversation(socket, { key, who, kind, leftOver = [] }) {
     get open() { return !shut; },
   };
 }
+
+/**
+ * Who is told how much went which way.
+ *
+ * Set by the app rather than imported, so this module stays a transport and
+ * does not acquire an opinion about counting. Nothing is counted if nobody asks.
+ */
+let counted = null;
+export const countWith = (fn) => { counted = fn; };
 
 /** Small enough to seal cheaply, large enough not to be all overhead. */
 const PIECE = 256 * 1024;

@@ -1678,6 +1678,52 @@ It survived every audit this project has run because each list was short enough 
 
 ---
 
+### D-148 `[DECIDED]` — One connection, many channels, and a half-close
+
+**Decision.** `channels.mjs` multiplexes a peer connection: a nine-byte header, either end may open one, channels opened here are even and there are odd so two ends cannot collide. A question and its answer, a build's output coming back, and a page fetched through it all share one connection.
+
+**Why.** Three of those over three connections is three handshakes and three protocols, and three protocols is two that are wrong. Nothing here is encryption or authentication — both happened before it saw a byte — which is why it is small enough to read.
+
+**Found by building it.** Ending the request half closed the whole channel, so a GET with no body closed it the instant it was sent and the answer arrived for a channel nobody was listening on. It was dropped in silence and every preview waited thirty seconds. A channel goes when **both** ends have finished, or when either fails.
+
+---
+
+### D-149 `[LOCKED]` — A preview is on this computer only, and the far half talks to loopback
+
+**Decision.** Looking at a dev server on another machine opens a small server **here**, on `127.0.0.1`, and carries each request over the connection that already exists. The far half connects to `127.0.0.1` on its own machine and nowhere else, and only to ports something running there has actually printed.
+
+**Why nothing is exposed.** A dev server is unauthenticated by design, usually talks to a real database, and prints stack traces at strangers. Putting one on the internet is the obvious answer and the wrong one. The only way in is through Viberant, on a computer already in the workspace, and turning Viberant off turns it off.
+
+**Held by tests**: the address it listens on is a named constant, there is exactly one `listen` in the module, `0.0.0.0` appears nowhere, and the address the far half dials cannot come from the request — otherwise a preview would be a way to reach anything that computer can reach, which is most of a corporate network.
+
+---
+
+### D-150 `[DECIDED]` — What a build made comes back beside the project, never into it
+
+**Decision.** The output folder is read from the project, checked to be inside it, and sent as an ordinary parcel. It lands as `<project>-from-<machine>` beside the project.
+
+**Why beside.** Something built on a different computer landing on top of what is here is exactly the surprise D-146 exists to prevent, and naming it for where it came from means two machines' answers do not overwrite each other either.
+
+**And why the project decides the folder.** A caller who could name one could name somebody's home folder, and the capability would be "send me anything", spelled differently. Sending back what was built needs the same permission as the build itself — asking for the folder is not a smaller thing than asking for the build that filled it.
+
+---
+
+### D-151 `[DECIDED]` — Count what a relay carried, before there is a price on it
+
+**Decision.** Bytes counted by how they travelled, in memory and one small file on this computer. Days for a month, then folded into one total. Nothing is sent anywhere, and nothing records who, what, or when beyond a day.
+
+**Why now.** A relay costs somebody money to run and a direct connection does not. A number invented after there is a price on it is a number nobody can check. A test asserts `carried.mjs` cannot reach the network at all — a counter that can talk is telemetry.
+
+---
+
+### D-152 `[DECIDED]` — The background is four percent brighter while something is genuinely running
+
+**Decision.** One number, moving one thing, eased over two seconds, driven by the same list the jobs corner is drawn from.
+
+**Why so little.** The temptation is to pulse the screen while a build runs and make the app *feel busy*. That is a gaming keyboard, and it costs the one thing a background is for — being ignorable. A test asserts the amount is under six percent and that `--wall-awake` moves nothing but how much of the picture shows.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -46,6 +46,7 @@ import * as google from './google.mjs';
 import * as providers from './providers.mjs';
 import * as assistant from './assistant.mjs';
 import * as newer from './newer.mjs';
+import * as peers from './peers.mjs';
 import * as device from './device.mjs';
 import * as membersOf from './members.mjs';
 import * as anywhere from './anywhere.mjs';
@@ -53,12 +54,20 @@ import * as remote from './remote.mjs';
 import * as machines from './machines.mjs';
 import * as syncing from './sync.mjs';
 import * as snapshots from './snapshots.mjs';
+import * as channelsOf from './channels.mjs';
+import * as artifacts from './artifacts.mjs';
+import * as previewing from './preview.mjs';
+import * as carried from './carried.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
 // Start menu does not inherit the PATH a terminal has, which is how `gh` came
 // to be "not installed" on a computer that plainly has it.
 const foundOnPath = widenPath();
+
+// Every byte that crosses a peer connection is counted by how it travelled, on
+// this computer, in memory and one small file. Nothing about it leaves here.
+peers.countWith((kind, bytes) => { carried.went(kind, bytes).catch(() => {}); });
 
 // And before anything is started. Running inside our own window left a mark on
 // this process that told every app we start not to put a window up — see
@@ -912,6 +921,88 @@ const routes = {
     return snapshots.restore(body?.id);
   },
 
+  // -- what a build made, and looking at what is running there ---------------
+
+  /** What this project would send back, if it were asked. */
+  async 'GET /remote/built'({ url }) {
+    const at = url.searchParams.get('path') || current?.dir;
+    if (!at) return { ok: false, sentence: 'No project chosen.', action: null };
+    return artifacts.whatCameOut(at);
+  },
+
+  /**
+   * Bring back what another computer built.
+   *
+   * It lands beside the project rather than in it, named for where it came
+   * from — so two machines' answers do not overwrite each other, and neither
+   * overwrites yours.
+   */
+  async 'POST /remote/bring-built'({ body }) {
+    const found = await anywhere.reach(body?.device);
+    if (!found.ok) return found;
+
+    const job = jobs.begin({
+      what: `Bringing back what ${found.peer.who.displayName} built`,
+      where: current?.dir ?? '',
+      kind: 'transfer',
+    });
+
+    try {
+      const post = channelsOf.channels(found.peer, { odd: false });
+      const channel = await post.start('artifact');
+      const into = await settings.get('workFolder');
+      const out = await artifacts.receive(channel, {
+        into: into || dirname(current?.dir ?? process.cwd()),
+        from: found.peer.who.displayName,
+        named: current?.name ?? 'project',
+      });
+      found.peer.close();
+      jobs.end(job, out);
+      return out;
+    } catch (e) {
+      found.peer.close();
+      const failed = {
+        ok: false,
+        sentence: 'What that computer built did not arrive.',
+        action: 'Try again when both are settled.',
+      };
+      jobs.end(job, failed);
+      return failed;
+    }
+  },
+
+  /**
+   * Open a window onto something running on another computer.
+   *
+   * The address that comes back is on this computer only. Nothing is put on the
+   * network and nothing is put on the internet.
+   */
+  async 'POST /remote/preview'({ body }) {
+    const found = await anywhere.reach(body?.device);
+    if (!found.ok) return found;
+
+    const post = channelsOf.channels(found.peer, { odd: false });
+    return previewing.open({
+      peer: found.peer,
+      channels: post,
+      port: Number(body?.port),
+      name: body?.name ?? null,
+    });
+  },
+
+  async 'GET /remote/previews'() {
+    return { ok: true, windows: previewing.openWindows() };
+  },
+
+  async 'POST /remote/preview/close'({ body }) {
+    return previewing.close(body?.at);
+  },
+
+  /** How much has gone which way. Numbers only, and none of them leave here. */
+  async 'GET /carried'() {
+    return { ok: true, ...(await carried.sofar()) };
+  },
+
   async 'GET /feedback'() {
     return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.ISSUES_FOR_VIBERANT };
   },
@@ -1152,6 +1243,11 @@ const routes = {
       runningHere: remote.openSessions().map((one) => ({
         kind: one.kind, who: one.who, began: one.began,
       })),
+      // How much went which way. The relay figure is the only one that costs
+      // anybody anything, which is why it is worth knowing before there is a
+      // price on it.
+      carried: await carried.sofar(),
+      previews: previewing.openWindows().length,
       network: { others: lan.around().length, offering: (await lan.offers()).length },
       deploy: { vercel: vercelState.here ? (vercelState.connected ? 'connected' : 'not connected') : 'not installed' },
       assistant: ai.ok ? `${ai.name}, set up` : `${ai.name}, no key`,
@@ -1911,7 +2007,13 @@ let listening = null;
  */
 const ANSWER_WITHIN = 20000;
 
-function askPeer(peer, question) {
+async function askPeer(peer, question) {
+  const post = channelsOf.channels(peer, { odd: false });
+  const channel = await post.start('ask');
+  return askOn(channel, question);
+}
+
+function askOn(peer, question) {
   return new Promise((done) => {
     const id = ulid();
     let held = '';
@@ -1999,23 +2101,76 @@ async function answerPeer(peer, asked) {
   return reply({ ok: false, sentence: 'This computer does not know how to do that.' });
 }
 
-// Somebody arriving is handed to the answering side, and nothing else.
+/**
+ * Somebody arriving, and the three things they may ask for.
+ *
+ * All of it over one connection, split into channels — a question and its
+ * answer, what a build made, and a page from a development server. Every one
+ * checks with the workspace on **this** computer before doing anything.
+ */
 anywhere.whenSomebodyArrives((peer) => {
-  let held = '';
-  peer.incoming.on('data', (chunk) => {
-    held += chunk.toString();
-    for (;;) {
-      const at = held.indexOf('\n');
-      if (at === -1) return;
-      const line = held.slice(0, at);
-      held = held.slice(at + 1);
-      if (!line.trim()) continue;
-      let asked;
-      try { asked = JSON.parse(line); } catch { return peer.close(); }
-      answerPeer(peer, asked).catch(() => {});
+  const post = channelsOf.channels(peer, { odd: true });
+
+  post.whenOpened(async (channel) => {
+    const ws = await membersOf.current();
+    const from = peer.who?.deviceId;
+    const known = !!ws?.devices?.[from] && !membersOf.isRevoked(ws, from);
+    if (!known) return channel.fail('that computer is not in this workspace');
+
+    if (channel.what === 'ask') {
+      let held = '';
+      channel.incoming.on('data', (chunk) => {
+        held += chunk.toString();
+        for (;;) {
+          const at = held.indexOf('\n');
+          if (at === -1) return;
+          const line = held.slice(0, at);
+          held = held.slice(at + 1);
+          if (!line.trim()) continue;
+          let asked;
+          try { asked = JSON.parse(line); } catch { return channel.fail('unreadable'); }
+          answerOnChannel(channel, peer, asked).catch(() => {});
+        }
+      });
+      return;
     }
+
+    if (channel.what === 'artifact') {
+      // Sending back what was built is part of building, so it needs the same
+      // permission — asking for a folder is not a smaller thing than asking
+      // for the build that filled it.
+      if (!membersOf.may(ws, from, 'remoteBuild')) {
+        return channel.fail('that computer is not allowed to build here');
+      }
+      return void artifacts.send(current?.dir ?? '', channel);
+    }
+
+    if (channel.what.startsWith('preview:')) {
+      if (!membersOf.may(ws, from, 'remoteRun')) {
+        return channel.fail('that computer is not allowed to run things here');
+      }
+      // Only ports something running here has actually mentioned. Anything
+      // else would make this a way to reach whatever this computer can reach.
+      const offering = remote.openSessions()
+        .flatMap((one) => remote.whatItSaid(one.id)?.ports ?? []);
+      return previewing.answer(channel, { allowedPorts: offering });
+    }
+
+    channel.fail('this computer does not know how to do that');
   });
+
+  // The old line-by-line shape, kept for anything that opens no channel.
+  let held = '';
+  peer.incoming.on('data', () => { held = ''; });
 });
+
+/** The same answers as before, said down a channel rather than a connection. */
+async function answerOnChannel(channel, peer, asked) {
+  await answerPeer({
+    who: peer.who,
+    send: (text) => channel.write(text),
+  }, asked);
+}
 
 /**
  * What a terminal has said since the page last looked.

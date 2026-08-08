@@ -247,21 +247,29 @@ describe('two computers on different networks, meeting through a relay', () => {
     const cutKnown = await peers.greet(cutSocket);
     const cutPeer = peers.conversation(cutSocket, { ...cutKnown, kind: peers.RELAY });
 
-    // Pour part of it and then hang up, the way a network does.
-    const whole = parcel.wrap(from, { everything: true });
-    let sent = 0;
-    for await (const chunk of whole) {
-      await cutPeer.send(chunk);
-      sent += chunk.length;
-      if (sent > 200_000) break;
-    }
-    whole.destroy();
+    /**
+     * Cut after exactly four files, rather than after so many bytes.
+     *
+     * Cutting by byte count is a race: how many whole files have landed by then
+     * depends on how quickly the far end got through them, which under a full
+     * test run is a different answer every time. This sends a parcel that only
+     * ever contained four files and then hangs up before its closing line — a
+     * genuine interruption, at a place both ends agree on.
+     */
+    const all = await parcel.survey(from, { everything: true });
+    const someOfIt = { ...all, files: all.files.slice(0, 4) };
+    someOfIt.bytes = someOfIt.files.reduce((sum, one) => sum + one.size, 0);
+
+    const part = parcel.wrap(from, { everything: true, seen: someOfIt });
+    for await (const chunk of part) await cutPeer.send(chunk);
+    // Everything it had, and then the wire goes, before the closing line is read.
+    await new Promise((r) => setTimeout(r, 200));
     cutSocket.destroy();
 
     const stopped = await firstTry;
     assert.equal(stopped.ok, false, 'the cut transfer reported success');
     assert.equal(stopped.resumable, true, 'nothing was kept to carry on from');
-    assert.ok(stopped.have > 0 && stopped.have < 10, `kept ${stopped.have} of 10`);
+    assert.equal(stopped.have, 4, `kept ${stopped.have} of 10`);
 
     // Second go: only what is missing.
     const held = await other.ask('whatIsHere', { into: target, forOffer: 'atlas2' });
