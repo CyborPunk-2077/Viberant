@@ -857,13 +857,30 @@ const routes = {
     return membersOf.cancelInvite(ws, body?.of);
   },
 
+  /**
+   * Use a code, on a computer that can already see the workspace.
+   *
+   * **The honest limit, said here rather than found out by pressing.** A code
+   * is the permission to join; it is not the workspace. The workspace itself
+   * — who is in it, what each may do, the keys they know each other by —
+   * lives on the computer that made it, and something has to carry it across.
+   * Today the only thing that does is a service both computers can reach, and
+   * with no address for one there is nothing for a code to be redeemed against.
+   *
+   * So this refuses, and says the actual reason. It used to say the same thing
+   * in words that read like a settings problem, which sent people to look for a
+   * box that would not have helped.
+   */
   async 'POST /team/join'({ body }) {
     const ws = await membersOf.current();
     if (!ws) {
       return {
         ok: false,
-        sentence: 'A code joins a workspace this computer can already see.',
-        action: 'Ask whoever owns it to add the address of their service in Settings first.',
+        cannotYet: true,
+        sentence: 'This computer cannot reach the workspace that code belongs to.',
+        action: 'A code is permission to join, not the workspace itself — something has to '
+          + 'carry it across. Both computers need the address of the same service, which is '
+          + 'set under Your other computers in Settings. Nothing here has been changed.',
       };
     }
     const me = await device.card();

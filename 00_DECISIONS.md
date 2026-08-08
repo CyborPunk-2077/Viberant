@@ -1925,6 +1925,51 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-173 `[LOCKED]` — A computer is in a workspace because it joined one, and for no other reason
+
+**Decision.** The list of who is in a workspace is built from that workspace's own devices, in one loop, and from nothing else. Being on the same network, or signed in to the same account, or having been seen before, decides only *how* somebody is reached and whether they are online — never whether they are in.
+
+**Why it looked broken.** Two lists of computers sat on one screen under headings that read the same, so a computer on the same GitHub account was indistinguishable from somebody who had joined. The membership list was never wrong; the page was conflating two different things and saying neither out loud. The account list now says, in a sentence, that being on the same account is not being in a workspace.
+
+**Held by a test that states it as a sentence,** and by counting the places that add to the list: exactly one. A second source folded in for convenience fails.
+
+---
+
+### D-174 `[OPEN]` — A code is permission to join, not the workspace itself
+
+**The gap, stated rather than papered over.** The workspace record — who is in it, what each may do, the keys they know each other by — lives on the computer that made it. A code authorises joining; something still has to carry the workspace across. Today the only thing that does is a service both computers can reach, so a computer with no address for one has nothing to redeem a code against, and joining from a fresh install cannot work.
+
+**What was fixed now:** the refusal says that, in those words. It used to say something that read like a settings problem and sent people looking for a box that would not have helped.
+
+**What is still owed:** a way for the code to fetch the workspace from whoever made it. The authenticated peer channel already exists and already carries questions; the missing piece is that its every branch requires membership first, which is the wrong check for the one message that creates membership. Owner: Eng.
+
+---
+
+### D-175 `[DECIDED]` — A broad question is answered from what describes the project
+
+**Decision.** "What is this project about" and its kin skip the file search entirely and answer from README, the architecture notes and the project's own metadata, in four parts: what it is, what it does, what it is built with, how it fits together.
+
+**Why.** The search matched the words `project` and `about` against the whole folder and answered out of whichever deeply nested file happened to mention them — a correct description of one file, presented as a description of the whole thing. A README is a person explaining their own project, and it was not in the list of files read at all.
+
+---
+
+### D-176 `[DECIDED]` — Nothing connected is not a fact about Claude
+
+**Decision.** With no AI set up at all the sentence says no AI is connected and names all three companies. Only when one of several is the one without a key is that one named.
+
+**Why.** "Viberant has no key for Claude yet" reads as though Claude were the only one there is, and sends somebody to open an account with a company they did not choose.
+
+---
+
+### D-177 `[DECIDED]` — A folder chooser is rooted at the computer, never at where you are
+
+**Decision.** The Windows chooser always opens at This PC, and the picker has a box for typing or pasting a path.
+
+**Why.** The argument that looked like "start here" is the *root* of the tree. Opened from Documents, Documents was the top of the world and no other drive could be reached — somebody wanting a folder on D: had to cancel and find another way in. There is no way to ask that chooser to open somewhere and still show everything, so it shows everything.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 536 in the app and 107 in core — 643 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 546 in the app and 107 in core — 653 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,43 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## A workspace is the people who joined it
+
+Two lists of computers sat on one screen under headings that read the same, so a
+computer signed in to the same GitHub account looked exactly like somebody who
+had joined. The membership list was never wrong — it has always been built
+from the workspace and nothing else — the page was conflating two different
+things. The workspace comes first now; the account list says, in a sentence,
+that being on the same account is not being in a workspace. D-173.
+
+**Verified with two real instances:** A makes a workspace and has one member. B,
+running beside it, is not a member and has no workspace. Making an invitation
+adds nobody. After all of it A still has exactly one member.
+
+**The gap that remains, stated plainly:** a code is permission to join, not the
+workspace itself. The workspace record lives on the computer that made it, and
+something has to carry it across; today only a service both computers can reach
+does that. Joining from a fresh install cannot work yet, and the refusal now
+says so in those words instead of reading like a settings problem. D-174.
+
+The second list of everybody's projects mixed together is gone. One place, and
+it is the computer you pressed.
+
+## Asking about a project
+
+"whats this project about ??" used to be answered with a careful explanation of
+one deeply nested file, because the search matched the words `project` and
+`about` across the folder. README was not among the files it read at all. Broad
+questions skip the search and answer from what describes the project. D-175.
+
+"Viberant has no key for Claude yet" is gone: nothing being connected is not a
+fact about Claude. D-176. A long answer can be scrolled and read to the end.
+
+The folder chooser opens at the computer rather than at wherever you were, and
+takes a typed path. D-177.
 
 ---
 
