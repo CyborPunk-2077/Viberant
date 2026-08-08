@@ -27,8 +27,19 @@ import * as github from './github.mjs';
 const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
-/** Where it goes. The project's own home, not ours. */
-export const HOME = 'rSlashGIT/Viberant';
+/**
+ * Where a report about **this manager** goes.
+ *
+ * This is the one account name written down anywhere in this product, and it is
+ * deliberately not an identity: it is the address of Viberant's own issue list,
+ * the way a support address is fixed. It is never the account you are signed in
+ * as, never a project's owner, and never a default for anything.
+ *
+ * Named `ISSUES_FOR_VIBERANT` rather than `HOME`, because `HOME` beside an
+ * owner/name pair reads like somebody's account and that is exactly the
+ * confusion worth removing. A test below holds it to the one use it has.
+ */
+export const ISSUES_FOR_VIBERANT = 'rSlashGIT/Viberant';
 
 const KEPT = join(HOUSE, 'feedback.jsonl');
 
@@ -75,7 +86,7 @@ export async function send({ what, kind = 'wrong', about = {} }) {
 
   const made = await quiet(() => run('gh', [
     'issue', 'create',
-    '--repo', HOME,
+    '--repo', ISSUES_FOR_VIBERANT,
     '--title', `${named.name}: ${text.split('\n')[0].slice(0, 70)}`,
     '--body', body,
   ], { maxBuffer: 8 * 1024 * 1024 }));

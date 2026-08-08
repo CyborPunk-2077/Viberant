@@ -174,3 +174,57 @@ describe('an account mismatch is shown, never resolved by guessing', () => {
       'the answer carries whether the two agree, rather than proceeding');
   });
 });
+
+/**
+ * No account name is written down anywhere that decides anything.
+ *
+ * The reported worry, in the user's words: work going to an account nobody
+ * chose. One way that happens is a name left in the source from whichever
+ * computer the product was built on, quietly acting as a default.
+ *
+ * Exactly one such name is allowed to exist — the address of Viberant's own
+ * issue list, which is a support address rather than an identity. This checks
+ * that it stays the only one, and that it is nowhere near the code that decides
+ * where somebody's work goes.
+ */
+describe('nothing decides an account from a name in the source', () => {
+  const CODE = ['github.mjs', 'projects.mjs', 'workspace.mjs', 'deploy.mjs',
+    'server.mjs', 'ui/app.js', 'lan.mjs', 'live.mjs', 'firstpublish.mjs'];
+
+  test('the files that decide where work goes name no account at all', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join: j } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const here = dirname(fileURLToPath(import.meta.url));
+
+    const offences = [];
+    for (const file of CODE) {
+      const text = await readFile(j(here, '..', file), 'utf8');
+      // Comments explain the fault and are allowed to quote it.
+      const code = text
+        .replace(/\/\*[\s\S]*?\*\//g, ' ')
+        .replace(/^\s*\/\/.*$/gm, ' ');
+      for (const m of code.matchAll(/['"`]([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)['"`]/g)) {
+        const [, owner, repo] = m;
+        // The shapes that look like owner/name but are not:
+        //   what a browser is told a file is, which is always type/subtype;
+        //   a path to a file, which has an extension on the end;
+        //   a folder a build puts things in.
+        if (/^(application|font|text|image|audio|video|multipart)$/i.test(owner)) continue;
+        if (/\./.test(repo)) continue;
+        if (/^(node|core|app|ui|dist|src|test|target|build|out|docs|public)$/i.test(owner)) continue;
+        offences.push(`${file}: ${m[0]}`);
+      }
+    }
+    assert.deepEqual(offences, [],
+      'an owner/name written into code that decides destinations is a default nobody chose');
+  });
+
+  test('the one name that does exist is the issue list, and only that', async () => {
+    const feedback = await import('../feedback.mjs');
+    assert.equal(typeof feedback.ISSUES_FOR_VIBERANT, 'string');
+    assert.match(feedback.ISSUES_FOR_VIBERANT, /\//);
+    assert.equal(feedback.HOME, undefined,
+      'the old name read like somebody account and is gone');
+  });
+});

@@ -653,7 +653,7 @@ const routes = {
   },
 
   async 'GET /feedback'() {
-    return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.HOME };
+    return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.ISSUES_FOR_VIBERANT };
   },
 
   async 'POST /feedback'({ body }) {
@@ -692,6 +692,32 @@ const routes = {
   async 'GET /project/destination'() {
     if (!current) return noProject;
     return github.destinationFor(current.dir);
+  },
+
+  /**
+   * Point this project at a repository on the account in use here.
+   *
+   * The address it used before is kept under another name rather than replaced.
+   * Nothing about somebody's history is discarded to make a send work, and if
+   * this turns out to be the wrong idea the old address is still written down
+   * inside the project where they can see it.
+   */
+  async 'POST /project/connect'({ body }) {
+    if (!current) return noProject;
+
+    const going = await github.destinationFor(current.dir);
+    if (!going.session?.signedIn) return going;
+    if (going.binding?.isWorkspace) return going;
+
+    const name = String(body?.name ?? '').trim() || basename(current.dir);
+    if (!/^[\w.-]+$/.test(name)) {
+      return {
+        ok: false,
+        sentence: 'That name has characters GitHub will not accept.',
+        action: 'Letters, numbers, dots and dashes.',
+      };
+    }
+    return github.connectTo(going.binding.gitRoot ?? current.dir, { name, session: going.session });
   },
 
   /** What one project is bound to, for the panel beside the list. */

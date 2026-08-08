@@ -581,11 +581,24 @@ nav {
 }
 .rail .drop { flex: none; }
 .rail .who { width: 100%; max-width: none; }
+/*
+ * The account menu floats against the window rather than hanging inside the
+ * rail. The rail scrolls, and a panel inside something that scrolls is clipped
+ * by it and counts towards what it has to scroll — which is the reported
+ * protrusion and the sideways scrollbar, and no width fixes either, because the
+ * container was the problem. Placed by measurement in `openPanel`; this only
+ * says how large it may be and that its text wraps.
+ */
 .rail .panel {
-  left: 0; right: auto;
-  bottom: calc(100% + var(--s2)); top: auto;
-  width: max(17rem, 100%);
+  width: 19rem;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  overflow-x: hidden;
 }
+.rail .panel .pick { white-space: normal; }
+.rail .panel .pick b,
+.rail .panel .sub { overflow-wrap: anywhere; }
 
 /* ------------------------------------------------------------------------- */
 /* The bar across the work                                                    */
@@ -705,7 +718,7 @@ nav {
   .rail .who .grow { display: none; }
   .rail .tab.on::before { left: 2px; }
   .rail .who { justify-content: center; padding: 0; }
-  .rail .panel { width: max(17rem, 240px); }
+  .rail .panel { width: min(19rem, calc(100vw - 2rem)); }
   main { padding: var(--s5) var(--s5) var(--s8); }
   #top { padding: 0 var(--s5); }
 }

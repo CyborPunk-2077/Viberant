@@ -241,6 +241,59 @@ export async function destinationFor(dir) {
     } : {}),
   };
 }
+
+/**
+ * Give this project a repository of its own, on the account in use here.
+ *
+ * For the case where a project already sends somewhere belonging to somebody
+ * else. **The old address is kept, not replaced** — written down under another
+ * name inside the project — because throwing away where somebody's work used to
+ * go, in order to make a send succeed, is exactly the kind of quiet damage this
+ * product is not allowed to do. Putting it back afterwards is one line.
+ */
+export async function connectTo(gitRoot, { name, session: now }) {
+  if (workspace.isInsideWorkspace(gitRoot)) {
+    return {
+      ok: false,
+      sentence: 'That folder is the one this manager uses to let your computers find each other.',
+      action: 'Pick the folder your work is actually in.',
+    };
+  }
+
+  const was = await quiet(() => git(gitRoot, 'remote', 'get-url', 'origin'));
+  const old = was ? was.stdout.trim() : null;
+
+  const made = await quiet(() => gh(
+    ['repo', 'create', `${now.login}/${name}`, '--private', '--source', '.'],
+    { cwd: gitRoot },
+  ));
+  if (!made) {
+    return {
+      ok: false,
+      sentence: `A project called ${name} could not be made on ${now.login}.`,
+      action: 'One of that name may already be there. Try another name.',
+    };
+  }
+
+  // Kept before anything is repointed, so there is never a moment where the old
+  // address exists nowhere at all.
+  if (old) {
+    await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
+    await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
+  }
+
+  const to = `https://github.com/${now.login}/${name}.git`;
+  await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to));
+  await useOwnCredentials(gitRoot);
+
+  return {
+    ok: true,
+    sentence: `This project now sends to ${now.login}/${name}.`,
+    action: old
+      ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
+      : 'Send your work whenever you are ready.',
+  };
+}
 export async function accounts() {
   if (!(await haveGitHubTool())) return { here: false, accounts: [], active: null };
 

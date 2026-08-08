@@ -301,6 +301,9 @@ async function openWhoPanel() {
       <span class="grow">Your name on saved work
         <span class="sub">${esc(g.identity?.name || 'not set yet')}</span></span></button>`;
 
+  // It was placed while it said "looking…". It is a different size now.
+  if (!panel.hidden) placeFloating(panel);
+
   for (const b of panel.querySelectorAll('[data-gh-use]')) {
     b.onclick = async () => {
       closePanels();
@@ -397,7 +400,7 @@ function drawNav() {
               <span class="what">${esc(me.machineName || 'this computer')}</span>
             </span>
           </button>
-          <div class="panel" hidden id="who-panel"></div>
+          <div class="panel" hidden data-floats id="who-panel"></div>
         </div>
       </div>
     </div>`;
@@ -1116,10 +1119,55 @@ function openPanel(panel) {
   if (wasOpen) return;
 
   panel.hidden = false;
-  const room = panel.getBoundingClientRect();
 
+  /*
+   * A panel that hangs out of something that scrolls has to leave it.
+   *
+   * The account menu lives at the foot of the rail, and the rail scrolls. An
+   * absolutely-positioned child of a scrolling box is clipped by that box and
+   * counts towards what it has to scroll — so the menu was cut off at the rail's
+   * edge and gave the rail a sideways scrollbar of its own. That is the reported
+   * "protrusion", and no width fixes it, because the container is the problem.
+   *
+   * Marked panels are placed against the window instead, measured at the moment
+   * of opening, which is the only moment the answer is knowable (D-57).
+   */
+  if (panel.dataset.floats !== undefined) return placeFloating(panel);
+
+  const room = panel.getBoundingClientRect();
   if (room.bottom > innerHeight - 8) panel.classList.add('above');
   if (room.left < 8) panel.classList.add('leftward');
+}
+
+/**
+ * Put a floating panel where it fits, measured now.
+ *
+ * Called again whenever its contents change, and that is the point. It is
+ * opened holding "looking…" while the account is fetched, so measuring once at
+ * opening measures the placeholder — three lines tall — and then the real
+ * content arrives, grows to ten times that, and hangs off the bottom of the
+ * window. Placing something by its size means placing it whenever its size
+ * is decided, not whenever it appears.
+ */
+function placeFloating(panel) {
+  const anchor = panel.previousElementSibling ?? panel.parentElement;
+  const from = anchor.getBoundingClientRect();
+
+  panel.style.position = 'fixed';
+  panel.style.left = '0px';
+  panel.style.top = '0px';
+  const mine = panel.getBoundingClientRect();
+
+  const left = Math.min(Math.max(8, from.left), Math.max(8, innerWidth - mine.width - 8));
+  // Above the thing it belongs to when there is room, which at the foot of a
+  // rail there normally is. Otherwise below it, and never past either edge.
+  const above = from.top - mine.height - 6;
+  const top = above >= 8
+    ? above
+    : Math.max(8, Math.min(from.bottom + 6, innerHeight - mine.height - 8));
+
+  panel.style.left = `${left}px`;
+  panel.style.top = `${top}px`;
 }
 
 addEventListener('click', (e) => { if (!e.target.closest('.drop')) closePanels(); });
@@ -2016,14 +2064,27 @@ async function showWhereItGoes() {
     return;
   }
   if (d.mismatch) {
+    /*
+     * Two facts, then one thing to do — and the thing to do is about the
+     * project, not about the account.
+     *
+     * Offering "switch to whoever owns this" is the wrong shape: it treats the
+     * account you deliberately signed in as as the thing that is wrong, and it
+     * is the one option that quietly changes what every *other* project here
+     * will do. Connecting this project to the account you are using changes one
+     * project, which is what somebody in this situation actually meant.
+     */
     box.className = 'going bad';
     box.innerHTML = `
-      <b>${esc(d.sentence)}</b>
-      <span>${esc(d.action)}</span>
+      <span>Project remote <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b></span>
+      <span>Active account <b>${esc(d.session.login)}</b></span>
+      <span>Sending is held until these agree. Nothing has been changed.</span>
       <span class="acts">
-        <button class="small" id="going-switch">Switch to ${esc(d.binding.owner)}</button>
+        <button class="small" id="going-connect">Connect this project to ${esc(d.session.login)}</button>
+        <button class="quiet small" id="going-accounts">Accounts…</button>
       </span>`;
-    $('#going-switch').onclick = () => openWhoPanel();
+    $('#going-connect').onclick = () => connectProjectSheet(d);
+    $('#going-accounts').onclick = () => go('settings');
     $('#pub').disabled = true;
     return;
   }
@@ -2044,6 +2105,47 @@ async function showWhereItGoes() {
     <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>
     ${d.binding.branch ? `<span class="mono">· ${esc(d.binding.branch)}</span>` : ''}
     ${d.binding.url ? `<a href="${esc(d.binding.url)}" target="_blank" rel="noreferrer">on GitHub ↗</a>` : ''}</span>`;
+}
+
+/**
+ * Point this project at a repository on the account you are actually using.
+ *
+ * The old address is kept, under another name, rather than replaced. Nothing
+ * about somebody's history is thrown away to make a send work: if this turns
+ * out to be the wrong idea, the thing it used to point at is still written down
+ * in the project, and putting it back is one line.
+ */
+function connectProjectSheet(d) {
+  const suggested = d.binding.repo ?? tail(d.binding.localRoot);
+
+  sheet({
+    title: `Connect ${tail(d.binding.localRoot)} to ${d.session.login}`,
+    narrow: true,
+    body: `
+      <p class="sub">This project sends to
+        <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>, which belongs to
+        another account. Connecting it makes a copy of its own on
+        <b>${esc(d.session.login)}</b> and sends there from now on.</p>
+      <label class="field">What should it be called there?</label>
+      <input id="conn-name" style="width:100%" value="${esc(suggested)}">
+      <p class="sub" style="margin-top:1rem">
+        Everything in the project stays exactly as it is, and the address it uses now is
+        kept under another name rather than thrown away.</p>`,
+    foot: `<span class="left">Nothing is sent until you press Save and send.</span>
+      <button class="quiet" id="conn-no">Never mind</button>
+      <button class="go" id="conn-yes">Connect it</button>`,
+    onOpen: () => {
+      $('#conn-no').onclick = closeLayer;
+      $('#conn-yes').onclick = async () => {
+        const name = $('#conn-name').value.trim();
+        if (!name) return;
+        closeLayer();
+        say(await post('/project/connect', { name }));
+        await refreshMe();
+        draw();
+      };
+    },
+  });
 }
 
 async function saveAndSend() {
