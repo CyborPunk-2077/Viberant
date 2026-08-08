@@ -1114,6 +1114,41 @@ function asParagraphs(text) {
 let inspecting = null;
 
 /** Show something beside the work, or nothing at all. */
+/**
+ * Two computers and the line between them, drawn from what is true.
+ *
+ * The line is the one thing on this page that carries meaning rather than
+ * decoration: it is the shape of a real connection, and its colour says how
+ * that connection is made. Straight and green for the same network, curved and
+ * violet through something in the middle, dashed and grey for a computer that
+ * is not there at all. Nothing here is drawn when nothing is connected.
+ */
+function topology({ here, there, how, good = true }) {
+  const relayed = /relay/i.test(how ?? '');
+  const gone = !good;
+
+  return `
+    <div class="insp-map">
+      <svg viewBox="0 0 260 96" aria-hidden="true">
+        <path d="${relayed ? 'M64 48 C 104 20, 156 20, 196 48' : 'M64 48 H196'}"
+          fill="none" stroke="${gone ? 'var(--line-strong)' : relayed ? 'var(--vibe-b)' : 'var(--live)'}"
+          stroke-width="1.4" ${gone ? 'stroke-dasharray="4 5"' : ''}/>
+        ${gone ? '' : `<circle r="3" fill="${relayed ? 'var(--vibe-b)' : 'var(--live)'}">
+          <animateMotion dur="2.6s" repeatCount="indefinite"
+            path="${relayed ? 'M64 48 C 104 20, 156 20, 196 48' : 'M64 48 H196'}"/>
+        </circle>`}
+        <circle cx="44" cy="48" r="19" fill="var(--raised)" stroke="var(--vibe-b)" stroke-width="1.2"/>
+        <circle cx="216" cy="48" r="19" fill="var(--raised)"
+          stroke="${gone ? 'var(--line-strong)' : 'var(--live)'}" stroke-width="1.2"/>
+      </svg>
+      <div class="ends">
+        <span><b>${esc(here)}</b><span>this computer</span></span>
+        <span class="rest"></span>
+        <span class="right"><b>${esc(there)}</b><span>${esc(how ?? 'not reachable')}</span></span>
+      </div>
+    </div>`;
+}
+
 function inspect(what) {
   inspecting = what;
   const box = $('#inspector');
@@ -1141,9 +1176,24 @@ function inspect(what) {
         <dt>${esc(f.label)}</dt>
         <dd class="${f.mono ? 'mono' : ''} ${f.dim ? 'dim' : ''}">${f.html ?? esc(String(f.value))}</dd>
       </dl>`).join('')}
-    ${(what.acts ?? []).length ? `<div class="insp-acts">${
-  (what.acts ?? []).map((a, i) => `<button class="${a.danger ? 'danger ' : ''}small" data-insp="${i}">${esc(a.what)}</button>`).join('')
-}</div>` : ''}`;
+    ${(what.counts ?? []).length ? `
+      <div class="insp-part">${esc(what.countsAre ?? 'In all')}</div>
+      <div class="insp-counts">
+        ${what.counts.map((one) => `
+          <span><b>${esc(String(one.many))}</b><span>${esc(one.what)}</span></span>`).join('')}
+      </div>` : ''}
+    ${(what.acts ?? []).length ? `
+      <div class="insp-part">What you can do</div>
+      <div class="insp-acts">${
+  what.acts.map((a, i) => `
+    <button class="${a.danger ? 'danger' : ''}" data-insp="${i}">
+      <span>${esc(a.what)}</span>
+      <span class="go" aria-hidden="true">${a.danger ? '' : '\u2192'}</span>
+    </button>`).join('')
+}</div>` : ''}
+    ${what.map ? `
+      <div class="insp-part">How it is reached</div>
+      ${topology(what.map)}` : ''}`;
 
   $('#insp-close').onclick = () => inspect(null);
   for (const b of box.querySelectorAll('[data-insp]')) {
@@ -1206,13 +1256,31 @@ function inspectMachine(m, near, w) {
       { label: 'Working on', value: m.workingOn },
       { label: 'Kind', value: m.kind },
       { label: 'Known by', value: m.id, mono: true, dim: true },
-      {
-        label: 'Offering',
-        value: here
-          ? (w.offers ?? []).length || 'nothing'
-          : (w.projects ?? []).filter((p) => p.from === m.id).length || 'nothing',
-      },
     ],
+    // What it has, as three numbers rather than as a sentence about a number.
+    countsAre: here ? 'What this one offers' : 'What it offers',
+    counts: [
+      {
+        many: here
+          ? (w.offers ?? []).filter((o) => o.kind !== 'project').length
+          : (w.projects ?? []).filter((p) => p.from === m.id && p.kind !== 'project').length,
+        what: 'folders',
+      },
+      {
+        many: here
+          ? (w.offers ?? []).filter((o) => o.kind === 'project').length
+          : (w.projects ?? []).filter((p) => p.from === m.id && p.kind === 'project').length,
+        what: 'projects',
+      },
+      { many: here ? (w.offers ?? []).length : (w.projects ?? []).filter((p) => p.from === m.id).length, what: 'in all' },
+    ],
+    // The one graphic worth drawing: two computers and how they are joined.
+    map: here ? null : {
+      here: w.machineName ?? 'This computer',
+      there: m.name,
+      how: near ? 'Direct · this network' : m.hereNow ? 'Notes only' : 'Not reachable',
+      good: !!near,
+    },
     acts: here
       ? [
         { what: 'Rename it', run: () => $('#w-rename')?.click() },

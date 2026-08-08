@@ -466,8 +466,22 @@ body {
   min-width: 0;
   transition: grid-template-columns var(--m-panel) var(--ease);
 }
-#work.with-inspector { grid-template-columns: minmax(0, 1fr) var(--inspector); }
-:root { --inspector: 300px; }
+/*
+ * The inspector is placed against the window, not given a column.
+ *
+ * It used to be the second track of this grid, and the track never opened:
+ * measured, the columns stayed `1060px 0px` whatever the second one was set
+ * to, so the panel was laid out past the right edge of the window at
+ * thirty-three pixels wide. Open, correct, full of the right words, and
+ * entirely off the screen — with nothing visible to say anything was wrong.
+ * That is the worst kind of layout bug and it survived two passes.
+ *
+ * Placed against the window it cannot happen: there is no track to fail to
+ * open. The work is given room for it by padding instead, which is one
+ * declaration and cannot resolve to nothing.
+ */
+#work.with-inspector { padding-right: var(--inspector); }
+:root { --inspector: 320px; }
 
 main {
   overflow-y: auto;
@@ -477,12 +491,18 @@ main {
 }
 
 #inspector {
+  position: fixed;
+  top: var(--top);
+  right: 0;
+  bottom: 0;
+  width: var(--inspector);
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
   border-left: 1px solid var(--line);
   background: var(--card);
   padding: var(--s5);
+  z-index: 40;
 }
 #inspector[hidden] { display: none; }
 
@@ -553,8 +573,77 @@ main {
   overflow-wrap: anywhere;
 }
 
-.insp-acts { display: flex; flex-direction: column; gap: var(--s2); margin-top: var(--s5); }
-.insp-acts button { width: 100%; justify-content: flex-start; }
+/* What the next stretch of the inspector is about. */
+.insp-part {
+  margin: var(--s5) 0 var(--s3);
+  font-size: var(--t-tiny);
+  font-weight: var(--w-mid);
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* Three numbers across, which is how many of these there ever are. */
+.insp-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s3);
+}
+.insp-counts > span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.insp-counts b {
+  font-size: 1.05rem;
+  font-weight: var(--w-semi);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.insp-counts > span > span { font-size: var(--t-meta); color: var(--faint); }
+
+/*
+ * The things you can do, as a list rather than as a stack of buttons.
+ *
+ * A column of full-width buttons all the same colour reads as a form. These
+ * are separate errands of different weights, so they read as a menu: a name, an
+ * arrow, and the one that cannot be undone in the colour that says so.
+ */
+.insp-acts { display: flex; flex-direction: column; gap: 1px; }
+.insp-acts button {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  padding: var(--s3);
+  border: 0;
+  border-radius: var(--r-button);
+  background: none;
+  color: var(--ink);
+  font-size: var(--t-sub);
+  text-align: left;
+  cursor: pointer;
+}
+.insp-acts button > span:first-child { flex: 1 1 auto; min-width: 0; }
+.insp-acts button .go { color: var(--faint); }
+.insp-acts button:hover { background: var(--raised); }
+.insp-acts button:hover .go { color: var(--vibe-b); }
+.insp-acts button.danger { color: var(--trouble); background: none; }
+.insp-acts button.danger:hover { background: color-mix(in oklab, var(--trouble) 12%, transparent); }
+
+/* Two computers, and the line between them. */
+.insp-map {
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--deep);
+  padding: var(--s3) var(--s4) var(--s4);
+}
+.insp-map svg { display: block; width: 100%; height: auto; }
+.insp-map .ends { display: flex; align-items: flex-start; gap: var(--s2); margin-top: -.4rem; }
+.insp-map .ends .rest { flex: 1 1 auto; }
+.insp-map .ends > span { display: flex; flex-direction: column; min-width: 0; }
+.insp-map .ends .right { text-align: right; }
+.insp-map .ends b { font-size: var(--t-meta); font-weight: var(--w-mid); color: var(--ink); }
+.insp-map .ends > span > span { font-size: var(--t-tiny); color: var(--faint); }
+@media (prefers-reduced-motion: reduce) {
+  .insp-map circle[r="3"] { display: none; }
+}
 
 /*
  * Narrower, it becomes a drawer over the work rather than a column beside it.
@@ -562,20 +651,22 @@ main {
  * table unusable, and a thing you opened deliberately is allowed to cover
  * something while it is open.
  */
+/*
+ * Narrower, it covers the work rather than making room beside it. At that
+ * width taking three hundred pixels from the table would leave the table
+ * unusable, and a thing you opened deliberately is allowed to cover something
+ * while it is open.
+ */
 @media (max-width: 74rem) {
-  #work.with-inspector { grid-template-columns: minmax(0, 1fr) 0; }
+  #work.with-inspector { padding-right: 0; }
   #inspector {
-    position: fixed;
-    top: var(--top);
-    right: 0;
-    bottom: 0;
     width: min(320px, 86vw);
     z-index: 80;
     box-shadow: var(--shadow-lift);
     animation: slide-in var(--m-panel) var(--ease);
   }
-  @keyframes slide-in { from { transform: translateX(100%); } }
 }
+@keyframes slide-in { from { transform: translateX(100%); } }
 .hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
 .hold.reading { max-width: var(--hold-read); }
 
