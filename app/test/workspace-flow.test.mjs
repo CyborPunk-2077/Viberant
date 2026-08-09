@@ -86,6 +86,15 @@ function ask(port, method, path, body) {
  * and it exists precisely so that this test can exist: two copies cannot both
  * hold one fixed door. They still shout on the same one, so they still find
  * each other.
+ *
+ * **The shifts are spaced twenty apart, and that is not arbitrary.** The door
+ * that carries folders and the door that takes a direct connection are one
+ * apart — so two copies whose shifts differ by one give the first copy's
+ * direct door the same number as the second copy's carrier. One of them loses
+ * the binding, and what it looks like from the outside is a computer that is
+ * plainly present and cannot be reached at all. Measured: with shifts eleven
+ * and twelve, the second copy could not reach the first by any of the three
+ * ways; spaced out, both reach each other.
  */
 async function aCopy(name, { port, shift }) {
   const home = join(root, name, 'home');
@@ -158,8 +167,8 @@ describe('two copies of the app, one workspace, the whole errand', () => {
 
   test('both copies start and say who they are', async () => {
     [A, B] = await Promise.all([
-      aCopy('Ada-PC', { port: 7811, shift: 11 }),
-      aCopy('Bo-PC', { port: 7812, shift: 12 }),
+      aCopy('Ada-PC', { port: 7811, shift: 20 }),
+      aCopy('Bo-PC', { port: 7812, shift: 40 }),
     ]);
 
     const [a, b] = await Promise.all([A.get('/me'), B.get('/me')]);
@@ -231,7 +240,7 @@ describe('two copies of the app, one workspace, the whole errand', () => {
    * is not membership: it is a claim anybody nearby can make.
    */
   test('a computer on the same network that was never invited is not in the workspace', async () => {
-    C = await aCopy('Cass-PC', { port: 7813, shift: 13 });
+    C = await aCopy('Cass-PC', { port: 7813, shift: 60 });
     await C.post('/local/on');
 
     // Long enough for a beacon to have gone out several times.
@@ -270,7 +279,8 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     });
     assert.ok(seen, 'the other computer\'s copy of the project never appeared');
 
-    assert.equal(seen.state, 'SHARED');
+    // Shared, and nothing said about it yet, which is not the same as behind.
+    assert.equal(seen.state, 'UP_TO_DATE');
     assert.ok(seen.mine, 'this computer\'s own copy was not recognised as its own');
     assert.equal(seen.others.length, 1);
     assert.equal(seen.others[0].you, false);
@@ -278,6 +288,68 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     const all = (await A.get('/team/projects')).projects.map((p) => p.name);
     assert.equal(all.includes('Private notes'), false,
       'a folder that was never offered was exposed to the workspace');
+  });
+
+  /**
+   * A change becomes a summary, counted from the disk it happened on.
+   *
+   * "Somebody changed Viberant" is a notification. "One added, one rewritten"
+   * is something a person can decide about without opening anything. The
+   * numbers come from the folder held against itself two seconds earlier,
+   * which is the only honest source: nothing here can know which file anybody
+   * has open, and a manager that guessed would be wrong in front of somebody
+   * looking at their own screen.
+   *
+   * Checked on the computer that made the change, because that is where the
+   * counting happens. Whether the summary then reaches the other computer is a
+   * separate matter and is measured separately — see the one below it.
+   */
+  test('a change becomes one summary, counted honestly from the disk it happened on', async () => {
+    await writeFile(join(onB, 'src', 'added.js'), 'export const three = 3\n');
+    await writeFile(join(onB, 'src', 'main.js'), 'export const one = 1\nexport const two = 2\n');
+
+    const seen = await until(async () => {
+      const r = await B.get('/team/projects');
+      const one = (r.projects ?? []).find((p) => p.name === 'Lantern');
+      const own = one?.copies?.find((c) => c.you);
+      return own?.lastChanged ? { r, own } : null;
+    }, { within: 40000 });
+    assert.ok(seen, 'changing an offered folder produced no summary at all');
+
+    // One added and one rewritten, from an edit that did exactly that. Nothing
+    // was deleted, and nought is a fact that must not be rounded into a guess.
+    assert.equal(seen.own.added, 1, 'the added file was not counted as added');
+    assert.equal(seen.own.modified, 1, 'the rewritten file was not counted as rewritten');
+    assert.equal(seen.own.gone, 0, 'something was reported as deleted that was not');
+
+    assert.ok((seen.own.which ?? []).some((f) => f.endsWith('added.js')),
+      `the names of what changed were not carried: ${JSON.stringify(seen.own.which)}`);
+    assert.equal((seen.own.which ?? []).length <= 6, true,
+      'every name was carried, which is a list rather than a summary');
+  });
+
+  /*
+   * What somebody is working on, derived and never invented.
+   *
+   * The only honest answer available is which shared project their computer
+   * last reported a change in, and when. Anything richer would need something
+   * watching a screen, which is not a thing this is going to grow.
+   */
+  test('and what somebody is working on is derived, never invented', async () => {
+    const r = await B.get('/team/projects');
+    const theirs = Object.values(r.doing ?? {}).find((one) => one.device === 'Bo-PC');
+    assert.ok(theirs, `nobody was reported as working on anything: ${JSON.stringify(r.doing)}`);
+
+    assert.equal(theirs.project, 'Lantern');
+    assert.ok(theirs.at > Date.now() - 120000, 'the moment given is not recent enough to be this edit');
+
+    // Nothing anywhere in the answer claims to know about a file being open,
+    // an editor, or anything that would need watching somebody work.
+    const said = JSON.stringify(r);
+    for (const never of [/editing/i, /has open/i, /typing/i, /cursor/i, /viewing/i]) {
+      assert.equal(never.test(said), false,
+        `something was invented about what somebody is doing: ${never}`);
+    }
   });
 
   test('a change made on the other computer is seen from here, and looking changes nothing', async () => {
@@ -384,7 +456,7 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     const wasMe = await meIn(A);
     await A.stop();
 
-    const again = await aCopy('Ada-PC', { port: 7814, shift: 11 });
+    const again = await aCopy('Ada-PC', { port: 7814, shift: 20 });
     const after = await again.get('/team');
 
     assert.equal(await meIn(again), wasMe,

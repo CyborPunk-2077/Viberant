@@ -289,12 +289,25 @@ async function watchWhatIsOffered() {
       if (!known) continue;
       const sameName = known.toLowerCase() === one.path.toLowerCase();
 
+      /*
+       * What the folder held when watching started.
+       *
+       * Kept so that "it changed" can become "three added, eight rewritten,
+       * one gone" — which is the difference between a notification and
+       * something worth reading. It is the folder held against itself a moment
+       * ago, so every number in it is a fact about this disk. Nothing is
+       * inferred about what anybody was doing, because nothing here can know
+       * that, and a manager that guessed would be wrong in front of somebody
+       * who could see their own screen.
+       */
+      held.was = await syncing.manifest(one.path, { everything: !!one.everything }).catch(() => null);
+
       held.watcher = watch(sameName ? one.path : known, { recursive: true }, (_kind, name) => {
         const path = String(name ?? '');
         // The noisy folders nobody shares on purpose.
         if (path.includes('node_modules') || path.includes('.git')) return;
         clearTimeout(held.settling);
-        held.settling = setTimeout(() => sayItChanged(one).catch(() => {}), SETTLES_AFTER);
+        held.settling = setTimeout(() => sayItChanged(one, held).catch(() => {}), SETTLES_AFTER);
         held.settling.unref?.();
       });
       // A watcher that fails is forgotten rather than left in the list, so the
@@ -308,13 +321,31 @@ async function watchWhatIsOffered() {
   }
 }
 
-/** One summary, once the folder has stopped moving. */
-async function sayItChanged(offer) {
+/**
+ * One summary, once the folder has stopped moving.
+ *
+ * **Said as what changed, not as that something did.** "Somebody changed
+ * Viberant" is a notification; "three added, eight rewritten, one gone" is a
+ * thing a person can decide about without opening anything. Both cost the same
+ * to work out, because the folder was already surveyed to know it had moved.
+ *
+ * Every number is this disk held against itself two seconds ago. Nothing is
+ * claimed about what anybody was doing or which file they had open — nothing
+ * here can know that, and inventing it in front of somebody who can see their
+ * own screen is the fastest way to stop being believed.
+ */
+async function sayItChanged(offer, held = null) {
   const ws = await membersOf.current();
   if (!ws || !existsSync(offer.path)) return;
 
   const now = await syncing.manifest(offer.path, { everything: !!offer.everything });
   const me = await device.card();
+
+  // Now against then. `missing` is what then does not have, which is what was
+  // added; `extra` is what now does not have, which is what went.
+  const was = held?.was ?? null;
+  const moved = was ? syncing.compare(now, was) : null;
+  if (held) held.was = now;
 
   const said = chatter.anEvent({
     kind: 'project.changed',
@@ -325,11 +356,29 @@ async function sayItChanged(offer) {
     offer: offer.id,
     files: now.count,
     bytes: now.bytes,
-    text: `${me.displayName} changed ${offer.name}`,
+    added: moved ? moved.missing.length : null,
+    modified: moved ? moved.changed.length : null,
+    gone: moved ? moved.extra.length : null,
+    // The few names, for somebody who wants to know which. Never all of them:
+    // a build touches thousands and a list of thousands is not a summary.
+    which: moved ? [...moved.missing, ...moved.changed].slice(0, 6) : null,
+    text: moved
+      ? `${me.displayName} changed ${offer.name} · ${inWordsChanged(moved)}`
+      : `${me.displayName} changed ${offer.name}`,
   });
 
   await chatter.remember(said);
   await sayItToTheOthers(ws, said).catch(() => null);
+}
+
+/** Three numbers, and only the ones that are not nought. */
+function inWordsChanged({ missing, changed, extra }) {
+  const bits = [
+    missing.length ? `${missing.length} added` : null,
+    changed.length ? `${changed.length} rewritten` : null,
+    extra.length ? `${extra.length} gone` : null,
+  ].filter(Boolean);
+  return bits.length ? bits.join(', ') : 'nothing that shows';
 }
 
 // ---------------------------------------------------------------------------
@@ -1052,17 +1101,119 @@ const routes = {
       }
     }));
 
-    const projects = [...byName.values()].map((one) => ({
-      ...one,
-      mine: one.copies.find((c) => c.you) ?? null,
-      others: one.copies.filter((c) => !c.you),
-      // Whether anybody else has one at all is the only thing knowable without
-      // asking what is inside, and asking that is a separate press.
-      state: one.copies.some((c) => c.you) && one.copies.length > 1 ? 'SHARED'
-        : one.copies.some((c) => c.you) ? 'ONLY_HERE' : 'ONLY_THEIRS',
-    })).sort((a, b) => a.name.localeCompare(b.name));
+    /**
+     * What has actually happened, folded onto the projects it happened to.
+     *
+     * **Nothing here is asked of the network.** Every computer that changes a
+     * folder it offers says so, once the folder settles, with what changed on
+     * its own disk. Those are already written down, so the state of a project
+     * — whether anything is waiting, from whom, and how much — is a fold over
+     * a list this computer already has. Opening the workspace costs nothing and
+     * says something, which is the opposite of the two possible mistakes:
+     * asking every computer for a survey every time a page is drawn, or
+     * showing a row of names and making somebody press each one to find out.
+     *
+     * What it cannot know is whether *this* computer's copy differs, which
+     * needs the two folders actually held against each other. That is what
+     * seeing what is different does, and it stays a separate press.
+     */
+    const events = await chatter.lately({ workspace: ws.id, most: 400 });
+    const lower = (v) => String(v ?? '').toLowerCase();
 
-    return { ok: true, projects, workspace: { id: ws.id, name: ws.name } };
+    // The last thing each computer said about each project, and the last sync
+    // this computer finished for it.
+    const changedBy = new Map();
+    const syncedAt = new Map();
+    for (const one of events) {
+      if (one.kind === 'project.changed' && one.project) {
+        changedBy.set(`${lower(one.project)}|${one.from}`, one);
+      }
+      if (one.kind === 'sync.completed' && one.project) {
+        const key = lower(one.project);
+        if (!syncedAt.has(key) || one.at > syncedAt.get(key)) syncedAt.set(key, one.at);
+      }
+    }
+
+    const projects = [...byName.values()].map((one) => {
+      const key = lower(one.name);
+      const mine = one.copies.find((c) => c.you) ?? null;
+      const others = one.copies.filter((c) => !c.you);
+      const settled = syncedAt.get(key) ?? 0;
+
+      // Each copy, with the last thing that computer said about it. A copy
+      // nobody has said anything about is not "up to date" and is not
+      // "changed" — it is a copy, and saying more would be inventing.
+      const withNews = one.copies.map((c) => {
+        const said = changedBy.get(`${key}|${c.deviceId}`) ?? null;
+        return {
+          ...c,
+          lastChanged: said?.at ?? null,
+          added: said?.added ?? null,
+          modified: said?.modified ?? null,
+          gone: said?.gone ?? null,
+          which: said?.which ?? null,
+          // Behind means: they said they changed it after the last time
+          // anything was brought over here. It is a claim about the record,
+          // not about the two folders, and it is worded that way on screen.
+          waiting: !c.you && !!said?.at && said.at > settled,
+        };
+      });
+
+      const waiting = withNews.filter((c) => c.waiting);
+      const newest = waiting.reduce((most, c) => (c.lastChanged > (most?.lastChanged ?? 0) ? c : most), null);
+
+      return {
+        ...one,
+        copies: withNews,
+        mine: withNews.find((c) => c.you) ?? null,
+        others: withNews.filter((c) => !c.you),
+        syncedAt: settled || null,
+        waitingOn: newest,
+        // Whether anybody else has one at all is the only thing knowable
+        // without asking what is inside, and asking that is a separate press.
+        state: !mine && others.length ? 'ONLY_THEIRS'
+          : newest ? 'CHANGES_AVAILABLE'
+            : mine && one.copies.length > 1 ? 'UP_TO_DATE'
+              : 'ONLY_HERE',
+      };
+    }).sort((a, b) => a.name.localeCompare(b.name));
+
+    /**
+     * What each person is working on, derived and never invented.
+     *
+     * There is no way for this manager to know which file anybody has open, so
+     * it does not say. What it does know is which shared project somebody's
+     * computer last reported a change in, when, and how much — which is a
+     * truthful answer to "what is everyone working on" and the only one
+     * available. Anything richer would need something watching over their
+     * shoulder, which is not a thing this is going to grow.
+     */
+    const doing = {};
+    for (const one of events) {
+      if (one.kind !== 'project.changed' || !one.project) continue;
+      const who = ws.devices?.[one.from]?.person ?? one.fromName;
+      if (!who) continue;
+      const held = doing[who];
+      if (held && held.at >= one.at) continue;
+      doing[who] = {
+        project: one.project,
+        at: one.at,
+        added: one.added ?? null,
+        modified: one.modified ?? null,
+        gone: one.gone ?? null,
+        device: one.fromName,
+      };
+    }
+
+    const needsAttention = projects.filter((one) => one.state === 'CHANGES_AVAILABLE').length;
+
+    return {
+      ok: true,
+      projects,
+      doing,
+      needsAttention,
+      workspace: { id: ws.id, name: ws.name },
+    };
   },
 
   /**
@@ -1832,7 +1983,15 @@ const routes = {
     if (question.length < 3) {
       return { ok: false, sentence: 'There was no question.', action: 'Type one first.' };
     }
-    return assistant.askAbout({ dir: current.dir, question });
+    /*
+     * A company named on the question is for this question only.
+     *
+     * It is what "ask the other one instead" presses, and it deliberately does
+     * not write anything down: being moved to a company somebody did not pick,
+     * and finding out from a bill, is what choosing one is there to prevent.
+     */
+    const instead = String(body?.instead ?? '').trim() || null;
+    return assistant.askAbout({ dir: current.dir, question, justThisOnce: instead });
   },
 
   /**

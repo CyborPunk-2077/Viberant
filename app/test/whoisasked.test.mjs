@@ -52,7 +52,7 @@ describe('more than one can be asked, and the choice is the persons', () => {
 
     const set = await assistant.ready();
     assert.equal(set.ok, true);
-    assert.equal(set.name, 'ChatGPT');
+    assert.equal(set.name, 'OpenAI');
     assert.equal(set.model.keySetting, 'openaiKey', 'and its own key, not another one');
   });
 
@@ -87,7 +87,7 @@ describe('more than one can be asked, and the choice is the persons', () => {
     const set = await assistant.ready();
     assert.equal(set.ok, true);
     assert.equal(set.name, 'Claude');
-    assert.equal(set.insteadOf, 'ChatGPT',
+    assert.equal(set.insteadOf, 'OpenAI',
       'it must say which one it is not asking, or the person is billed by a company they did not pick without being told');
   });
 

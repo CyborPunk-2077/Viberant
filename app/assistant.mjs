@@ -52,19 +52,19 @@ const quiet = async (fn, fallback = null) => { try { return await fn(); } catch 
  */
 export const CATALOGUE = {
   claude: {
-    default: 'claude-sonnet-4-5-20250929',
+    default: 'claude-sonnet-5',
     models: [
-      { id: 'claude-sonnet-4-5-20250929', name: 'Sonnet 4.5', why: 'The balanced one. Use this unless you have a reason not to.' },
-      { id: 'claude-opus-4-1-20250805', name: 'Opus 4.1', why: 'Slower and better at hard problems. Costs more per question.' },
-      { id: 'claude-3-5-haiku-20241022', name: 'Haiku 3.5', why: 'Fast and cheap. Good for short questions about a file.' },
+      { id: 'claude-sonnet-5', name: 'Sonnet 5', why: 'The balanced one. Use this unless you have a reason not to.' },
+      { id: 'claude-opus-5', name: 'Opus 5', why: 'Slower and better at hard problems. Costs more per question.' },
+      { id: 'claude-haiku-4-5-20251001', name: 'Haiku 4.5', why: 'Fast and cheap. Good for short questions about a file.' },
     ],
   },
   openai: {
-    default: 'gpt-4o',
+    default: 'gpt-5-mini',
     models: [
-      { id: 'gpt-4o', name: 'GPT-4o', why: 'The balanced one.' },
-      { id: 'gpt-4o-mini', name: 'GPT-4o mini', why: 'Fast and cheap.' },
-      { id: 'o3-mini', name: 'o3-mini', why: 'Thinks for longer before answering.' },
+      { id: 'gpt-5-mini', name: 'GPT-5 mini', why: 'The balanced one. Fast, and cheap enough to ask freely.' },
+      { id: 'gpt-5', name: 'GPT-5', why: 'Better at hard problems. Costs more per question.' },
+      { id: 'gpt-4.1-mini', name: 'GPT-4.1 mini', why: 'The older cheap one, if something needs it.' },
     ],
   },
   /*
@@ -111,8 +111,11 @@ export const MODELS = [
   {
     id: 'claude',
     name: 'Claude',
+    apiIs: 'the Anthropic API account at console.anthropic.com',
+    subscriptionIs: 'a Claude subscription',
     keySetting: 'anthropicKey',
     where: 'https://console.anthropic.com/settings/keys',
+    topUp: 'https://console.anthropic.com/settings/billing',
     model: 'claude-sonnet-4-5-20250929',
     async ask({ key, system, message, mostTokens = 1600 }) {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -129,15 +132,7 @@ export const MODELS = [
           messages: [{ role: 'user', content: message }],
         }),
       });
-      if (!res.ok) {
-        const said = whatTheySent(await quiet(() => res.json(), null));
-        return {
-          ok: false,
-          status: res.status,
-          why: said?.error?.message ?? null,
-          waitFor: howLongToWait(res, said),
-        };
-      }
+      if (!res.ok) return theirRefusal(res, whatTheySent(await quiet(() => res.json(), null)));
       const body = await res.json();
       return {
         ok: true,
@@ -156,21 +151,42 @@ export const MODELS = [
    * who already pays for one of these does not have to start paying for another
    * to use this at all.
    */
+  /**
+   * **Named for what is being bought, which is not what most people picture.**
+   *
+   * This said `ChatGPT`, and the refusal that followed said *your ChatGPT
+   * account has run out of credit* to somebody who pays for ChatGPT every
+   * month and whose subscription was fine. They are two accounts at one
+   * company: a subscription buys the website and the phone app, and an API key
+   * is billed separately, per question, out of a balance the subscription
+   * never touches. Telling somebody the wrong one is empty is worse than
+   * telling them nothing — they go and check the thing that was never the
+   * problem. `apiIs` is the words for the one that is.
+   */
   {
     id: 'openai',
-    name: 'ChatGPT',
+    name: 'OpenAI',
+    apiIs: 'the OpenAI API account at platform.openai.com',
+    subscriptionIs: 'a ChatGPT subscription',
     keySetting: 'openaiKey',
     where: 'https://platform.openai.com/api-keys',
+    topUp: 'https://platform.openai.com/settings/organization/billing',
     model: 'gpt-4o',
     at: 'https://api.openai.com/v1/chat/completions',
+    // The modern name for the same thing. `max_tokens` is the old one, and the
+    // models this company has added since are refusing it outright.
+    budgetField: 'max_completion_tokens',
     ask: askLikeOpenAi,
   },
   {
     id: 'gemini',
     name: 'Gemini',
+    apiIs: 'the Google AI Studio key on this computer',
+    subscriptionIs: 'a Gemini subscription',
     keySetting: 'geminiKey',
     where: 'https://aistudio.google.com/apikey',
-    model: 'gemini-2.0-flash',
+    topUp: 'https://aistudio.google.com/apikey',
+    model: 'gemini-flash-latest',
     at: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
     ask: askLikeOpenAi,
   },
@@ -189,22 +205,14 @@ async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
     headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model: this.model,
-      max_tokens: mostTokens,
+      [this.budgetField ?? 'max_tokens']: mostTokens,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: message },
       ],
     }),
   });
-  if (!res.ok) {
-    const said = whatTheySent(await quiet(() => res.json(), null));
-    return {
-      ok: false,
-      status: res.status,
-      why: said?.error?.message ?? null,
-      waitFor: howLongToWait(res, said),
-    };
-  }
+  if (!res.ok) return theirRefusal(res, whatTheySent(await quiet(() => res.json(), null)));
 
   const body = await res.json();
   return {
@@ -214,6 +222,31 @@ async function askLikeOpenAi({ key, system, message, mostTokens = 1600 }) {
     // went on thinking and there was none left to answer with, which is a
     // real answer to give somebody rather than an empty box.
     stoppedBecause: body.choices?.[0]?.finish_reason ?? null,
+  };
+}
+
+/**
+ * A refusal, kept whole: what they returned, what they called it, what they said.
+ *
+ * **The name they gave it is the part that was being thrown away**, and it is
+ * the only part that does not move. A message is prose — it is rewritten,
+ * translated, and appended to — so reading one with a regular expression is a
+ * rule with an expiry date nobody is told about. `code` and `type` are the
+ * same two strings this year as last, and they say precisely what a paragraph
+ * of English only implies. Measured against all three companies: an empty
+ * balance and a rejected key can arrive on the same status, with messages that
+ * share four of their words, and different codes every time.
+ */
+function theirRefusal(res, said) {
+  return {
+    ok: false,
+    status: res.status,
+    // Never the message alone. All three of these are safe to show — they name
+    // a fault, never an account and never a key.
+    code: said?.error?.code ?? said?.error?.status ?? null,
+    type: said?.error?.type ?? null,
+    why: said?.error?.message ?? null,
+    waitFor: howLongToWait(res, said),
   };
 }
 
@@ -256,6 +289,102 @@ function howLongToWait(res, said) {
 
 /** One by its name, or nothing. */
 export const modelCalled = (id) => MODELS.find((m) => m.id === id) ?? null;
+
+/** One company, named for one question, in the shape `ready` answers in. */
+async function onlyThisOne(providerId) {
+  const m = modelCalled(providerId);
+  if (!m) return { ok: false, sentence: 'That is not one this can ask.', action: null };
+
+  const key = await settings.get(m.keySetting);
+  if (!key) {
+    return {
+      ok: false,
+      name: m.name,
+      where: m.where,
+      setting: m.keySetting,
+      sentence: `There is no ${m.name} key on this computer.`,
+      action: 'Add one, and this can ask them.',
+    };
+  }
+
+  const wanted = await settings.get(`model:${m.id}`);
+  const offered = CATALOGUE[m.id]?.models ?? [];
+  const use = offered.some((one) => one.id === wanted) ? wanted : (CATALOGUE[m.id]?.default ?? m.model);
+  return { ok: true, model: { ...m, model: use }, name: m.name, using: use };
+}
+
+/**
+ * Which of a company's models this particular account is actually offered.
+ *
+ * **A catalogue is what somebody wrote down; this is what is true.** A model
+ * retired since a version of this manager was built is a name that turns every
+ * question into a refusal about an unknown model, and there is no way to find
+ * that out by reading the source \u2014 it depends on the account, not on the code.
+ * Two of the three companies will simply say, for the price of one request.
+ *
+ * It answers with the catalogue marked up rather than with everything the
+ * account has: a hundred and eighteen names is not a menu, and most of them
+ * are for things this does not do. Nothing here is remembered and nothing is
+ * chosen automatically \u2014 it reports, and a person decides.
+ */
+export async function whatTheyOffer(providerId) {
+  const m = modelCalled(providerId);
+  if (!m) return { ok: false, sentence: 'That is not one this can ask.', action: null };
+
+  const key = await settings.get(m.keySetting);
+  if (!key) {
+    return { ok: false, sentence: `No key for ${m.name} on this computer.`, action: 'Add one first.' };
+  }
+
+  const offered = CATALOGUE[m.id]?.models ?? [];
+
+  /*
+   * Only the two that publish a list. Anthropic's needs the same key and the
+   * same version header as everything else; Google's list is under a different
+   * shape entirely and is not worth a third code path for a menu of three.
+   */
+  const at = m.id === 'openai' ? 'https://api.openai.com/v1/models'
+    : m.id === 'claude' ? 'https://api.anthropic.com/v1/models?limit=200'
+      : null;
+
+  if (!at) {
+    return {
+      ok: true,
+      cannotAsk: true,
+      models: offered.map((one) => ({ ...one, offered: null })),
+      sentence: `${m.name} does not publish a list, so these are as written down.`,
+    };
+  }
+
+  const res = await quiet(() => fetch(at, {
+    headers: m.id === 'openai'
+      ? { authorization: `Bearer ${key}` }
+      : { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+  }));
+
+  if (!res) {
+    return { ok: false, kind: TROUBLE.networkError,
+      sentence: `${m.name} could not be reached.`, action: 'Check you are online, and try again.' };
+  }
+  if (!res.ok) return whatThatMeant(m, theirRefusal(res, whatTheySent(await quiet(() => res.json(), null))));
+
+  const body = await quiet(() => res.json(), null);
+  const have = new Set((body?.data ?? []).map((one) => String(one.id)));
+
+  const models = offered.map((one) => ({ ...one, offered: have.has(one.id) }));
+  const missing = models.filter((one) => one.offered === false);
+
+  return {
+    ok: true,
+    models,
+    // Said plainly, because the only reason to look at this is to find out
+    // whether the thing that is set is a thing that exists.
+    sentence: missing.length
+      ? `${missing.length} of these ${missing.length === 1 ? 'is' : 'are'} not offered to this account.`
+      : `All of these are offered to this account. ${have.size} in all are.`,
+    action: missing.length ? 'Pick one of the others.' : null,
+  };
+}
 
 /**
  * Which model is set up here, if any.
@@ -392,7 +521,8 @@ export async function checkKey(providerId, key) {
      * is what made a good Gemini key impossible to add at all: the check ran,
      * hit the free allowance, and reported it as a key that would not work.
      */
-    if (meant.kind === TROUBLE.rateLimited || meant.kind === TROUBLE.quotaExceeded) {
+    const limited = [TROUBLE.rateLimited, TROUBLE.billingRequired, TROUBLE.spendLimit];
+    if (limited.includes(meant.kind)) {
       return {
         ok: true,
         name: m.name,
@@ -401,7 +531,7 @@ export async function checkKey(providerId, key) {
         sentence: `That key works — ${m.name} accepted it.`,
         action: meant.kind === TROUBLE.rateLimited
           ? `${m.name} is limiting how often it answers just now, which is why the check could not finish. The key is kept.`
-          : `${m.name} says there is no allowance left on that account. The key is kept and will work when there is.`,
+          : `${meant.sentence} The key is kept and will work as soon as that is dealt with.`,
       };
     }
 
@@ -559,8 +689,16 @@ const VOICE = [
   'Keep it under 200 words unless asked for more.',
 ].join(' ');
 
-async function askModel({ system, message, mostTokens }) {
-  const set = await ready();
+/**
+ * Ask, once, of whoever is set up — or of one company named for this question.
+ *
+ * `justThisOnce` is the button that says *ask the other one instead*. It does
+ * not change which company is chosen: being switched to a company you did not
+ * pick, and finding out when the bill arrives, is exactly what choosing one is
+ * there to prevent. One question goes elsewhere and the setting is untouched.
+ */
+async function askModel({ system, message, mostTokens, justThisOnce = null }) {
+  const set = justThisOnce ? await onlyThisOne(justThisOnce) : await ready();
   if (!set.ok) return set;
 
   const key = await settings.get(set.model.keySetting);
@@ -626,8 +764,20 @@ async function askModel({ system, message, mostTokens }) {
       };
     }
 
-    last = whatThatMeant(set, out);
-    if (last.kind !== TROUBLE.rateLimited) return last;
+    /*
+     * The company, not the wrapper `ready` puts around it.
+     *
+     * `ready` answers `{ ok, model, name, using }`, and this passed that whole
+     * object where the company was wanted \u2014 so every sentence that reaches for
+     * something only the company knows found nothing. The words about which of
+     * two accounts is empty are exactly those words, so the refusal that was
+     * rewritten to name the right account went back to naming neither.
+     */
+    last = whatThatMeant(set.model, out);
+
+    // Anything that is not a queue is final for this company. It leaves the
+    // loop rather than the function, because another company may still answer.
+    if (last.kind !== TROUBLE.rateLimited) break;
 
     const askedFor = last.waitFor ?? 5;
     if (askedFor > LONGEST_WORTH_WAITING || tries === MOST_TRIES - 1) break;
@@ -648,19 +798,26 @@ async function askModel({ system, message, mostTokens }) {
    * did not pick is a surprise nobody should get from a manager, and the way to
    * avoid that is to say so, not to refuse to be useful.
    */
-  const worthAnotherOne = last?.kind === TROUBLE.quotaExceeded
-    || last?.kind === TROUBLE.providerUnavailable;
+  const worthAnotherOne = [
+    TROUBLE.billingRequired, TROUBLE.spendLimit, TROUBLE.providerUnavailable,
+  ].includes(last?.kind);
 
+  /**
+   * **This was unreachable, and had been since the day it was written.**
+   *
+   * The loop above returned on anything that was not a queue, so the only way
+   * in was a rate limit longer than the wait budget \u2014 which is the one refusal
+   * this deliberately does not switch for. An empty balance, the case it exists
+   * for, went straight past it to the person. It looked correct in the source
+   * and had never once run.
+   */
   if (worthAnotherOne) {
     for (const other of MODELS) {
       if (other.id === set.model.id) continue;
       const theirKey = await settings.get(other.keySetting);
       if (!theirKey) continue;
 
-      const withTheirs = {
-        ...other,
-        model: CATALOGUE[other.id]?.default ?? other.model,
-      };
+      const withTheirs = { ...other, model: CATALOGUE[other.id]?.default ?? other.model };
       const out = await quiet(() => withTheirs.ask.call(
         withTheirs, { key: theirKey, system, message, mostTokens },
       ));
@@ -678,9 +835,28 @@ async function askModel({ system, message, mostTokens }) {
     }
   }
 
+  /*
+   * Nobody switched, and somebody else could be asked by hand.
+   *
+   * The refusals this will not switch for on its own are the ones where
+   * switching would hide something that needs fixing \u2014 a key that is wrong
+   * stays wrong however many other companies answer. So it is offered rather
+   * than done, named, and the question is still in the box.
+   */
+  const others = [];
+  for (const other of MODELS) {
+    if (other.id === set.model.id) continue;
+    if (await settings.get(other.keySetting)) others.push({ id: other.id, name: other.name });
+  }
+
   // Waited what it asked for and it is still saying no, so it goes to the
   // person — with the question kept, which is the whole point.
-  return { ...last, waited: waited || null, triedFor: waited || null };
+  return {
+    ...last,
+    waited: waited || null,
+    triedFor: waited || null,
+    couldAlsoAsk: others.length ? others : null,
+  };
 }
 
 /**
@@ -698,63 +874,163 @@ async function askModel({ system, message, mostTokens }) {
  */
 export const TROUBLE = {
   authInvalid: 'AUTH_INVALID',
+  billingRequired: 'BILLING_REQUIRED',
+  spendLimit: 'SPEND_LIMIT',
   rateLimited: 'RATE_LIMITED',
-  quotaExceeded: 'QUOTA_EXCEEDED',
   modelUnavailable: 'MODEL_UNAVAILABLE',
+  askedWrong: 'INVALID_REQUEST',
   providerUnavailable: 'PROVIDER_UNAVAILABLE',
   networkError: 'NETWORK_ERROR',
   unknown: 'UNKNOWN',
 };
+
+/**
+ * What each company calls each fault, as the two strings they actually send.
+ *
+ * `code` is asked first and `type` second, because at one of them a rejected
+ * key arrives as `type: invalid_request_error, code: invalid_api_key` \u2014 read
+ * by type it is a badly written request, read by code it is the truth. The more
+ * specific of the two names wins, always.
+ *
+ * Everything here was seen, not guessed. Where a line is from documentation
+ * rather than from a request this project actually made, it says so.
+ */
+const CALLED_IT = {
+  // Seen: an empty balance at OpenAI, on 429.
+  credit_balance_exhausted: TROUBLE.billingRequired,
+  insufficient_quota: TROUBLE.billingRequired,
+  // Documented: an account that has never been set up to pay.
+  billing_not_active: TROUBLE.billingRequired,
+  // A ceiling somebody set themselves, which is a different errand from an
+  // empty balance: nothing needs buying, a number needs raising.
+  billing_hard_limit_reached: TROUBLE.spendLimit,
+
+  // Seen: a made-up key at OpenAI (401) and at Anthropic (401).
+  invalid_api_key: TROUBLE.authInvalid,
+  authentication_error: TROUBLE.authInvalid,
+  invalid_authentication: TROUBLE.authInvalid,
+  permission_error: TROUBLE.authInvalid,
+
+  rate_limit_exceeded: TROUBLE.rateLimited,
+  rate_limit_error: TROUBLE.rateLimited,
+  // Google's word for a free allowance that refills by itself, in seconds.
+  RESOURCE_EXHAUSTED: TROUBLE.rateLimited,
+
+  model_not_found: TROUBLE.modelUnavailable,
+  not_found_error: TROUBLE.modelUnavailable,
+
+  invalid_request_error: TROUBLE.askedWrong,
+  INVALID_ARGUMENT: TROUBLE.askedWrong,
+
+  overloaded_error: TROUBLE.providerUnavailable,
+  api_error: TROUBLE.providerUnavailable,
+  server_error: TROUBLE.providerUnavailable,
+  UNAVAILABLE: TROUBLE.providerUnavailable,
+};
+
+/**
+ * Money, or a queue. Both of them say "quota" and they need opposite things.
+ *
+ * Only reached when neither of the two names came back. The words that decide
+ * are the ones that are only ever about money \u2014 not the word *quota*, which
+ * at one of these three is how a free allowance of so many questions a minute
+ * is described. Read as money, somebody whose key was fine and whose allowance
+ * refills in thirty seconds was sent off to top up an account with nothing
+ * wrong with it.
+ */
+const aboutMoney = (why) => /credit balance|no credits|out of credit|insufficient_quota|plan and billing|billing details|purchase credit/i.test(why);
+
+/**
+ * A refusal, said as the thing that actually happened.
+ *
+ * Three questions in this order, and the order is the whole design:
+ *
+ *   **what did they call it** \u2014 a code, which does not move;
+ *   **what did they say** \u2014 words, which do;
+ *   **what did they return** \u2014 a status, which several faults share.
+ *
+ * It used to ask them the other way round, and the cost of that is on the
+ * record twice. An empty balance comes back as 400 at one company, 429 at
+ * another and 403 at a third \u2014 the same 403 a rejected key gets \u2014 so status
+ * first reported a maxed-out card as a bad key and sent somebody to fetch a new
+ * one. Then words-first read Google's *Quota exceeded for quota metric*, which
+ * is a queue, as a bill.
+ *
+ * Nothing here counts anything or estimates anything. There is no meter: a
+ * number this manager invented about somebody's money would be wrong within a
+ * week of any price changing.
+ */
+/** A sentence starts with a capital, wherever the words in it came from. */
+const capital = (line) => String(line).charAt(0).toUpperCase() + String(line).slice(1);
 
 export function whatThatMeant(set, out) {
   const why = String(out.why ?? '');
   const name = set.name;
   const waitFor = out.waitFor ?? null;
 
-  /**
-   * The words decide, and they decide before the number does.
-   *
-   * Being out of credit comes back as 400 at one of them, 429 at another and
-   * **403 at a third** — the same 403 a rejected key gets. Read by status
-   * first, a maxed-out card was reported as a bad key, and the advice was to go
-   * and find a new one: the wrong errand entirely, and the person would come
-   * back with a fresh key and the same refusal.
-   *
-   * So what they said outranks what they returned, everywhere below.
-   */
-  /*
-   * Money, or a queue. Both of them say "quota" and they need opposite things.
-   *
-   * This used to read the word `quota` as being about money, and for one of
-   * these three companies that is wrong nearly every time. Google's message
-   * for a free allowance of so many questions a minute — which refills on its
-   * own, in seconds — is *Quota exceeded for quota metric*. Read as money,
-   * somebody with a working key and nothing wrong with their account is told to
-   * go and top it up, which does not help and costs them their afternoon. It is
-   * exactly what was happening to Gemini, on the first question after a key was
-   * added.
-   *
-   * So money is decided by the words that are only ever about money — credit,
-   * balance, billing, a plan — and everything else at 429 is a queue.
-   */
-  const aboutMoney = /credit|balance|billing|insufficient_quota|plan and billing|hard[_ ]limit/i.test(why);
+  // What is safe to show a person and safe to keep: never a key, never an
+  // account, never a header. A company, a model, a status and their own word
+  // for the fault.
+  const facts = {
+    provider: set.id ?? set.model?.id ?? null,
+    providerName: name,
+    model: set.model?.model ?? set.model ?? null,
+    status: out.status ?? null,
+    code: out.code ?? null,
+    type: out.type ?? null,
+  };
 
-  if (aboutMoney) {
+  const named = CALLED_IT[out.code] ?? CALLED_IT[out.type] ?? null;
+
+  const kind = named
+    ?? (aboutMoney(why) ? TROUBLE.billingRequired : null)
+    ?? (out.status === 401 || out.status === 403 ? TROUBLE.authInvalid : null)
+    ?? (out.status === 429 ? TROUBLE.rateLimited : null)
+    ?? (out.status === 404 || /model|does not exist|not found/i.test(why)
+      ? TROUBLE.modelUnavailable : null)
+    ?? (out.status >= 500 ? TROUBLE.providerUnavailable : null)
+    ?? TROUBLE.unknown;
+
+  /**
+   * The one sentence this whole rewrite exists for.
+   *
+   * A subscription and an API key are two accounts at one company, and only one
+   * of them is ever empty here. Somebody who pays every month and is told
+   * *your account has run out of credit* goes and looks at the subscription,
+   * finds it perfectly healthy, and has learnt nothing except that this manager
+   * cannot be trusted about their money.
+   */
+  if (kind === TROUBLE.billingRequired) {
     return {
+      ...facts,
       ok: false,
-      kind: TROUBLE.quotaExceeded,
+      kind,
       runningLow: true,
-      provider: set.model?.id ?? set.id ?? null,
-      sentence: `Your ${name} account has run out of credit.`,
-      action: `Top it up with ${name}, and this will work again straight away. Nothing on this computer has changed, and your key is fine.`,
+      sentence: capital(`${set.apiIs ?? `the ${name} key on this computer`} has no credit left.`),
+      action: `Add credit there and this works again straight away. ${set.subscriptionIs
+        ? `This is not ${set.subscriptionIs} \u2014 they are billed separately, and paying for one does not put credit on the other. `
+        : ''}Your key is fine and nothing on this computer has changed.`,
+      topUp: set.topUp ?? null,
     };
   }
 
-  if (out.status === 401 || out.status === 403) {
+  if (kind === TROUBLE.spendLimit) {
     return {
+      ...facts,
       ok: false,
-      kind: TROUBLE.authInvalid,
-      provider: set.model?.id ?? set.id ?? null,
+      kind,
+      runningLow: true,
+      sentence: `${name} has stopped answering because this account hit the limit set on it.`,
+      action: 'Raise the limit on that account, or wait for the period it covers to turn over. There is nothing to buy and your key is fine.',
+      topUp: set.topUp ?? null,
+    };
+  }
+
+  if (kind === TROUBLE.authInvalid) {
+    return {
+      ...facts,
+      ok: false,
+      kind,
       sentence: `${name} would not accept the key on this computer.`,
       // Where the key goes is on the screen that says this, so it says "here"
       // rather than naming somewhere else to go and look.
@@ -762,12 +1038,12 @@ export function whatThatMeant(set, out) {
     };
   }
 
-  if (out.status === 429) {
+  if (kind === TROUBLE.rateLimited) {
     return {
+      ...facts,
       ok: false,
-      kind: TROUBLE.rateLimited,
+      kind,
       tooFast: true,
-      provider: set.model?.id ?? set.id ?? null,
       waitFor,
       sentence: `${name} is limiting how often it will answer.`,
       action: waitFor
@@ -776,30 +1052,40 @@ export function whatThatMeant(set, out) {
     };
   }
 
-  if (out.status === 404 || /model|not found|does not exist|unsupported/i.test(why)) {
+  if (kind === TROUBLE.modelUnavailable) {
     return {
+      ...facts,
       ok: false,
-      kind: TROUBLE.modelUnavailable,
-      provider: set.model?.id ?? set.id ?? null,
+      kind,
       sentence: `${name} does not offer the model this is set to use.`,
       action: 'Pick another model for it, and ask again.',
     };
   }
 
-  if (out.status >= 500) {
+  if (kind === TROUBLE.providerUnavailable) {
     return {
+      ...facts,
       ok: false,
-      kind: TROUBLE.providerUnavailable,
-      provider: set.model?.id ?? set.id ?? null,
+      kind,
       sentence: `${name} is having trouble at their end.`,
       action: 'Nothing here is wrong. Try again in a few minutes.',
     };
   }
 
+  if (kind === TROUBLE.askedWrong) {
+    return {
+      ...facts,
+      ok: false,
+      kind,
+      sentence: `${name} would not take the question as it was sent.`,
+      action: why || 'Pick another model for it, and ask again.',
+    };
+  }
+
   return {
+    ...facts,
     ok: false,
     kind: TROUBLE.unknown,
-    provider: set.model?.id ?? set.id ?? null,
     sentence: `${name} could not answer.`,
     action: why || 'Try again in a moment.',
   };
@@ -869,7 +1155,7 @@ export async function reviewChanges({ dir, diff, files = [] }) {
 }
 
 /** A question about this project, answered from this project. */
-export async function askAbout({ dir, question }) {
+export async function askAbout({ dir, question, justThisOnce = null }) {
   const context = await contextFor(dir);
   const broad = ABOUT_THE_WHOLE_THING.test(String(question));
 
@@ -895,6 +1181,7 @@ export async function askAbout({ dir, question }) {
     : '';
 
   return askModel({
+    justThisOnce,
     system: VOICE,
     mostTokens: broad ? 1300 : 1000,
     message: [

@@ -38,24 +38,93 @@ after(async () => {
 const asked = { name: 'Claude' };
 
 describe('a refusal is said as the thing that actually happened', () => {
-  test('out of credit reads as out of credit, and says what fixes it', async () => {
+  test('no credit reads as no credit, and says what fixes it', async () => {
     const { whatThatMeant } = await import('../assistant.mjs');
 
     // The wording each of them actually uses, when it is actually about money.
     const ways = [
       { status: 400, why: 'Your credit balance is too low to access the Anthropic API' },
       { status: 429, why: 'You exceeded your current quota, please check your plan and billing details' },
-      { status: 403, why: 'billing_hard_limit_reached' },
+      { status: 429, code: 'credit_balance_exhausted', why: 'You have no credits remaining.' },
     ];
 
     for (const one of ways) {
       const said = whatThatMeant(asked, one);
       assert.equal(said.ok, false);
       assert.equal(said.runningLow, true, `not read as running low: ${one.why}`);
-      assert.match(said.sentence, /run out of credit/);
-      assert.match(said.action, /Top it up/);
-      assert.match(said.action, /Nothing on this computer has changed/,
+      assert.match(said.sentence, /no credit left/);
+      assert.match(said.action, /Add credit/);
+      assert.match(said.action, /nothing on this computer has changed/i,
         'because the first thing somebody does is start looking for what they broke');
+    }
+  });
+
+  /**
+   * The complaint this was rewritten for, held so it cannot come back.
+   *
+   * Somebody who pays for a subscription every month was told *your ChatGPT
+   * account has run out of credit* \u2014 by a manager that had never seen their
+   * subscription and could not have. They are two accounts at one company,
+   * billed separately, and only the second one was ever empty. Being told the
+   * wrong one sends somebody to check the thing that was never the problem.
+   */
+  test('and it never says a subscription is empty, because it cannot know that', async () => {
+    const { whatThatMeant, MODELS } = await import('../assistant.mjs');
+    const openAi = MODELS.find((m) => m.id === 'openai');
+
+    const said = whatThatMeant(openAi, {
+      status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted',
+      why: 'You have no credits remaining.',
+    });
+
+    assert.match(said.sentence, /API account/,
+      'it did not say which of the two accounts is empty');
+    assert.match(said.action, /billed separately/,
+      'somebody paying a subscription is not told why that is not the answer');
+    assert.equal(/ChatGPT (account|subscription) has (run out|no credit)/i.test(
+      `${said.sentence} ${said.action}`,
+    ), false, 'it claimed something about an account it has never seen');
+  });
+
+  test('a ceiling set on the account is not something to go and buy', async () => {
+    const { whatThatMeant, TROUBLE } = await import('../assistant.mjs');
+    const said = whatThatMeant(asked, { status: 429, code: 'billing_hard_limit_reached', why: 'limit' });
+
+    assert.equal(said.kind, TROUBLE.spendLimit);
+    assert.match(said.action, /Raise the limit/);
+    assert.match(said.action, /nothing to buy/i);
+  });
+
+  /*
+   * A code outranks a message, and this is the case that proves why. Read by
+   * type it is a badly written request; read by code it is a rejected key.
+   */
+  test('what they called it outranks what they wrote about it', async () => {
+    const { whatThatMeant, TROUBLE } = await import('../assistant.mjs');
+    const said = whatThatMeant(asked, {
+      status: 401, type: 'invalid_request_error', code: 'invalid_api_key',
+      why: 'Incorrect API key provided: sk-proj-****',
+    });
+    assert.equal(said.kind, TROUBLE.authInvalid);
+  });
+
+  test('and what is carried back is safe to show and safe to keep', async () => {
+    const { whatThatMeant, MODELS } = await import('../assistant.mjs');
+    const openAi = MODELS.find((m) => m.id === 'openai');
+    const said = whatThatMeant({ ...openAi, model: { model: 'gpt-4o' } }, {
+      status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted', why: 'no credits',
+    });
+
+    assert.equal(said.status, 429);
+    assert.equal(said.code, 'credit_balance_exhausted');
+    assert.equal(said.type, 'insufficient_quota');
+    assert.equal(said.provider, 'openai');
+    assert.equal(said.model, 'gpt-4o');
+
+    // Four facts about a fault. Nothing about an account and nothing about a key.
+    for (const value of Object.values(said)) {
+      assert.equal(/sk-[a-z]*-[A-Za-z0-9]{8}/.test(String(value)), false,
+        'something shaped like a key came back in a refusal');
     }
   });
 

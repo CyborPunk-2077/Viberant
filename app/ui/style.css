@@ -608,6 +608,7 @@ main {
 .insp-acts { display: flex; flex-direction: column; gap: 1px; }
 .insp-acts button {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   width: 100%;
@@ -668,7 +669,19 @@ main {
 }
 @keyframes slide-in { from { transform: translateX(100%); } }
 .hold { max-width: var(--hold); margin: 0 auto; min-width: 0; }
-.hold.reading { max-width: var(--hold-read); }
+
+/*
+ * A page of sentences keeps an arm's-length column, and starts where every
+ * other page starts.
+ *
+ * It used to be centred in whatever room was left, which put the heading of a
+ * reading page thirty-four pixels right of the heading of every other page —
+ * measured, on the same window, switching between two places in the rail. The
+ * eye reads that as the whole page having shifted, and there is nothing on
+ * screen to explain it. The column is what needed limiting; where it begins
+ * was never the point.
+ */
+.hold.reading { max-width: var(--hold-read); margin-left: 0; }
 
 /*
  * A sentence keeps its column even on a screen that is using its full width,
@@ -726,8 +739,24 @@ nav {
 .rail .places { display: flex; flex-direction: column; gap: 1px; }
 .rail .rest { flex: 1 1 auto; min-height: var(--s4); }
 
+/*
+ * A row starts where the row starts.
+ *
+ * `button` a few hundred lines down sets `justify-content: center`, which is
+ * right for a button with a word on it and wrong for every control shaped like
+ * a row — and a row-shaped control that does not say otherwise inherits it in
+ * silence. Measured in the rail: eight places, eight different left edges,
+ * from 62px to 76px, each one set by the length of its own label. It reads as
+ * a column of things that were never lined up, which is exactly what it was.
+ *
+ * Thirteen rules had it. Each one now says so on its own line rather than
+ * relying on a shared override somewhere else, and a test holds the rule:
+ * anything that declares itself left-aligned and flex must say where its
+ * content starts.
+ */
 .rail .tab {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   width: 100%;
@@ -2227,6 +2256,7 @@ button.working::after {
 }
 .mention {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s2);
   max-width: min(26rem, 80vw);
@@ -2369,6 +2399,7 @@ select { cursor: pointer; }
 
 .pick {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   width: 100%;
@@ -2413,6 +2444,7 @@ select { cursor: pointer; }
 
 .who {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   height: auto;
@@ -2596,6 +2628,7 @@ select { cursor: pointer; }
 .menu { display: flex; flex-direction: column; gap: var(--s1); }
 .menu .opt {
   display: flex;
+  justify-content: flex-start;
   align-items: flex-start;
   gap: var(--s3);
   height: auto;
@@ -2641,6 +2674,7 @@ select { cursor: pointer; }
 .walk .list { max-height: 46vh; overflow-y: auto; }
 .walk .item {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   width: 100%;
@@ -2761,6 +2795,7 @@ select { cursor: pointer; }
 
 .look {
   display: flex;
+  justify-content: flex-start;
   flex-direction: column;
   align-items: stretch;
   gap: var(--s1);
@@ -2906,6 +2941,7 @@ select { cursor: pointer; }
 
 .palette .hit {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s3);
   width: 100%;
@@ -3062,6 +3098,7 @@ select { cursor: pointer; }
 
 .wayin {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s4);
   height: auto;
@@ -3243,19 +3280,42 @@ select { cursor: pointer; }
   .compare-cols { grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, auto); }
 }
 
-/* ------------------------------------------------------------------------- */
-/* Inside a workspace                                                         */
-/*                                                                            */
-/* Two columns here and the inspector on the right of the shell makes three,  */
-/* which is the order the questions get asked in: who is here, what are we    */
-/* working on, and what about the thing I just pressed. The left column is    */
-/* narrow on purpose — it is a list of names, and giving it more room would   */
-/* take room from the only column where anything happens.                     */
-/* ------------------------------------------------------------------------- */
+
+/* ========================================================================= */
+/* Inside a workspace                                                        */
+/*                                                                           */
+/* Two columns here, and the inspector the shell already has makes three.    */
+/* That is three questions in the order somebody asks them: who is here,     */
+/* what are we working on, and what about the thing I just pressed.          */
+/*                                                                           */
+/* The left column is narrow on purpose. It is a list of names and a list of */
+/* projects; giving it more would take it from the only column where         */
+/* anything happens. Everything operational — what has happened, what was    */
+/* said — is folded away under the project rather than stacked below it,     */
+/* because a screen you have to scroll to read is a screen that answers      */
+/* nothing at a glance.                                                      */
+/* ========================================================================= */
+
+.wshead {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.wshead .grow { display: flex; align-items: center; gap: var(--s3); min-width: 0; flex: 1 1 auto; }
+.wshead h1 { margin: 0; font-size: var(--t-h2); }
+.wshead .acts { display: flex; gap: var(--s2); flex: none; }
+
+/* Two numbers, where a heading would otherwise be followed by nothing. */
+.wsfacts { display: flex; gap: var(--s5); flex: none; }
+.wsfacts span { color: var(--quiet); font-size: var(--t-meta); white-space: nowrap; }
+.wsfacts b { color: var(--ink); font-size: var(--t-sub); font-weight: var(--w-semi); }
 
 .wsenv {
   display: grid;
-  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr);
   gap: var(--s6);
   align-items: start;
 }
@@ -3264,37 +3324,60 @@ select { cursor: pointer; }
   top: var(--s4);
   display: flex;
   flex-direction: column;
-  gap: var(--s2);
+  gap: 1px;
   min-width: 0;
 }
 .wsenv .middle { min-width: 0; }
-
-.wsperson {
-  padding: var(--s2) 0 var(--s3);
-  border-radius: var(--r-input);
-  cursor: pointer;
-}
-.wsperson > .who {
-  display: flex;
-  align-items: center;
-  gap: var(--s2);
-  padding: var(--s2) var(--s3);
-  font-size: var(--t-sub);
-}
-.wsperson.on > .who { color: var(--vibe-b); }
+.wsenv .label-tiny { padding: 0 var(--s3) var(--s2); }
+.wsenv .label-tiny.stacked { margin-top: var(--s5); }
 
 /*
- * A computer, indented under the person who sits at it.
+ * A person, and the computers they sit at, indented under them.
  *
  * The indent is the whole point: it is what says these are not two people. A
- * flat list of names read a laptop and a desktop as two colleagues, which is
- * the one thing this screen must never do.
+ * flat list read a laptop and a desktop as two colleagues, which is the one
+ * thing this screen must never do.
  */
+.wsperson { border-radius: var(--r-input); }
+.wsperson > .who {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: var(--s3);
+  width: 100%;
+  height: auto;
+  padding: var(--s3);
+  border: 0;
+  border-radius: var(--r-input);
+  background: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-sub);
+  text-align: left;
+  cursor: pointer;
+}
+.wsperson > .who .grow { display: grid; min-width: 0; gap: 1px; }
+.wsperson > .who b { font-weight: var(--w-semi); }
+.wsperson > .who:hover { background: var(--hover); }
+.wsperson.on > .who { background: var(--raised); }
+.wsperson.on > .who b { color: var(--vibe-b); }
+
+/* What a computer last said it did, which is all that can honestly be known. */
+.wsperson .doing {
+  overflow: hidden;
+  color: var(--quiet);
+  font-size: var(--t-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wsperson .doing.quiet { color: var(--faint); }
+
 .wsdevice {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
   gap: var(--s2);
-  width: 100%;
+  width: calc(100% - var(--s4));
   margin-left: var(--s4);
   padding: var(--s2) var(--s3);
   border: 0;
@@ -3312,7 +3395,7 @@ select { cursor: pointer; }
 .wsdevice.away { opacity: .62; }
 .wsdevice .how {
   flex: none;
-  max-width: 7rem;
+  max-width: 6.5rem;
   overflow: hidden;
   color: var(--faint);
   text-overflow: ellipsis;
@@ -3321,9 +3404,11 @@ select { cursor: pointer; }
 
 .wsproject {
   display: flex;
+  justify-content: flex-start;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s3);
   width: 100%;
+  height: auto;
   padding: var(--s3);
   border: 1px solid transparent;
   border-radius: var(--r-input);
@@ -3337,15 +3422,155 @@ select { cursor: pointer; }
 }
 .wsproject:hover { background: var(--hover); }
 .wsproject.on { background: var(--raised); border-color: var(--line-strong); }
-.wsproject .grow { display: grid; min-width: 0; }
-.wsproject b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wsproject .where { color: var(--faint); font-size: var(--t-meta); }
+.wsproject .grow { display: grid; min-width: 0; gap: 1px; }
+.wsproject b { overflow: hidden; font-weight: var(--w-semi); text-overflow: ellipsis; white-space: nowrap; }
+.wsproject.on b { color: var(--vibe-b); }
+.wsproject .where {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: var(--t-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
-/* Notes belong beside the work, so they get a fraction of the height they had
-   when they were a page of their own. */
-.talk.short { max-height: 14rem; }
+/* --- the project itself -------------------------------------------------- */
 
-@media (max-width: 62rem) {
+.wsproj .top {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+}
+.wsproj .top h2 { margin: 0; font-size: var(--t-h3); }
+
+.wsproj .state {
+  padding: 2px var(--s3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  font-size: var(--t-tiny);
+  font-weight: var(--w-semi);
+  white-space: nowrap;
+}
+.wsproj .state.good { border-color: color-mix(in srgb, var(--good) 40%, transparent); color: var(--good); }
+.wsproj .state.attention { border-color: color-mix(in srgb, var(--attention) 45%, transparent); color: var(--attention); }
+.wsproj .state.quiet { color: var(--quiet); }
+
+/*
+ * The one thing waiting, said once and offered twice.
+ *
+ * A folder that settles produces one of these, not one per file the disk
+ * touched, so this can afford to be the loudest thing on the screen.
+ */
+.wsnews {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+  padding: var(--s4);
+  border: 1px solid color-mix(in srgb, var(--attention) 35%, var(--line));
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--attention) 6%, var(--card));
+}
+.wsnews .grow { display: grid; gap: 2px; min-width: 0; }
+.wsnews b { font-size: var(--t-sub); font-weight: var(--w-semi); }
+.wsnews span { color: var(--quiet); font-size: var(--t-meta); }
+.wsnews .files {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: var(--t-tiny);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wsnews .acts { display: flex; gap: var(--s2); flex: none; }
+
+.wscopies {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  overflow: hidden;
+}
+.wscopies .row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, auto) auto;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  background: var(--card);
+}
+.wscopies .row + .row { border-top: 1px solid var(--line); }
+.wscopies .row.waiting { background: color-mix(in srgb, var(--attention) 4%, var(--card)); }
+.wscopies .grow { display: grid; min-width: 0; gap: 1px; }
+.wscopies b { font-size: var(--t-sub); font-weight: var(--w-semi); }
+.wscopies .where {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: var(--t-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wscopies .says { color: var(--quiet); font-size: var(--t-meta); text-align: right; white-space: nowrap; }
+.wscopies .row.waiting .says { color: var(--attention); font-weight: var(--w-semi); }
+.wscopies .acts { display: flex; justify-content: flex-end; min-width: 0; }
+.wscopies .acts button { opacity: 0; transition: opacity var(--m-hover) var(--ease); }
+.wscopies .row:hover .acts button,
+.wscopies .acts button:focus-visible { opacity: 1; }
+
+/*
+ * History, folded away.
+ *
+ * It is worth having and it is never the question. Open it and it is there;
+ * leave it and the screen answers what it is for without being scrolled.
+ */
+.wsmore { margin-top: var(--s5); border-top: 1px solid var(--line); }
+.wsmore > summary {
+  padding: var(--s3) 0;
+  color: var(--quiet);
+  font-size: var(--t-meta);
+  font-weight: var(--w-semi);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  list-style: none;
+}
+.wsmore > summary::-webkit-details-marker { display: none; }
+.wsmore > summary::before {
+  content: "\203a";
+  display: inline-block;
+  margin-right: var(--s2);
+  transition: transform var(--m-hover) var(--ease);
+}
+.wsmore[open] > summary::before { transform: rotate(90deg); }
+.wsmore > summary:hover { color: var(--ink); }
+.wsmore > div { padding-bottom: var(--s4); }
+
+.talk.short { max-height: 13rem; }
+
+@media (max-width: 68rem) {
   .wsenv { grid-template-columns: minmax(0, 1fr); }
   .wsenv .side { position: static; }
+  .wshead { flex-wrap: wrap; }
+}
+
+/*
+ * The door into a workspace.
+ *
+ * One line saying what is on the other side, and one thing to press. It sits
+ * above the people rather than beside them, because the question here is
+ * "should I go in", and a list of computers does not answer it.
+ */
+.wsdoor {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.wsdoor .grow { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.wsdoor h2 { margin: 0; font-size: var(--t-h3); }
+.wsdoor .sub { margin: 0; color: var(--quiet); font-size: var(--t-meta); }
+.wsdoor .chip.attention {
+  border-color: color-mix(in srgb, var(--attention) 45%, transparent);
+  color: var(--attention);
 }

@@ -2181,6 +2181,84 @@ Meanwhile the other watcher — the one for offered folders — deliberately did
 
 ---
 
+### D-198 `[LOCKED]` — A key and a subscription are two accounts, and only one of them is ever empty here
+
+**Decision.** The company is called **OpenAI**, never ChatGPT, everywhere — in the menu, in the settings, in the name of the key. When an account has no credit the sentence names *which* account: "The OpenAI API account at platform.openai.com has no credit left", and the next line says it is not a subscription and that the two are billed separately.
+
+**Why.** The old sentence was *Your ChatGPT account has run out of credit*, said to somebody who pays for ChatGPT every month and whose subscription was perfectly healthy. It is a claim about an account this manager has never seen and could not see. They went and checked the thing that was never the problem, and learnt only that this cannot be trusted about their money.
+
+**Held by a test** that fails on any sentence matching "ChatGPT account has run out", because this is the kind of wording that comes back the next time somebody writes a friendly error message.
+
+---
+
+### D-199 `[DECIDED]` — What they called it outranks what they wrote about it
+
+**Decision.** A refusal is read in this order: **the code**, then **the words**, then **the status**. Every company sends `error.code` and `error.type`; both are carried through with the status and shown, folded away, under "What they said".
+
+**Why the order is the whole design, and it has now been wrong twice.** Status first reported an empty balance as a rejected key, because an empty balance is 400 at one company, 429 at another and 403 at a third — the same 403 a bad key gets. Words first read Google's *Quota exceeded for quota metric*, which is a free allowance refilling in thirty seconds, as a bill. A code does not move: it is the same string this year as last, and it says precisely what a paragraph of English only implies.
+
+**Measured against real accounts before writing a line of it.** An empty OpenAI balance is `429 / insufficient_quota / credit_balance_exhausted`. A rejected OpenAI key is `401 / invalid_request_error / invalid_api_key` — **read by type it is a badly written request, read by code it is the truth**, which is exactly why the code is asked first. A rejected Anthropic key is `401 / authentication_error`.
+
+**Seven kinds now, where there were five.** Credit needed and a ceiling somebody set themselves are different errands: one needs buying, the other needs a number raised. A request the company would not take is no longer filed under "could not answer".
+
+---
+
+### D-200 `[DECIDED]` — The way out of a refusal was unreachable, and had been since it was written
+
+**Decision.** A refusal that is about the company rather than the question — no credit, a ceiling, their own trouble — tries whichever other company has a key, with the same question and the same context, and says in the answer who answered and why. Where it will not switch on its own, it offers the other company as a button that asks **once** and never writes down the choice.
+
+**Two faults, both found by asking for real.** The loop returned on anything that was not a queue, so the only way into the fallback was a rate limit longer than the wait budget — the one refusal it deliberately does not switch for. The case it exists for went straight past it. And the button that did exist posted `/ai/choose`, which changes which company is asked from then on: two presses and somebody was paying a company they had never picked, with nothing on screen saying so. The test guarding that behaviour was named for the right rule and enforced the opposite.
+
+**Verified end to end, in the real page**: OpenAI out of credit, the answer came back headed *Gemini · gemini-flash — OpenAI could not, so this one did*, with the reason underneath.
+
+---
+
+### D-201 `[DECIDED]` — A control shaped like a row starts where the row starts
+
+**Decision.** Any rule that declares itself left-aligned and a flex container must also say where its content starts. Thirteen did not. A test decides it from the stylesheet.
+
+**Why.** `button` sets `justify-content: center`, which is right for a button with a word on it and inherited in silence by every control shaped like a row. Measured in the rail: **eight places, eight different left edges, 62px to 76px, each set by the length of its own label.** Nothing was misaligned by a pixel; every row was aligned to a different thing. It is invisible in the source, because the declaration doing it is four hundred lines away and applies by not being overridden.
+
+Now: one icon position, one label position, one gap, one row height, across all nine places, at 1024, 1280 and 1440. Selecting one does not move its label.
+
+---
+
+### D-202 `[DECIDED]` — A page of sentences keeps its column and still starts where every other page starts
+
+**Decision.** `.hold.reading` keeps its arm's-length width and is left-aligned rather than centred in whatever room is left.
+
+**Why.** Centring put the heading of a reading page thirty-four pixels right of the heading of every other page — measured, same window, switching between two places in the rail. The eye reads that as the whole page having shifted, with nothing on screen to explain it. The column is what needed limiting; where it begins was never the point.
+
+---
+
+### D-203 `[DECIDED]` — "It changed" becomes "one added, one rewritten, one gone"
+
+**Decision.** A folder that settles is held against what it was when watching started, and the summary carries the three counts and up to six names. The comparison is `sync.compare` — the same function a sync uses — applied to one folder at two moments.
+
+**Why.** "Somebody changed Viberant" is a notification. "Three added, eight rewritten, one gone" is something a person can decide about without opening anything. Both cost the same, because the folder was already surveyed to know it had moved.
+
+**And what it must never become.** There is no way for this manager to know which file anybody has open, so it does not say. What each person is working on is derived from which shared project their computer last reported a change in — which is a truthful answer and the only one available. A test fails on the words *editing*, *has open*, *typing*, *cursor* and *viewing* anywhere in that answer, because guessing in front of somebody who can see their own screen is the fastest way to stop being believed.
+
+---
+
+### D-204 `[DECIDED]` — The workspace is a control room, and the project is what it is about
+
+**Decision.** Two columns and the inspector the shell already has. Left: people, their computers indented under them, each person's last reported activity, then the shared projects with a state and a dot. Middle: the chosen project — its state, the one thing waiting with **View changes** and **Sync from whoever**, then every copy with who has it and what they did. What has happened and what was said are folded away under it.
+
+Four project states and no more: **Changes waiting**, **Up to date**, **Only on this computer**, **Not on this computer**. Every extra state is something somebody has to learn before they can read the screen at a glance, which is the only job this screen has.
+
+**Nothing new underneath it.** Presence, transfer, comparison, conflicts, ways back and the stream all existed; the state is a fold over events this computer already holds, so opening the workspace asks nothing of the network and still says something.
+
+---
+
+### D-205 `[DECIDED]` — Two copies on one machine need their doors spaced, not merely shifted
+
+**Decision.** `VIBERANT_PORT_SHIFT` values in tests are twenty apart.
+
+**Why.** The door that carries folders and the door that takes a direct connection are **one apart**. Two copies whose shifts differ by one therefore give the first copy's direct door the same number as the second copy's carrier; one loses the binding, and what it looks like from outside is a computer that is plainly present and cannot be reached by any of the three ways. Measured: with shifts eleven and twelve the second copy could not reach the first at all; spaced out, both reach each other. The whole-errand test had been running with adjacent shifts and only ever driving the direction that happened to work.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

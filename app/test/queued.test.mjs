@@ -105,12 +105,34 @@ describe('a queue is waited out, briefly, and then handed over', () => {
   });
 });
 
-describe('the four things that go wrong stay four', () => {
+describe('the things that go wrong are told apart, and stay apart', () => {
+  /*
+   * Every line below is a shape one of these three companies actually sends.
+   * The ones carrying a `code` were read off a real refusal from a real
+   * account; the rest are the plain-words path, for a company that sends no
+   * code at all.
+   */
   const cases = [
     ['a key that is not accepted', { ok: false, status: 401, why: 'invalid x-api-key' }, 'AUTH_INVALID'],
-    ['an account with nothing on it', { ok: false, status: 400, why: 'Your credit balance is too low' }, 'QUOTA_EXCEEDED'],
+    ['a key rejected under a misleading type', {
+      ok: false, status: 401, type: 'invalid_request_error', code: 'invalid_api_key',
+      why: 'Incorrect API key provided',
+    }, 'AUTH_INVALID'],
+    ['an account with no credit on it', {
+      ok: false, status: 429, type: 'insufficient_quota', code: 'credit_balance_exhausted',
+      why: 'You have no credits remaining.',
+    }, 'BILLING_REQUIRED'],
+    ['an account with no credit and nothing but words', {
+      ok: false, status: 400, why: 'Your credit balance is too low',
+    }, 'BILLING_REQUIRED'],
+    ['a ceiling somebody set themselves', {
+      ok: false, status: 429, code: 'billing_hard_limit_reached', why: 'limit reached',
+    }, 'SPEND_LIMIT'],
     ['a free allowance that refills', { ok: false, status: 429, why: 'Quota exceeded for quota metric' }, 'RATE_LIMITED'],
     ['a model that is not offered', { ok: false, status: 404, why: 'model not found' }, 'MODEL_UNAVAILABLE'],
+    ['a question they would not take', {
+      ok: false, status: 400, type: 'invalid_request_error', why: 'Unsupported parameter',
+    }, 'INVALID_REQUEST'],
     ['trouble at their end', { ok: false, status: 503, why: 'overloaded' }, 'PROVIDER_UNAVAILABLE'],
   ];
 
@@ -232,17 +254,26 @@ describe('how long they asked for is read from where they put it', () => {
     assert.ok(said, 'the header is what the module reads');
   });
 
+  /**
+   * Offered, and neither taken quietly nor made permanent.
+   *
+   * This used to require the button to post `/ai/choose`, which is the route
+   * that writes down which company is asked from then on — so two presses and
+   * somebody was paying a company they had never picked, with nothing on the
+   * screen saying so. The name of this test was right and the check underneath
+   * it enforced the opposite. What it holds now is the stronger thing: the
+   * question goes to whoever was named, once, and nothing is written down.
+   */
   test('the page is offered somebody else, and never switched for you', async () => {
-    // Quietly asking another company would be spending money at a company
-    // nobody chose, which is the one thing choosing a company is for.
     const page = await readFile(join(here, '..', 'ui', 'app.js'), 'utf8');
     const at = page.indexOf('function whenItWouldNot(');
     assert.notEqual(at, -1, 'the refusal is no longer drawn as its own thing');
 
     const body = page.slice(at, page.indexOf('\n}\n', at));
     assert.match(body, /data-ask-instead/, 'no other company is ever offered');
-    assert.equal(/askAssistant\([^)]*\)\s*;\s*\}\s*\)\s*;?\s*$/.test(body.split('data-ask-instead')[0]), false);
-    assert.match(body, /post\('\/ai\/choose'/,
-      'another company is asked without the choice being changed, which would be silent');
+    assert.match(body, /instead: b\.dataset\.askInstead/,
+      'the other company is not named on the question, so something else must be being changed');
+    assert.equal(/\/ai\/choose/.test(body), false,
+      'pressing it changes which company is asked from then on, which nobody agreed to');
   });
 });

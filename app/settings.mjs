@@ -201,7 +201,7 @@ export const KNOWN = [
     kind: 'choice',
     choices: [
       { id: 'claude', name: 'Claude' },
-      { id: 'openai', name: 'ChatGPT' },
+      { id: 'openai', name: 'OpenAI' },
       { id: 'gemini', name: 'Gemini' },
     ],
     fallback: () => 'claude',
@@ -221,8 +221,12 @@ export const KNOWN = [
     id: 'openaiKey',
     where: 'asking',
     unlisted: true,
-    name: 'Key for ChatGPT',
-    why: 'The same thing for ChatGPT. It stays on this computer, in the settings file, and is never sent anywhere but OpenAI. Get one from platform.openai.com.',
+    name: 'Key for OpenAI',
+    // Named OpenAI and not ChatGPT throughout, because they are two accounts:
+    // a key is billed per question out of a balance a subscription never
+    // touches, and calling both by the subscription's name is how somebody
+    // ends up checking the one that was never the problem.
+    why: 'The same thing for OpenAI. It stays on this computer, in the settings file, and is never sent anywhere but OpenAI. Get one from platform.openai.com — this is billed separately from any subscription.',
     kind: 'secret',
     optional: true,
     longest: 200,
@@ -306,8 +310,8 @@ export const KNOWN = [
   },
   {
     id: 'model:openai',
-    name: 'Model for ChatGPT',
-    why: 'Which of ChatGPT models answers.',
+    name: 'Model for OpenAI',
+    why: 'Which of the OpenAI models answers.',
     kind: 'text',
     optional: true,
     unlisted: true,

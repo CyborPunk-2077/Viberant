@@ -114,7 +114,10 @@ const ago = (at) => {
   if (secs < 60) return 'just now';
   if (secs < 3600) return `${Math.floor(secs / 60)} min ago`;
   if (secs < 86400) return `${Math.floor(secs / 3600)} hr ago`;
-  return `${Math.floor(secs / 86400)} days ago`;
+  const days = Math.floor(secs / 86400);
+  // "1 days ago" is the kind of thing that makes a screen look unfinished, and
+  // it is one line to not do.
+  return days === 1 ? 'yesterday' : `${days} days ago`;
 };
 
 const size = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
@@ -1203,6 +1206,24 @@ function whenItWouldNot(box, r, { kind, where, body }) {
   const noKey = !!r.setting;
   const badKey = r.kind === 'AUTH_INVALID';
   const noModel = r.kind === 'MODEL_UNAVAILABLE';
+  const aboutMoney = r.kind === 'BILLING_REQUIRED' || r.kind === 'SPEND_LIMIT';
+
+  /*
+   * What they said about it, in their words, kept out of the way.
+   *
+   * Four facts and not one of them is anybody's business but this machine's:
+   * which company, which model, what they returned and what they called it.
+   * No key, no account, no header. It is folded away because somebody who
+   * cannot ask a question does not want a status code first — but the one
+   * time they are talking to somebody who can help, it is the only thing worth
+   * having, and reading it off a screen beats asking them to find a log.
+   */
+  const facts = [
+    r.providerName ?? r.provider,
+    r.model,
+    r.status ? `HTTP ${r.status}` : null,
+    r.code ?? r.type,
+  ].filter(Boolean);
 
   box.innerHTML = `
     <div class="ai-state bad">
@@ -1211,14 +1232,19 @@ function whenItWouldNot(box, r, { kind, where, body }) {
       ${r.waited ? `<span>It waited ${esc(String(r.waited))} seconds and asked again, and got the same answer.</span>` : ''}
     </div>
     <div class="bar" style="margin:.6rem 0 0" id="ai-what-now"></div>
-    <div class="fact" id="ai-else"></div>`;
+    <div class="fact" id="ai-else"></div>
+    ${facts.length ? `
+      <details class="ai-detail">
+        <summary>What they said</summary>
+        <span class="mono">${esc(facts.join(' \u00b7 '))}</span>
+      </details>` : ''}`;
 
   // The one thing to do, named for the thing that actually went wrong.
   const first = r.noneAtAll ? { does: 'setup', says: 'Connect AI' }
     : noKey ? { does: 'setup', says: 'Set it up now' }
-    : badKey ? { does: 'setup', says: 'Replace the key' }
-      : noModel ? { does: 'setup', says: 'Pick another model' }
-        : { does: 'retry', says: queued ? 'Try again now' : 'Try again' };
+      : badKey ? { does: 'setup', says: 'Replace the key' }
+        : noModel ? { does: 'setup', says: 'Pick another model' }
+          : { does: 'retry', says: queued ? 'Try again now' : 'Try again' };
 
   const acts = $('#ai-what-now');
   acts.innerHTML = `
@@ -1236,7 +1262,7 @@ function whenItWouldNot(box, r, { kind, where, body }) {
     const line = $('#ai-else');
     if (line) {
       line.className = 'fact';
-      line.textContent = 'Claude, ChatGPT or Gemini \u2014 whichever you already pay for. Any one is enough.';
+      line.textContent = 'Claude, OpenAI or Gemini \u2014 whichever you already pay for. Any one is enough.';
     }
   }
 
@@ -1246,34 +1272,30 @@ function whenItWouldNot(box, r, { kind, where, body }) {
     b.onclick = () => (b.dataset.aiDo === 'setup' ? setUpAi(again) : again());
   }
 
-  /*
-   * Somebody else who could answer this, offered but never taken.
+  /**
+   * Somebody else who could answer this, offered and never taken quietly.
    *
-   * Quietly asking a different company would be spending money at a company
-   * nobody chose, which is the one thing the choice of company exists to
-   * prevent. So it is a button with a name on it.
+   * The answer already says who could — worked out where the keys are, rather
+   * than asked for a second time from a page. Pressing one asks *this* question
+   * of *that* company, once. **It does not change which company is chosen**,
+   * which the old version of this did: two presses and somebody was paying a
+   * company they had never picked, with nothing on screen saying so.
    */
-  if (queued || badKey || r.kind === 'QUOTA_EXCEEDED' || r.kind === 'PROVIDER_UNAVAILABLE') {
-    get('/ai').then((who) => {
-      const line = $('#ai-else');
-      if (!line || !line.isConnected) return;
+  const others = r.couldAlsoAsk ?? [];
+  if (others.length && (queued || badKey || aboutMoney || r.kind === 'PROVIDER_UNAVAILABLE')) {
+    const line = $('#ai-else');
+    if (!line) return;
 
-      const others = (who.models ?? []).filter((m) => m.ready && m.id !== r.provider);
-      if (!others.length) return;
+    line.className = 'bar';
+    line.style.marginTop = '.4rem';
+    line.innerHTML = others.map((m) => `
+      <button class="quiet small" data-ask-instead="${esc(m.id)}">Ask ${esc(m.name)} instead</button>`).join('');
 
-      line.className = 'bar';
-      line.style.marginTop = '.4rem';
-      line.innerHTML = others.map((m) => `
-        <button class="quiet small" data-ask-instead="${esc(m.id)}">Ask ${esc(m.name)} instead</button>`).join('');
-
-      for (const b of line.querySelectorAll('[data-ask-instead]')) {
-        b.onclick = async () => {
-          const out = await post('/ai/choose', { provider: b.dataset.askInstead });
-          if (!out.ok) return say(out) && draw();
-          again();
-        };
-      }
-    });
+    for (const b of line.querySelectorAll('[data-ask-instead]')) {
+      // The same question, the same context, one company named for it. What
+      // comes back says which one answered, in the answer.
+      b.onclick = () => askAssistant(kind, where, { ...body, instead: b.dataset.askInstead });
+    }
   }
 }
 
@@ -5195,20 +5217,56 @@ async function drawTeam() {
       </div>`;
   };
 
+  /**
+   * The doorway, and it is a doorway rather than a page.
+   *
+   * What somebody wants from here is one of two things: which workspace, and
+   * whether anything in it needs them. Both are above the fold and the second
+   * is the reason the first is worth pressing. Everything about actually
+   * working together is on the other side of Enter, which is why this stayed
+   * short instead of growing another list.
+   */
+  const here = [...t.mine, ...t.team].filter((one) => one.online).length;
+
   box.innerHTML = `
-    <div class="sect"><h2>${esc(t.workspace.name)}</h2>
-      <span class="count">${t.mine.length + t.team.length}</span>
-      <span class="grow"></span>
-      <button class="go small" id="team-enter">Enter workspace →</button>
-      <button class="small" id="team-invite">Invite somebody</button>
-      <button class="quiet small" id="team-manage">Manage…</button>
+    <div class="wsdoor">
+      <div class="grow">
+        <h2>${esc(t.workspace.name)}</h2>
+        <span class="sub" id="team-standing">${people.size} ${people.size === 1 ? 'person' : 'people'}
+          \u00b7 ${here} of ${t.mine.length + t.team.length} computers here</span>
+      </div>
+      <button class="go" id="team-enter">Enter workspace \u2192</button>
     </div>
 
     ${t.stillWorks ? `<div class="said"><b>${esc(t.stillWorks.sentence)}</b></div>` : ''}
 
     ${[...people.values()].sort((a, b) => Number(b.you) - Number(a.you)).map(personRow).join('')}
 
+    <div class="bar" style="margin-top:var(--s4)">
+      <button class="small" id="team-invite">Invite somebody</button>
+      <button class="quiet small" id="team-manage">Manage\u2026</button>
+    </div>
+
     <div id="lately"></div>`;
+
+  /*
+   * How many projects, and whether any of them is waiting. Filled in after,
+   * because it means asking every computer that is here what it is offering,
+   * and the door should be open before that comes back.
+   */
+  get('/team/projects').then((shared) => {
+    const line = $('#team-standing');
+    if (!line || !line.isConnected) return;
+    const many = (shared.projects ?? []).length;
+    const waiting = shared.needsAttention ?? 0;
+    line.innerHTML = `${people.size} ${people.size === 1 ? 'person' : 'people'}
+      \u00b7 ${here} of ${t.mine.length + t.team.length} computers here
+      \u00b7 ${many} shared ${many === 1 ? 'project' : 'projects'}`;
+    if (waiting) {
+      line.insertAdjacentHTML('beforeend',
+        ` <span class="chip attention">${waiting} needs attention</span>`);
+    }
+  });
 
   $('#team-enter').onclick = () => { inWorkspace = true; draw(); };
   $('#team-invite').onclick = inviteSomebody;
@@ -6883,6 +6941,42 @@ let lookingAtPerson = null;
  * Projects come first among equals. Computers are how a project has more than
  * one copy; they are not the point.
  */
+/**
+ * How a project stands, as one word and one colour.
+ *
+ * Four states and no more. Every extra one is a thing somebody has to learn
+ * the meaning of before they can read the screen at a glance, which is the
+ * whole job this screen has.
+ */
+const PROJECT_STATE = {
+  CHANGES_AVAILABLE: { says: 'Changes waiting', tone: 'attention' },
+  UP_TO_DATE: { says: 'Up to date', tone: 'good' },
+  ONLY_HERE: { says: 'Only on this computer', tone: 'quiet' },
+  ONLY_THEIRS: { says: 'Not on this computer', tone: 'quiet' },
+};
+
+/** What one computer said it did to a project, in the fewest words that carry it. */
+function changeInWords(c) {
+  const bits = [
+    c.added ? `${c.added} added` : null,
+    c.modified ? `${c.modified} rewritten` : null,
+    c.gone ? `${c.gone} gone` : null,
+  ].filter(Boolean);
+  return bits.length ? bits.join(' \u00b7 ') : null;
+}
+
+/**
+ * The workspace, as the place work actually happens.
+ *
+ * Two columns and the inspector the shell already has, which makes three, and
+ * they are three questions in the order somebody asks them: who is here, what
+ * are we working on, and what about the thing I just pressed.
+ *
+ * **Projects come first among equals.** Computers are how a project comes to
+ * have more than one copy; they are not the point. The version of this screen
+ * that listed computers answered the least interesting of the three questions
+ * three times over and the other two never.
+ */
 SCREENS.workspace = async () => {
   if (!inWorkspace) return drawWorkspaceOverview();
 
@@ -6902,32 +6996,48 @@ SCREENS.workspace = async () => {
   const here = projects.find((p) => p.name === lookingAtProject) ?? projects[0] ?? null;
   lookingAtProject = here?.name ?? null;
 
+  const hereNow = everybody.filter((one) => one.online).length;
+  const waiting = shared.needsAttention ?? 0;
+
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="wshead">
       <div class="grow">
+        <button class="quiet small icon" id="ws-leave-env" title="All workspaces">\u2190</button>
         <h1>${esc(t.workspace.name)}</h1>
-        <p class="sub">Everybody in this workspace, the projects you share, and what has
-          changed between your copies.</p>
+        <span class="chip ${waiting ? 'attention' : ''}">${waiting
+    ? `${waiting} ${waiting === 1 ? 'project needs' : 'projects need'} attention`
+    : 'Everything up to date'}</span>
+      </div>
+      <div class="wsfacts">
+        <span><b>${hereNow}</b> of ${everybody.length} here</span>
+        <span><b>${projects.length}</b> shared</span>
       </div>
       <div class="acts">
-        <button class="quiet" id="ws-leave-env">\u2190 All workspaces</button>
-        <button class="small" id="ws-invite2">Invite somebody</button>
+        ${t.mayManage ? '<button class="small" id="ws-invite2">Invite\u2026</button>' : ''}
+        <button class="quiet small" id="ws-offer2">Offer a folder\u2026</button>
       </div>
     </div>
     ${saidHtml()}
 
     <div class="wsenv">
       <div class="side">
-        <div class="label-tiny">People</div>
+        <div class="label-tiny">People <span class="count">${people.size}</span></div>
         ${[...people.values()].sort((a, b) => Number(b.you) - Number(a.you)).map((who) => {
     const on = who.devices.filter((d) => d.online).length;
+    const busy = shared.doing?.[who.person] ?? null;
+    const what = busy ? changeInWords(busy) : null;
     return `
           <div class="wsperson ${who.person === lookingAtPerson ? 'on' : ''}" data-person="${esc(who.person)}">
-            <div class="who">
+            <button class="who">
               <span class="dot ${on ? 'live' : 'off'}"></span>
-              <b>${esc(who.person)}</b>
+              <span class="grow">
+                <b>${esc(who.person)}</b>
+                ${busy ? `<span class="doing">In ${esc(busy.project)}${
+  what ? ` \u00b7 ${esc(what)}` : ''} \u00b7 ${esc(ago(busy.at))}</span>`
+    : '<span class="doing quiet">Nothing shared lately</span>'}
+              </span>
               ${who.you ? '<span class="chip vibe">you</span>' : ''}
-            </div>
+            </button>
             ${who.devices.map((d) => `
               <button class="wsdevice ${d.online ? '' : 'away'}" data-wsdevice="${esc(d.deviceId)}">
                 <span class="dot ${d.online ? 'live' : 'off'}"></span>
@@ -6937,38 +7047,37 @@ SCREENS.workspace = async () => {
           </div>`;
   }).join('')}
 
-        <div class="label-tiny" style="margin-top:var(--s5)">Shared projects
-          <span class="count">${projects.length}</span></div>
-        ${projects.length ? projects.map((p) => `
+        <div class="label-tiny stacked">Shared projects <span class="count">${projects.length}</span></div>
+        ${projects.length ? projects.map((p) => {
+    const state = PROJECT_STATE[p.state] ?? PROJECT_STATE.ONLY_HERE;
+    return `
           <button class="wsproject ${p.name === lookingAtProject ? 'on' : ''}" data-wsproject="${esc(p.name)}">
+            <span class="dot ${state.tone === 'attention' ? 'attention' : state.tone === 'good' ? 'live' : 'off'}"></span>
             <span class="grow">
               <b>${esc(p.name)}</b>
-              <span class="where">${p.copies.length} cop${p.copies.length === 1 ? 'y' : 'ies'}${
-  p.mine ? '' : ' \u00b7 not here'}</span>
+              <span class="where">${esc(state.says)} \u00b7 ${p.copies.length} cop${p.copies.length === 1 ? 'y' : 'ies'}</span>
             </span>
-          </button>`).join('')
+          </button>`;
+  }).join('')
     : `<div class="empty small"><b>Nothing shared yet.</b>
         A project is in a workspace because somebody offered it. Offer one and it
-        appears here for everybody.
-        <span class="acts"><button class="go small" id="ws-offer2">Offer a folder\u2026</button></span></div>`}
+        appears here for everybody.</div>`}
       </div>
 
       <div class="middle">
         ${here ? projectInWorkspace(here) : `
-          <div class="empty"><b>No shared project selected.</b>
-            Offer a folder and it becomes something everybody here can have a copy of.</div>`}
-        <div class="label-tiny" style="margin-top:var(--s6)">Lately</div>
-        <div id="lately" data-titled="yes"></div>
-        <div class="label-tiny" style="margin-top:var(--s5)">Notes
-          <span class="count">${(t.said ?? []).length}</span></div>
-        <div id="wsnotes"></div>
+          <div class="empty"><b>No shared project yet.</b>
+            Offer a folder and it becomes something everybody here can have a copy of.
+            <span class="acts"><button class="go" id="ws-offer3">Offer a folder\u2026</button></span></div>`}
       </div>
     </div>`;
   said = null;
 
   $('#ws-leave-env').onclick = () => { inWorkspace = false; draw(); };
-  $('#ws-invite2').onclick = inviteSomebody;
-  $('#ws-offer2')?.addEventListener('click', () => { inWorkspace = false; draw(); });
+  $('#ws-invite2')?.addEventListener('click', inviteSomebody);
+  for (const b of [$('#ws-offer2'), $('#ws-offer3')]) {
+    b?.addEventListener('click', () => { inWorkspace = false; draw(); });
+  }
 
   for (const b of document.querySelectorAll('[data-wsproject]')) {
     b.onclick = async () => {
@@ -6977,19 +7086,17 @@ SCREENS.workspace = async () => {
       inspectSharedProject(projects.find((one) => one.name === lookingAtProject));
     };
   }
-  for (const b of document.querySelectorAll('[data-person]')) {
-    b.onclick = (e) => {
-      if (e.target.closest('[data-wsdevice]')) return;
-      lookingAtPerson = b.dataset.person;
-      const who = people.get(b.dataset.person);
-      inspectPerson(who, projects);
+  for (const b of document.querySelectorAll('.wsperson > .who')) {
+    b.onclick = () => {
+      const who = b.parentElement.dataset.person;
+      lookingAtPerson = who;
+      inspectPerson(people.get(who), projects, shared.doing?.[who] ?? null);
     };
   }
   for (const b of document.querySelectorAll('[data-wsdevice]')) {
     b.onclick = (e) => {
       e.stopPropagation();
-      const one = everybody.find((d) => d.deviceId === b.dataset.wsdevice);
-      inspectTeamDevice(one, t);
+      inspectTeamDevice(everybody.find((d) => d.deviceId === b.dataset.wsdevice), t);
     };
   }
 
@@ -7000,52 +7107,84 @@ SCREENS.workspace = async () => {
   /*
    * Looked at again every so often, and almost always for nothing.
    *
-   * What is said out loud arrives on the stream; who is here does not, because
-   * a computer going quiet is the absence of a thing rather than a thing. So
-   * this is the only part that needs asking for, and asking is free: the page
-   * is compared against what it last produced and the boxes against what they
-   * are showing, so a workspace where nothing moved is checked and not touched.
+   * What is said arrives on the stream; who is here does not, because a
+   * computer going quiet is the absence of a thing rather than a thing. So this
+   * is the only part that needs asking for, and asking is free: the page is
+   * compared against what it last produced and each box against what it is
+   * showing, so a workspace where nothing moved is checked and never touched.
    */
   clearTimeout(workspaceTimer);
   workspaceTimer = setTimeout(() => { if (inWorkspace) draw({ quietly: true }); }, 10000);
 };
 
-/** The middle column: one project, and what is true about it right now. */
+/**
+ * The middle column: one project, and everything there is to do about it.
+ *
+ * The order is the order of the questions. What is this and how does it stand;
+ * who has a copy and which of them moved; then, only if something is waiting,
+ * the two things to do about it. Everything operational is under that, compact,
+ * because it is history and history is for afterwards.
+ */
 function projectInWorkspace(p) {
-  const word = {
-    SHARED: 'Shared',
-    ONLY_HERE: 'Only on this computer',
-    ONLY_THEIRS: 'Not on this computer',
-  }[p.state];
+  const state = PROJECT_STATE[p.state] ?? PROJECT_STATE.ONLY_HERE;
+  const from = p.waitingOn ?? null;
+  const what = from ? changeInWords(from) : null;
 
   return `
-    <div class="sect"><h2>${esc(p.name)}</h2>
-      <span class="count">${esc(word)}</span>
-      <span class="rest"></span>
-      <div class="acts">
-        ${p.mine && p.others.length
-    ? '<button class="small" id="ws-look">See what is different\u2026</button>' : ''}
+    <div class="wsproj">
+      <div class="top">
+        <h2>${esc(p.name)}</h2>
+        <span class="state ${esc(state.tone)}">${esc(state.says)}</span>
+        <span class="rest"></span>
         ${p.mine ? '<button class="quiet small" id="ws-open">Open it here</button>' : ''}
       </div>
-    </div>
-    <div class="sheetlist">
-      ${p.copies.map((c) => `
-        <div class="trow">
-          <span class="dot ${c.online ? 'live' : 'off'}"></span>
-          <span class="tname">
-            <b>${esc(c.person)}${c.you ? ' \u00b7 you' : ''}</b>
-            <span class="where">${esc(c.device)}${c.files ? ` \u00b7 ${c.files} files` : ''}</span>
-          </span>
-          <span class="tacts">
-            ${c.you
-    ? '<span class="chip">your copy</span>'
-    : `<button class="small" data-diff="${esc(c.deviceId)}" data-offer="${esc(c.offer ?? '')}">What is different</button>`}
-          </span>
-        </div>`).join('')}
-    </div>
-    ${p.mine ? '' : `<p class="sub">Nobody on this computer has a copy of this one.
-      Press the computer that does to bring one over.</p>`}
-    <div id="job"></div>`;
+
+      ${from ? `
+        <div class="wsnews">
+          <div class="grow">
+            <b>${esc(from.person)} changed ${esc(p.name)}</b>
+            <span>${what ? esc(what) : 'on their copy'} \u00b7 ${esc(ago(from.lastChanged))}
+              \u00b7 on ${esc(from.device)}</span>
+            ${from.which?.length ? `<span class="mono files">${from.which.map(esc).join('  ')}${
+  (from.added ?? 0) + (from.modified ?? 0) > from.which.length ? '  \u2026' : ''}</span>` : ''}
+          </div>
+          <div class="acts">
+            <button class="small" data-diff="${esc(from.deviceId)}" data-offer="${esc(from.offer ?? '')}">View changes</button>
+            ${p.mine ? `<button class="go small" data-diff="${esc(from.deviceId)}" data-offer="${esc(from.offer ?? '')}">Sync from ${esc(from.person)}</button>` : ''}
+          </div>
+        </div>` : ''}
+
+      <div class="label-tiny">Copies <span class="count">${p.copies.length}</span></div>
+      <div class="wscopies">
+        ${p.copies.map((c) => `
+          <div class="row ${c.waiting ? 'waiting' : ''}">
+            <span class="dot ${c.online ? 'live' : 'off'}"></span>
+            <span class="grow">
+              <b>${esc(c.you ? 'You' : c.person)}</b>
+              <span class="where">${esc(c.device)}${c.files ? ` \u00b7 ${c.files} files` : ''}</span>
+            </span>
+            <span class="says">${c.waiting
+    ? esc(changeInWords(c) ?? 'changed')
+    : c.you ? 'Your copy' : c.lastChanged ? `Last changed ${esc(ago(c.lastChanged))}` : 'No changes seen'}</span>
+            <span class="acts">${c.you ? ''
+    : `<button class="small" data-diff="${esc(c.deviceId)}" data-offer="${esc(c.offer ?? '')}">What is different</button>`}</span>
+          </div>`).join('')}
+      </div>
+
+      ${p.mine ? '' : `<p class="sub">Nobody on this computer has a copy of this one.
+        Press a computer that does to bring one over.</p>`}
+
+      <div id="job"></div>
+
+      <details class="wsmore">
+        <summary>What has happened here</summary>
+        <div id="lately"></div>
+      </details>
+      <details class="wsmore">
+        <summary>Notes</summary>
+        <div id="wsnotes"></div>
+      </details>
+    </div>`;
 }
 
 function wireProjectInWorkspace(p, t) {
@@ -7057,22 +7196,15 @@ function wireProjectInWorkspace(p, t) {
     draw();
   });
 
-  const look = (deviceId, offer) => {
-    const one = [...(t.mine ?? []), ...(t.team ?? [])].find((d) => d.deviceId === deviceId);
-    whatIsDifferent(
-      { id: deviceId, name: one?.displayName ?? 'that computer' },
-      t,
-      { project: p, offer, mineAt: p.mine?.path },
-    );
-  };
-
-  $('#ws-look')?.addEventListener('click', () => {
-    const first = p.others[0];
-    if (first) look(first.deviceId, first.offer);
-  });
-
   for (const b of document.querySelectorAll('[data-diff]')) {
-    b.onclick = () => look(b.dataset.diff, b.dataset.offer);
+    b.onclick = () => {
+      const one = [...(t.mine ?? []), ...(t.team ?? [])].find((d) => d.deviceId === b.dataset.diff);
+      whatIsDifferent(
+        { id: b.dataset.diff, name: one?.displayName ?? 'that computer' },
+        t,
+        { project: p, offer: b.dataset.offer, mineAt: p.mine?.path },
+      );
+    };
   }
 }
 
@@ -7085,23 +7217,52 @@ async function drawWorkspaceNotes() {
   if (!box.isConnected) return;
 
   fill(box, `
-    <div class="card">
-      <div class="talk short" id="talk">
-        ${(w.said ?? []).map((one) => `
-          <div class="bubble ${one.you ? 'mine' : ''}">
-            <div style="font-size:.74rem;color:var(--faint)">${esc(one.fromName)} \u00b7 ${esc(ago(one.at))}</div>
-            ${esc(one.text)}
-          </div>`).join('') || '<p style="color:var(--quiet);margin:0">Nothing said yet.</p>'}
-      </div>
-      <div class="bar" style="margin:.7rem 0 0">
-        <input id="w-say" placeholder="Say something to the workspace" style="flex:1">
-        <button class="go" id="w-send">Say it</button>
-      </div>
+    <div class="talk short" id="talk">
+      ${(w.said ?? []).map((one) => `
+        <div class="bubble ${one.you ? 'mine' : ''}">
+          <div style="font-size:.74rem;color:var(--faint)">${esc(one.fromName)} \u00b7 ${esc(ago(one.at))}</div>
+          ${esc(one.text)}
+        </div>`).join('') || '<p style="color:var(--quiet);margin:0">Nothing said yet.</p>'}
+    </div>
+    <div class="bar" style="margin:.7rem 0 0">
+      <input id="w-say" placeholder="Say something to the workspace" style="flex:1">
+      <button class="go" id="w-send">Say it</button>
     </div>`);
 
   const talk = $('#talk');
   if (talk) talk.scrollTop = talk.scrollHeight;
   wireSaying();
+}
+
+/** A person, in the inspector: who they are, what they have, what they did. */
+function inspectPerson(who, projects, busy = null) {
+  if (!who) return inspect(null);
+
+  const theirs = projects.filter((p) => p.copies.some((c) => c.person === who.person));
+  const on = who.devices.filter((d) => d.online).length;
+
+  inspect({
+    name: who.person,
+    kind: who.you ? 'You' : 'In this workspace',
+    mark: on ? '\u25c9' : '\u25cb',
+    facts: [
+      { label: 'Right now', value: on ? `Here, on ${on} of ${who.devices.length}` : 'Not here' },
+      // Which shared project their computer last reported a change in. Never
+      // which file they have open: nothing here can know that, and a manager
+      // that guessed would be wrong in front of somebody looking at their own
+      // screen.
+      { label: 'Last worked in', value: busy ? `${busy.project} \u00b7 ${ago(busy.at)}` : 'nothing shared lately' },
+      { label: 'What changed', value: busy ? (changeInWords(busy) ?? 'not said') : null },
+      { label: 'Computers', value: who.devices.map((d) => d.displayName).join(', ') },
+      { label: 'Sharing', value: theirs.length ? theirs.map((p) => p.name).join(', ') : 'nothing yet' },
+    ],
+    countsAre: 'What they bring',
+    counts: [
+      { many: who.devices.length, what: who.devices.length === 1 ? 'computer' : 'computers' },
+      { many: on, what: 'here now' },
+      { many: theirs.length, what: 'projects' },
+    ],
+  });
 }
 
 /** A shared project, in the inspector: where its copies are and what to do. */
@@ -7128,31 +7289,6 @@ function inspectSharedProject(p) {
       { many: p.copies.length, what: p.copies.length === 1 ? 'copy' : 'copies' },
       { many: here, what: 'reachable' },
       { many: p.others.length, what: 'elsewhere' },
-    ],
-  });
-}
-
-/** A person, in the inspector: who they are and what they have. */
-function inspectPerson(who, projects) {
-  if (!who) return inspect(null);
-
-  const theirs = projects.filter((p) => p.copies.some((c) => c.person === who.person));
-  const on = who.devices.filter((d) => d.online).length;
-
-  inspect({
-    name: who.person,
-    kind: who.you ? 'You' : 'In this workspace',
-    mark: on ? '\u25c9' : '\u25cb',
-    facts: [
-      { label: 'Right now', value: on ? `Here, on ${on} of ${who.devices.length}` : 'Not here' },
-      { label: 'Computers', value: who.devices.map((d) => d.displayName).join(', ') },
-      { label: 'Sharing', value: theirs.length ? theirs.map((p) => p.name).join(', ') : 'nothing yet' },
-    ],
-    countsAre: 'What they bring',
-    counts: [
-      { many: who.devices.length, what: who.devices.length === 1 ? 'computer' : 'computers' },
-      { many: on, what: 'here now' },
-      { many: theirs.length, what: 'projects' },
     ],
   });
 }

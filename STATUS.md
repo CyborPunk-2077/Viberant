@@ -3,10 +3,9 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 9 August 2026
-**Tests:** 592 in the app and 107 in core — 699 in all — passing on Windows. The
-twelve added last are the whole workspace errand driven against two copies of the
-app that are actually running, which found three faults that every existing test
-had passed straight over.
+**Tests:** 605 in the app and 107 in core — 712 in all — passing on Windows. The
+whole workspace errand is driven against two copies of the app that are actually
+running; it has now found five faults that every other test passed straight over.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
@@ -833,6 +832,90 @@ colour that means something it does not mean.
 
 ---
 
+## The workspace, recomposed around the project
+
+Two columns and the inspector the shell already has. **Left:** people, with
+their computers indented under them, each person's last reported activity, then
+the shared projects with a state and a dot. **Middle:** the chosen project — its
+state, the one thing waiting with *View changes* and *Sync from whoever*, then
+every copy with who holds it and what they did to it. What has happened and what
+was said are folded away underneath rather than stacked below. D-204.
+
+Four project states and no more: **Changes waiting**, **Up to date**, **Only on
+this computer**, **Not on this computer**. Every extra one is something somebody
+has to learn before they can read the screen at a glance, which is the only job
+this screen has.
+
+**"It changed" is now "one added, one rewritten, one gone."** A folder that
+settles is held against what it was when watching started, using the same
+comparison a sync uses. Both cost the same, because the folder was already
+surveyed to know it had moved. D-203.
+
+**And what it will never say.** There is no way for this manager to know which
+file anybody has open, so it does not say. What each person is working on is
+derived from which shared project their computer last reported a change in —
+truthful, and the only answer available. A test fails on the words *editing*,
+*has open*, *typing*, *cursor* and *viewing* anywhere in that answer.
+
+Verified with a real payload in the real page: *Rahul changed Viberant · 3 added
+· 8 rewritten · 1 gone · 1 min ago · on Rahul-Laptop*, with the file names, and
+below it You / Rahul / SERVER each with its own standing and its own action.
+
+---
+
+## What OpenAI actually said, instead of what was guessed
+
+**The complaint was exact and so is the fix.** It said *Your ChatGPT account has
+run out of credit* to somebody whose subscription was fine — a claim about an
+account this manager has never seen. A key and a subscription are two accounts at
+one company, billed separately. It now says *The OpenAI API account at
+platform.openai.com has no credit left*, and that this is not a subscription.
+The company is called OpenAI everywhere. D-198.
+
+**A refusal is read code first, words second, status last** — and the order has
+now been wrong twice in opposite directions. Measured against real accounts
+before a line was written: an empty OpenAI balance is `429 /
+insufficient_quota / credit_balance_exhausted`; a rejected OpenAI key is `401 /
+invalid_request_error / invalid_api_key`, which read by type is a badly written
+request and read by code is the truth. Seven kinds now, where there were five:
+credit needed and a ceiling somebody set are different errands. D-199.
+
+**The way out of a refusal was unreachable and had been since it was written.**
+The loop returned on anything that was not a queue, so the only path into the
+fallback was the one refusal it deliberately does not switch for. And the button
+that offered another company changed which company is asked *from then on* — two
+presses and somebody was paying a company they never picked. Now: same question,
+same context, once, nothing written down. Verified in the real page against a
+real out-of-credit account: **Gemini · gemini-flash — OpenAI could not, so this
+one did**, with the reason underneath. D-200.
+
+The model catalogue was audited against what the account is actually offered,
+by asking: OpenAI is GPT-5 mini, GPT-5 and GPT-4.1 mini, all three confirmed
+present on the real account.
+
+---
+
+## Eight places, eight different left edges
+
+`button` sets `justify-content: center`, which is right for a button with a word
+on it and inherited in silence by every control shaped like a row. **Measured in
+the rail: icons at 62, 64, 68, 72, 73, 74, 75 and 76 pixels**, each set by the
+length of its own label. Nothing was misaligned by a pixel; every row was
+aligned to a different thing, and it is invisible in the source because the
+declaration doing it is four hundred lines away and applies by not being
+overridden. Thirteen rules had it. D-201.
+
+Now, across all nine places at 1024, 1280 and 1440: one icon position, one label
+position, one gap, one row height, three group headings on one line. Selecting a
+place does not move its label.
+
+**And every page starts where every other page starts.** A page of sentences was
+centred in whatever room was left, putting its heading thirty-four pixels right
+of every other page's. The column is what needed limiting; where it begins was
+never the point. D-202.
+
+---
+
 ## The workspace is a place you go into
 
 It was a list of computers, which answers the least interesting of the three
@@ -1018,6 +1101,14 @@ failing in silence.
 **A rule written against another program's exact words has an expiry date on it, and nothing tells you when it passes.** The GitHub sign-in watched for "Press Enter to open", which that program stopped printing. Watching for the thing actually needed — an address — survives the wording changing.
 
 ---
+
+**Two copies on one machine need their doors spaced, not merely shifted.** The
+door that carries folders and the door that takes a direct connection are one
+apart, so shifts differing by one give the first copy's direct door the same
+number as the second copy's carrier. One loses the binding, and from outside it
+looks like a computer that is plainly present and cannot be reached at all. The
+whole-errand test had been running that way and only ever driving the direction
+that happened to work. D-205.
 
 **A guard written in one language cannot catch a decision made in another.** D-77
 made "nothing may end this manager" true for every failure that travels through

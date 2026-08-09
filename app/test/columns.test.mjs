@@ -93,3 +93,59 @@ describe('narrowing a table hides a column, never a row', () => {
     }
   });
 });
+
+/**
+ * A control shaped like a row starts where the row starts.
+ *
+ * The other fault of this shape, and it was on the most-looked-at surface in
+ * the product. `button` sets `justify-content: center`, which is right for a
+ * button with a word on it. Every control shaped like a row is also a button,
+ * inherits it, and centres its own contents — so the mark and the label of each
+ * one sit wherever that row's label length puts them.
+ *
+ * Measured in the rail before the fix: eight places, eight different left
+ * edges, 62px to 76px, the longest label furthest left. Nothing was misaligned
+ * by a pixel; every row was aligned to a different thing. It is invisible in
+ * the source, because the declaration that does it is four hundred lines away
+ * and applies by not being overridden.
+ *
+ * So it is decided from the stylesheet: **a rule that says its text is
+ * left-aligned and that it is a flex container must say where its content
+ * starts.** Both halves are required — a rule with neither is not a row.
+ */
+describe('a row-shaped control starts at the start', () => {
+  // Left-aligned, laid out in a line, and actually a line — a flex container
+  // stacking downwards is a group of rows, not one, and where its contents
+  // start across is not what decides anything.
+  const looksLikeARow = ({ body }) => /text-align\s*:\s*left/.test(body)
+    && /display\s*:\s*(inline-)?flex/.test(body)
+    && !/flex-direction\s*:\s*column/.test(body);
+
+  test('every one of them says so, rather than inheriting the opposite', () => {
+    const offences = [];
+    for (const one of rules(css)) {
+      if (!looksLikeARow(one)) continue;
+      if (/justify-content/.test(one.body)) continue;
+      offences.push(one.selector);
+    }
+    assert.deepEqual(offences, [],
+      `these centre their own contents, so each row starts at a different place: ${offences.join(', ')}`);
+  });
+
+  test('and there are enough of them for that to have been worth checking', () => {
+    const found = rules(css).filter(looksLikeARow);
+    assert.ok(found.length >= 10,
+      `only ${found.length} row-shaped controls found, so the check above is looking at nothing`);
+  });
+
+  /*
+   * The rail is the one that was reported, so it is named rather than left to
+   * be covered by the rule above.
+   */
+  test('the rail says it outright', () => {
+    const tab = rules(css).find(({ selector }) => selector === '.rail .tab');
+    assert.ok(tab, 'the rail places are no longer styled as one thing');
+    assert.match(tab.body, /justify-content\s*:\s*flex-start/,
+      'the places in the rail centre themselves, so no two labels start at the same place');
+  });
+});
