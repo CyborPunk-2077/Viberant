@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 570 in the app and 107 in core — 677 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 579 in the app and 107 in core — 686 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -493,6 +493,24 @@ computer is running on this one, then what a terminal here can actually reach.
 AI apps opens with how many are ready, how many have an account chosen (which is
 the fact that page exists to make true, and was never said out loud), and the
 folder they open into.
+
+---
+
+## The workspace loop is closed
+
+A shared folder changes, it settles, one summary reaches everybody, somebody
+looks at what is different, chooses what to do about the files both people
+touched, and the sync runs as an errand that can be watched and survives
+navigating away. D-188, D-189, D-190.
+
+**Verified across two instances, by hash.** B had a file A did not, both had a
+file they had each changed, and one they agreed on. A kept its own version of
+the shared one, took the new one — hashes match B — and 33 bytes moved
+rather than the folder. Two ways back were kept before a byte landed. Twenty-
+four writes on B produced exactly one event on A, three seconds later.
+
+Nothing new carries the bytes: the existing transfer does it, through the same
+wrap and unwrap, with the same resume ledger and integrity checks.
 
 ---
 

@@ -2081,6 +2081,37 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-188 `[LOCKED]` — A file somebody chose to keep is held, not asked for
+
+**Decision.** When a sync would replace a file both people changed, the chosen version's bytes are read before anything is written and put back before anything is measured.
+
+**Why the obvious way does not work.** Declaring "I already have one of those" is how resuming says *do not send me that*, and it is a different claim: the far end works out what to send from a list it was given before anybody chose, and two versions of one file are usually the same size. Measured — the file was sent, written, and the person's own version was gone.
+
+**The safe answer is the one already chosen.** Somebody who presses Bring without reading the list keeps every one of their own versions, which is the outcome that cannot lose anybody's work.
+
+**Nothing new carries the bytes.** The existing transfer does it, through the same wrap and unwrap, with the same resume ledger and integrity checks. A test fails if this file ever grows a socket of its own.
+
+---
+
+### D-189 `[DECIDED]` — Only what is offered is watched, and only when it settles
+
+**Decision.** The folders explicitly offered are watched; nothing else is. A change says nothing until the folder has been quiet for two and a half seconds, and what is said is one summary.
+
+**Why.** A project is not shared because it is open. And saving one file makes a handful of notifications while a build makes thousands — one event each would be a storm. Measured: twenty-four writes in two bursts produced exactly one event.
+
+**Found doing it, and it cost three attempts.** The folder was watched at its *resolved* path. On Windows that form is accepted by the watcher and then reports nothing — no error, no events — and the entry stayed in the list so it was never retried. Watched at the path it was offered at, it fires immediately. A watcher that fails is now forgotten rather than kept.
+
+---
+
+### D-190 `[DECIDED]` — Something that happened elsewhere is a line in the corner
+
+**Decision.** A project changing on another computer, or a sync finishing, appears as one line over the corner of the window. It can be pressed to go where something can be done about it, and it goes away on its own.
+
+**Why.** Somebody is in the middle of something. A computer in another room changing a file is not a reason to move anything under their hands, and it is certainly not a reason to redraw a page.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
