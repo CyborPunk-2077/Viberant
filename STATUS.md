@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 551 in the app and 107 in core — 658 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 558 in the app and 107 in core — 665 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,32 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## Nobody's account is in this app
+
+There was exactly one account name in the source — Viberant's own issue list
+and release address, which was also one person's GitHub account, compiled into
+every copy that shipped. It is read out of `package.json` now, in whichever
+shape the address was written, and allowed to be absent. Nothing is written
+there, so no account exists anywhere in this app. Both features that wanted one
+say so: a report is still kept on the computer that wrote it and says there is
+nowhere to send it; a version check reports a third kind of not knowing rather
+than "up to date". D-182.
+
+## Members can recognise each other without GitHub
+
+Computers that joined with a code appeared in each other's lists and both said
+offline forever: recognising each other on a network needs a shared value, and
+the only one there was came out of a private project on GitHub they had never
+seen. There is one derived from the workspace's own identifier and the public
+key of the computer that made it — in every member's record, private to
+nobody, and unchanged when somebody joins. D-183.
+
+**Verified:** the value works out identical on both instances after a join, and
+being findable now starts from the members workspace alone, with no GitHub
+workspace at all.
 
 ---
 

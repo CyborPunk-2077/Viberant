@@ -217,6 +217,60 @@ describe('getting in from a computer that has never seen the workspace', () => {
   });
 });
 
+describe('members recognise each other without GitHub in the middle', () => {
+  test('every member works out the same value, and it is not a private key', async () => {
+    /*
+     * Computers that joined with a code could see each other in the list and
+     * both said offline forever: recognising each other on a network needs a
+     * shared value, and the only one there was came out of a private project on
+     * GitHub, which a computer that joined by code has never seen.
+     *
+     * This one is derived from what every member holds and a stranger does not:
+     * the workspace's own identifier and the public signing key of the computer
+     * that made it.
+     */
+    const ws = await aWorkspace();
+    const mine = members.beaconKey(await members.current());
+    assert.ok(mine && mine.length >= 32, 'no value to recognise anybody by');
+
+    const asked = await members.invite({ workspace: await members.current(), by: 'danni' });
+    await members.redeem({
+      workspace: await members.current(), code: asked.code, person: 'rahul',
+      device: aDevice('theirs', 'Rahul-Laptop', 'rahul'),
+    });
+
+    // Somebody joining must not change it, or everybody would stop recognising
+    // everybody the moment one person arrived.
+    assert.equal(members.beaconKey(await members.current()), mine,
+      'the value moved when somebody joined');
+    assert.ok(ws);
+  });
+
+  test('a different workspace works out a different one', async () => {
+    const one = members.beaconKey(await aWorkspace());
+    await members.forgetAll();
+    const two = members.beaconKey(await aWorkspace());
+    assert.notEqual(one, two, 'two workspaces recognise each other');
+  });
+
+  test('and it is made of nothing secret', async () => {
+    const source = await readFile(join(here, '..', 'members.mjs'), 'utf8');
+    const body = source.slice(source.indexOf('export function beaconKey'));
+    const mine = body.slice(0, body.indexOf('\n}\n'));
+
+    assert.match(mine, /signPublic/, 'it is not built from a public key');
+    for (const never of [/signPrivate/, /agreePrivate/, /privateKey/]) {
+      assert.equal(never.test(mine), false, `recognising each other uses ${never}`);
+    }
+  });
+
+  test('nothing without a workspace can produce one', () => {
+    assert.equal(members.beaconKey(null), null);
+    assert.equal(members.beaconKey({}), null);
+    assert.equal(members.beaconKey({ id: 'x', devices: {} }), null);
+  });
+});
+
 describe('what the workspace shows is what the workspace holds', () => {
   test('it is built from the members and from nothing else', async () => {
     // The one line that decides. Read from the source, because the fault being

@@ -2013,6 +2013,31 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-182 `[LOCKED]` — No account name is written into this app
+
+**Decision.** Where this app's issues and releases live is read out of `package.json`, in whichever shape the address was written, and is **allowed to be absent**. With nothing written there, no account exists anywhere in the source.
+
+**Why.** There was exactly one, and one was too many. It was Viberant's own issue list and release address — not an identity, not a default for anything, genuinely useful — and also one person's GitHub account, compiled into every copy that shipped. A name in a program travels to computers that have nothing to do with whoever it names, cannot be changed without a rebuild, and tells anybody reading the source whose account it is.
+
+**Both features degrade honestly.** A report is still written down on the computer that wrote it, which was always the half that mattered, and says there is nowhere to send it. A version check reports a third kind of not knowing rather than "up to date", which is the honesty fault that file exists to avoid.
+
+**A path fragment is not an account.** `./app` and `../core` have the same shape and read as nothing.
+
+---
+
+### D-183 `[DECIDED]` — Members recognise each other with something only members can work out
+
+**Decision.** The value two computers prove they share on a network is derived from the workspace's own identifier and the public signing key of the computer that made it. Both are in the record joining hands over; neither is private; neither changes when somebody joins or leaves.
+
+**Why.** The older value came out of a private project on GitHub, so computers that joined with a code held nothing at all — they appeared in each other's lists, correctly, and both said offline forever.
+
+**Why it must not move.** A value derived from the current membership would change the moment anybody joined, and everybody would stop recognising everybody.
+
+**A non-member cannot derive it** because a non-member does not have the record. That is the whole claim, and it is the same claim the older one made.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

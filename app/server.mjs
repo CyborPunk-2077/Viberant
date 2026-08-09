@@ -210,12 +210,29 @@ async function localSharing() {
   }
   if (lan.isOn()) return { ok: true, already: true };
 
+  /*
+   * Two workspaces can make this computer findable, and the newer one comes
+   * first.
+   *
+   * Computers that joined a workspace with a code held nothing they could
+   * recognise each other by — the value came out of a private project on
+   * GitHub, which they had never seen. So they appeared in each other's lists,
+   * correctly, and both said offline forever. The members workspace can produce
+   * one of its own from what every member already holds.
+   */
+  const team = await membersOf.current();
+  const theirs = team ? membersOf.beaconKey(team) : null;
+  if (theirs) {
+    return lan.start({ machine, name: await myName(), account: team.id, key: theirs });
+  }
+
   const state = await workspace.state();
   if (!state.joined) {
     return {
       ok: false,
-      sentence: 'Your computers cannot find each other until this one has joined your shared workspace.',
-      action: 'Join it above — that is what gives them a way to recognise each other.',
+      sentence: 'Your computers cannot find each other until this one is in a workspace.',
+      action: 'Make one or join one with a code — that is what gives them a way to '
+        + 'recognise each other.',
     };
   }
   const key = await workspace.secret();
@@ -891,6 +908,9 @@ const routes = {
     if (out.ok) {
       await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
       await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
+      // Making a workspace is joining one, as far as being findable goes.
+      await lan.stop().catch(() => null);
+      await localSharing().catch(() => null);
     }
     return await withWorkspace(out);
   },
@@ -957,6 +977,11 @@ const routes = {
 
       const kept = await membersOf.remember(found.workspace);
       await anywhere.beAbout({ workspace: kept.workspace }).catch(() => null);
+      // The beacon is keyed on the workspace, so joining one changes which key
+      // this computer answers to. Restarted here rather than on the next thing
+      // that happens to touch it.
+      await lan.stop().catch(() => null);
+      await localSharing().catch(() => null);
       await activity.remember('joined', { who: me.displayName, what: kept.workspace.name });
 
       return withWorkspace({
@@ -971,6 +996,8 @@ const routes = {
     if (out.ok) {
       await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
       await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
+      await lan.stop().catch(() => null);
+      await localSharing().catch(() => null);
     }
     return await withWorkspace(out);
   },

@@ -584,6 +584,40 @@ export async function rename(workspaceId, to) {
 }
 
 /** Has this device been thrown out? Asked on every connection. */
+/**
+ * Something every member of this workspace can work out, and nobody else can.
+ *
+ * Computers on one network recognise each other by proving they hold a shared
+ * value. The older workspace took one out of a private project on GitHub, which
+ * is why computers that joined by code could see each other in the list and
+ * still both say offline: they had no such value, so the beacon could not be
+ * started and nobody was ever heard.
+ *
+ * This is derived rather than stored, from two things every member has and a
+ * stranger does not: the workspace's own identifier and the public signing key
+ * of the computer that made it. Both are in the record that joining hands over,
+ * neither changes when somebody joins or leaves — which matters, because a
+ * value that moved would make everybody stop recognising everybody the moment
+ * one person joined — and neither is a private key.
+ *
+ * A non-member cannot derive it because a non-member does not have the record.
+ * That is the whole claim, and it is the same claim the older one made.
+ */
+export function beaconKey(workspace) {
+  if (!workspace?.id) return null;
+
+  const owner = Object.values(workspace.devices ?? {})
+    .filter((one) => one.person === workspace.owner)
+    .sort((a, b) => (a.addedAt ?? 0) - (b.addedAt ?? 0))[0]
+    ?? Object.values(workspace.devices ?? {})[0];
+
+  if (!owner?.signPublic) return null;
+
+  return createHash('sha256')
+    .update(`viberant-workspace|${workspace.id}|${owner.signPublic}`)
+    .digest('hex');
+}
+
 export const isRevoked = (workspace, deviceId) => !!workspace?.revoked?.[deviceId];
 
 /** For tests, and for signing out of everything. */
