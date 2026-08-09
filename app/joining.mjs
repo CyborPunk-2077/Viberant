@@ -36,7 +36,13 @@ import { createSocket } from 'node:dgram';
 import { createHash } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 
-/** Its own door, so nothing about joining shares a path with anything else. */
+/**
+ * Its own door, so nothing about joining shares a path with anything else.
+ *
+ * Fixed, and it can be: this is a shout, several processes may listen to the
+ * same one, and the connection it leads to is opened on whatever port happens
+ * to be free. Two copies of Viberant on one machine share this quite happily.
+ */
 export const SHOUT_PORT = 47779;
 
 /** How long a joiner waits for anybody to answer before giving up. */

@@ -223,7 +223,18 @@ async function localSharing() {
   const team = await membersOf.current();
   const theirs = team ? membersOf.beaconKey(team) : null;
   if (theirs) {
-    return lan.start({ machine, name: await myName(), account: team.id, key: theirs });
+    /*
+     * It calls itself by the name the workspace knows it by.
+     *
+     * The shout carries an identifier, and whoever hears it looks that
+     * identifier up. A members workspace knows its computers by their device
+     * identifier and by nothing else, so shouting the older workspace's name
+     * for this machine meant every shout was heard, matched against nothing,
+     * and dropped — two computers that had joined each other sat there
+     * calling out and both saying the other was offline.
+     */
+    const me = await device.card();
+    return lan.start({ machine: me.deviceId, name: me.displayName, account: team.id, key: theirs });
   }
 
   const state = await workspace.state();
@@ -1918,7 +1929,24 @@ const routes = {
   async 'GET /workspace'() {
     const state = await workspace.state();
     if (!state.joined) {
-      return { ...state, machines: [], projects: [], said: [], around: [], offers: [], sharingHere: false };
+      /*
+       * Not in the older workspace is not "not sharing".
+       *
+       * This said `sharingHere: false` and an empty list of who is about,
+       * whatever was actually true, so a computer in a members workspace —
+       * beacon running, other computers audible — was told on the page that
+       * it could not be reached by anybody.
+       */
+      return {
+        ...state,
+        machines: [],
+        projects: [],
+        said: [],
+        around: lan.around(),
+        offers: await lan.offers(),
+        sharingHere: lan.isOn(),
+        workFolder: await settings.get('workFolder'),
+      };
     }
     // Drawn from what is already here, and the reaching-out happens behind the
     // answer. This route measured at 1.5-2.2 seconds because it went to GitHub

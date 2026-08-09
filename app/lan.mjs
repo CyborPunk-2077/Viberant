@@ -30,8 +30,40 @@ import { networkInterfaces } from 'node:os';
 import { HOUSE } from './projects.mjs';
 import * as parcel from './parcel.mjs';
 
+/**
+ * The two doors your computers find each other through.
+ *
+ * Fixed, because two computers that have never spoken have to agree on where to
+ * shout without being told. That is the whole point of them and it is not
+ * negotiable in the product.
+ *
+ * **They can be moved for a test, and only for a test.** Two copies of Viberant
+ * on one machine cannot both hold a fixed door, so mutual presence — the one
+ * thing worth testing most — was the one thing that could not be tested at
+ * all. `VIBERANT_PORT_SHIFT` moves every door by the same amount, which keeps
+ * two copies apart while leaving them able to find each other.
+ *
+ * Read once, from the surroundings of the process. There is no setting, no
+ * route and nothing on a screen: a person moving these would break the only
+ * behaviour they have.
+ */
+const SHIFT = (() => {
+  const said = Number(process.env.VIBERANT_PORT_SHIFT ?? 0);
+  return Number.isFinite(said) && said > 0 && said < 1000 ? Math.floor(said) : 0;
+})();
+
+/*
+ * The shout stays put; the door that carries things moves.
+ *
+ * Two computers that have never spoken must agree where to shout without being
+ * told, so that one is fixed — and it can be, because several processes may
+ * listen to the same broadcast at once. The one that carries folders is a
+ * connection to one computer, only one process may hold it, and it is announced
+ * in the shout anyway. So moving that one is enough to let two copies live
+ * side by side, and they still hear each other.
+ */
 export const CALL_PORT = 47777;
-export const CARRY_PORT = 47778;
+export const CARRY_PORT = 47778 + SHIFT;
 
 /** How often this computer says it is here, and how long that lasts. */
 const EVERY = 5000;
