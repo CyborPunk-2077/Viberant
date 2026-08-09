@@ -868,6 +868,64 @@ const routes = {
    * Nothing of anybody's is deleted. The workspace carries on for everybody
    * else — somebody leaving is not the same as a workspace ending.
    */
+  /**
+   * What is different between a project here and the same one over there.
+   *
+   * Asked, compared and summarised — nothing moves. Everything it needs
+   * already exists: the far end can produce a list of what it holds, and this
+   * computer already knows how to compare two of those and say which files
+   * both sides changed.
+   *
+   * Deliberately read-only. Somebody looking at "twelve changed" has not asked
+   * for anything to happen, and a page that quietly began a transfer because
+   * you looked at it would be the worst thing in this product.
+   */
+  async 'POST /workspace/changes'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: null };
+
+    const mineAt = body?.dir ? resolve(body.dir) : current?.dir;
+    if (!mineAt || !existsSync(mineAt)) {
+      return { ok: false, sentence: 'That project is not on this computer.', action: 'Open it first.' };
+    }
+
+    const found = await anywhere.reach(String(body?.device ?? ''));
+    if (!found.ok) return found;
+
+    const theirs = await askPeer(found.peer, { what: 'manifest', offer: body?.offer });
+    found.peer.close?.();
+
+    if (!theirs?.ok) {
+      return {
+        ok: false,
+        sentence: 'That computer would not say what it has.',
+        action: 'It may not be offering that project any more.',
+      };
+    }
+
+    const mine = await syncing.manifest(mineAt, { everything: false });
+    const work = syncing.compare(mine, theirs);
+    const bothChanged = syncing.conflicts(mine, theirs);
+
+    return {
+      ok: true,
+      says: syncing.inWords(work),
+      // What a person wants to know before pressing anything: how many, of
+      // which kinds, and whether any of it is a decision rather than a copy.
+      added: work.extra.length,
+      changed: work.changed.length,
+      onlyHere: work.missing.length,
+      unchanged: work.same.length,
+      bytes: work.bytesToSend,
+      conflicts: bothChanged,
+      state: bothChanged.length ? 'CONFLICT'
+        : work.extra.length || work.changed.length ? 'CHANGES_AVAILABLE'
+          : 'UP_TO_DATE',
+      // Names only, and only a handful: this is a summary, not a file browser.
+      examples: [...work.extra.slice(0, 5), ...work.changed.slice(0, 5)].slice(0, 8),
+    };
+  },
+
   async 'POST /team/leave'({ body }) {
     const ws = await membersOf.current();
     if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: null };

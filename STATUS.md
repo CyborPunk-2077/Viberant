@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 558 in the app and 107 in core — 665 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 570 in the app and 107 in core — 677 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -493,6 +493,39 @@ computer is running on this one, then what a terminal here can actually reach.
 AI apps opens with how many are ready, how many have an account chosen (which is
 the fact that page exists to make true, and was never said out loud), and the
 folder they open into.
+
+---
+
+## A workspace has a stream
+
+Notes arrive in thirty milliseconds, over the authenticated channel between
+members, membership-checked like every other message. GitHub is not the
+transport. The page opens one stream instead of every screen asking on a timer,
+everything carries an identifier, and nothing is acted on twice — because a
+stream that reconnects replays what it missed. D-184.
+
+**Verified with two profiles:** A to B in 29ms, B to A in 17ms, each naming the
+computer it came from.
+
+**Three faults were in the way, and the local network had been dead because of
+them.** A peer reached over the network was spread into a new object, and
+spreading keeps only what an object owns — so the connection's own methods
+were left behind and it failed the moment anybody spoke down it. Asking used a
+channel as though it were a connection. And the door another computer knocks on
+was only opened when a workspace was made or joined, so every restarted
+computer was present, visible, and unreachable. D-186.
+
+Two copies on one machine can now be told apart with `VIBERANT_PORT_SHIFT`,
+which is why these were finally catchable. D-185.
+
+## What changed, without anything moving
+
+Comparing a project here with the same one on another computer asks, compares
+and says: how many only there, how many different on both, how many the same,
+and which files both sides changed. Nothing is transferred. D-187.
+
+**Verified across two instances:** one file added and two changed were found
+and reported, with both-changed files named as a decision rather than a copy.
 
 ---
 

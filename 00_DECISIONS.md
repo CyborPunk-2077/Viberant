@@ -2038,6 +2038,49 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-184 `[LOCKED]` — A workspace has a stream, and it is not a second way in
+
+**Decision.** Notes and everything else a workspace says ride the authenticated channel between members that already carries every question, membership-checked exactly like all of them. GitHub is not the transport. Every event carries an identifier, is written down at both ends, and is never acted on twice.
+
+**Why.** A note used to be written, committed, sent, and read back by whoever synced next — minutes, for a sentence typed to somebody in the next room.
+
+**Why one identifier per event matters more than speed.** A stream that reconnects replays what it thinks was missed; two computers tell each other the same thing; a page is open twice. All three end with a note arriving more than once, and one that appears twice is worse than one that appears late.
+
+**Held by a test:** the branch that accepts something *said* checks membership, checks the workspace it claims, and takes whoever it is from off the connection rather than off the message.
+
+---
+
+### D-185 `[DECIDED]` — A door is announced, not assumed
+
+**Decision.** The port a computer accepts connections on travels in its own shout. Ports move together under `VIBERANT_PORT_SHIFT`, which exists so two copies on one machine can be told apart in a test and has no setting and no route.
+
+**Why.** Only one process may hold a listening port, so two copies could never both accept a connection — and mutual anything was untestable, which is why three separate faults in the local-network path went unnoticed for months.
+
+**The shout itself does not move.** Two computers that have never spoken must agree where to shout without being told, and several processes may listen to one broadcast.
+
+---
+
+### D-186 `[LOCKED]` — Being seen and being reachable are different, and both must be true
+
+**Decision.** A computer opens the door others knock on when the app starts, not only when a workspace is made or joined.
+
+**Why, and it is the worst of the three.** Every computer that had simply been restarted sat there present, visible, and correct in every list, and could not be connected to at all. From outside, being seen and being reachable look identical until something tries.
+
+**Two more found the same afternoon, both in the same path.** A peer reached over the local network was spread into a new object, and spreading keeps only what an object owns — so every method the connection carried was left behind, and what came back passed every check and failed at the moment anybody spoke down it. And asking used a channel as though it were a connection: a channel is written to with `write`, a connection with `send`. The answering half had been adapted; the asking half had not.
+
+---
+
+### D-187 `[DECIDED]` — Looking at what changed never moves anything
+
+**Decision.** Comparing a project here with the same project there asks, compares and summarises. Nothing is transferred, and what to do about it is a separate press.
+
+**Why.** Somebody looking at "twelve changed" has not asked for anything to happen. A page that began a transfer because you looked at it would be the worst thing in this product.
+
+**And with no agreed history, anything that differs is a decision.** Not a copy. The comparison is deliberately conservative in that direction, because the failure it prevents is somebody's work being written over.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -1395,11 +1395,78 @@ function inspectMachine(m, near, w) {
       ]
       : [
         ...(near ? [{ what: 'See what it is offering', run: () => peekAt(m.id, w) }] : []),
+        ...(near && me.current
+          ? [{ what: `What is different in ${me.currentName}…`, run: () => whatIsDifferent(m, w) }]
+          : []),
         ...(onGitHub.length
           ? [{ what: `Get a copy from GitHub\u2026 (${onGitHub.length})`, run: () => copiesFrom(m, onGitHub, w) }]
           : []),
       ],
   });
+}
+
+/**
+ * What is different between the open project here and the same one there.
+ *
+ * Nothing moves. Somebody looking at "twelve changed" has not asked for
+ * anything to happen, and a page that began a transfer because you looked at
+ * it would be the worst thing in this product — so this asks, compares, and
+ * says. What to do about it is a separate press.
+ */
+async function whatIsDifferent(m, w) {
+  sheet({
+    title: `${me.currentName} · here and on ${m.name}`,
+    narrow: true,
+    body: '<div class="ai-state"><span class="spin"></span> Asking what that computer has…</div>',
+    foot: '<button class="quiet" id="diff-no">Close</button>',
+  });
+  $('#diff-no').onclick = closeLayer;
+
+  // Whichever of their offerings is this project, by name. Nothing is compared
+  // against a folder that merely happens to be next in a list.
+  const mine = (me.currentName ?? '').toLowerCase();
+  const theirs = (w.projects ?? []).find((one) => one.from === m.id
+    && String(one.name).toLowerCase() === mine);
+
+  const out = theirs
+    ? await post('/workspace/changes', { device: m.id, offer: theirs.offer ?? theirs.id })
+    : { ok: false, sentence: `${m.name} is not offering ${me.currentName}.`, action: 'Ask for it to be offered there first.' };
+
+  const body = $('#sheet-body');
+  if (!body || !body.isConnected) return;
+
+  if (!out.ok) {
+    body.innerHTML = `<div class="said bad"><b>${esc(out.sentence)}</b>
+      ${out.action ? `<span>${esc(out.action)}</span>` : ''}</div>`;
+    return;
+  }
+
+  const word = { UP_TO_DATE: 'Up to date', CHANGES_AVAILABLE: 'Changes available', CONFLICT: 'Both changed' }[out.state];
+
+  body.innerHTML = `
+    <div class="factbar">
+      <span><b>State</b>${esc(word)}</span>
+      <span><b>Different</b>${out.added + out.changed}</span>
+      <span><b>Size</b>${esc(size(out.bytes))}</span>
+    </div>
+    <ul class="steps">
+      <li><span>${out.added} only on ${esc(m.name)}</span></li>
+      <li><span>${out.changed} different on both</span></li>
+      <li><span>${out.unchanged} the same</span></li>
+    </ul>
+    ${out.conflicts.length ? `
+      <div class="said bad">
+        <b>${out.conflicts.length} ${out.conflicts.length === 1 ? 'file has' : 'files have'} been changed in both places.</b>
+        <span>Nothing here will write over any of them. Bringing this project would
+          replace your copy of ${out.conflicts.length === 1 ? 'that file' : 'those files'},
+          so it is a decision rather than a copy — and the copies that would be
+          replaced are kept first, under Ways back.</span>
+      </div>
+      <div class="mono" style="color:var(--faint);font-size:var(--t-meta)">${
+  out.conflicts.slice(0, 8).map(esc).join('<br>')}</div>` : ''}
+    ${out.examples.length && !out.conflicts.length ? `
+      <div class="mono" style="color:var(--faint);font-size:var(--t-meta);margin-top:.6rem">${
+  out.examples.map(esc).join('<br>')}</div>` : ''}`;
 }
 
 /**
