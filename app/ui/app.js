@@ -1457,16 +1457,68 @@ async function whatIsDifferent(m, w) {
     ${out.conflicts.length ? `
       <div class="said bad">
         <b>${out.conflicts.length} ${out.conflicts.length === 1 ? 'file has' : 'files have'} been changed in both places.</b>
-        <span>Nothing here will write over any of them. Bringing this project would
-          replace your copy of ${out.conflicts.length === 1 ? 'that file' : 'those files'},
-          so it is a decision rather than a copy — and the copies that would be
-          replaced are kept first, under Ways back.</span>
+        <span>Nothing is written over without you saying so. Choose for each one —
+          whatever you keep is left exactly as it is, and whatever you take replaces
+          your copy, with the old one kept first under Ways back.</span>
       </div>
-      <div class="mono" style="color:var(--faint);font-size:var(--t-meta)">${
-  out.conflicts.slice(0, 8).map(esc).join('<br>')}</div>` : ''}
+      <div class="sheetlist">
+        ${out.conflicts.map((path) => `
+          <div class="trow">
+            <span class="tname"><b class="mono">${esc(path)}</b></span>
+            <span class="tacts">
+              <span class="pair">
+                <button class="small on" data-choose="${esc(path)}" data-side="mine">Keep mine</button>
+                <button class="small" data-choose="${esc(path)}" data-side="theirs">Take ${esc(m.name)}'s</button>
+              </span>
+            </span>
+          </div>`).join('')}
+      </div>` : ''}
     ${out.examples.length && !out.conflicts.length ? `
       <div class="mono" style="color:var(--faint);font-size:var(--t-meta);margin-top:.6rem">${
   out.examples.map(esc).join('<br>')}</div>` : ''}`;
+
+  const foot = layer.querySelector('.sheet footer');
+  if (foot && out.state !== 'UP_TO_DATE') {
+    foot.insertAdjacentHTML('afterbegin',
+      `<button class="go" id="diff-sync">Bring ${out.added + out.changed} over</button>`);
+  }
+
+  /*
+   * A choice per file, and mine is the answer until somebody says otherwise.
+   *
+   * The safe one is the one already chosen. Somebody who presses Bring without
+   * reading this keeps every one of their own versions, which is the outcome
+   * that cannot lose anybody's work.
+   */
+  const keeping = new Set(out.conflicts);
+
+  for (const b of layer.querySelectorAll('[data-choose]')) {
+    b.onclick = () => {
+      const path = b.dataset.choose;
+      if (b.dataset.side === 'mine') keeping.add(path); else keeping.delete(path);
+      for (const other of layer.querySelectorAll(`[data-choose="${CSS.escape(path)}"]`)) {
+        other.classList.toggle('on', other.dataset.side === b.dataset.side);
+      }
+    };
+  }
+
+  $('#diff-sync')?.addEventListener('click', async () => {
+    const b = $('#diff-sync');
+    b.disabled = true;
+    b.textContent = 'Bringing it over…';
+
+    const started = await post('/sync/bring', {
+      device: m.id,
+      offer: theirs?.offer ?? theirs?.id,
+      path: me.current,
+      keepMine: [...keeping],
+    });
+
+    closeLayer();
+    if (started.job) return watchJob(started.job);
+    say(started);
+    draw();
+  });
 }
 
 /**

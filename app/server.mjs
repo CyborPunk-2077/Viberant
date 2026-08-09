@@ -1330,13 +1330,36 @@ const routes = {
           channel,
           into,
           snapshotWith: snapshots.before,
+          // What somebody chose to keep, honoured here rather than asked of the
+          // far end — which was told what to send before anybody chose.
+          keepMine: Array.isArray(body?.keepMine) ? body.keepMine : [],
           onProgress: (text) => jobs.write(job, text),
         });
+        const theirName = found.peer.who.displayName;
         found.peer.close();
         jobs.end(job, out);
         activity.remember(out.ok ? 'synced' : 'sync failed', {
-          who: found.peer.who.displayName, what: current?.name ?? into,
+          who: theirName, what: current?.name ?? into,
         });
+
+        // Said out loud to the workspace, so every screen anywhere knows the
+        // moment it finishes rather than the next time somebody looks.
+        const ws = await membersOf.current();
+        if (ws) {
+          const me = await device.card();
+          const said = chatter.anEvent({
+            kind: out.ok ? 'sync.completed' : 'sync.failed',
+            workspace: ws.id,
+            from: me.deviceId,
+            fromName: me.displayName,
+            project: current?.name ?? into,
+            changed: out.changed ?? 0,
+            kept: out.kept?.length ?? 0,
+            text: out.sentence,
+          });
+          await chatter.remember(said);
+          await sayItToTheOthers(ws, said).catch(() => null);
+        }
       } catch (e) {
         found.peer.close();
         jobs.end(job, {

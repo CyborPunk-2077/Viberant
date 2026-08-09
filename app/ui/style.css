@@ -2183,6 +2183,13 @@ button.working::after {
 }
 @keyframes turn { to { transform: rotate(360deg); } }
 
+/* The one of a pair that is chosen, marked so the choice is readable at rest. */
+.pair > button.on {
+  background: var(--vibe-wash);
+  border-color: color-mix(in oklab, var(--vibe-b) 40%, var(--line));
+  color: var(--ink);
+}
+
 .pair { display: inline-flex; }
 .pair > button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .pair > button:last-child {

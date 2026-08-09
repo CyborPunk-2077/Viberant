@@ -24,7 +24,22 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, join as joinPath, dirname } from 'node:path';
+
+/** The bytes of one file, or nothing if it is not there. */
+async function readTheFile(at) {
+  const { readFile } = await import('node:fs/promises');
+  try { return await readFile(at); } catch { return null; }
+}
+
+/** Put bytes back where they were, making the folder if it went. */
+async function putTheFileBack(at, bytes) {
+  const { writeFile, mkdir } = await import('node:fs/promises');
+  try {
+    await mkdir(dirname(at), { recursive: true });
+    await writeFile(at, bytes);
+  } catch { /* the folder is gone, which the check below will notice */ }
+}
 
 import * as parcel from './parcel.mjs';
 
@@ -250,7 +265,9 @@ export const __testOnly = { looksSame };
  * where those two can differ, because it is the only one that deliberately
  * does not send everything.
  */
-export async function bring({ channel, into, snapshotWith = null, onProgress = null }) {
+export async function bring({
+  channel, into, snapshotWith = null, onProgress = null, keepMine = [],
+}) {
   const parcelOf = await import('./parcel.mjs');
 
   // What is here now. An empty answer is fine and means "send everything".
@@ -265,10 +282,21 @@ export async function bring({ channel, into, snapshotWith = null, onProgress = n
     return { ok: false, sentence: head.no, action: head.action ?? null };
   }
 
+  /*
+   * What somebody said to keep, kept.
+   *
+   * A file both people changed is a decision, and this is where the decision
+   * lands. Anything named here is dropped from what will be written — the
+   * other end still sends it, because it was already told what to send before
+   * anybody chose, and dropping it here is the difference between honouring a
+   * choice and asking the far end to be trusted with it.
+   */
+  const mineToKeep = new Set(keepMine ?? []);
   const work = {
-    toSend: head.toSend ?? [],
+    toSend: (head.toSend ?? []).filter((path) => !mineToKeep.has(path)),
     bytesToSend: head.bytesToSend ?? 0,
     bytesUnchanged: head.bytesUnchanged ?? 0,
+    kept: [...mineToKeep],
   };
   onProgress?.(inWords(work));
 
@@ -285,6 +313,25 @@ export async function bring({ channel, into, snapshotWith = null, onProgress = n
   const keeping = {};
   for (const [path, one] of Object.entries(mine.files ?? {})) {
     if (!work.toSend.includes(path)) keeping[path] = one.size;
+  }
+
+  /*
+   * A file somebody chose to keep is held here, not asked for.
+   *
+   * Declaring it as already-held does not work and it is worth saying why: the
+   * far end decides what to send from the list it was given *before* anybody
+   * chose, and two versions of the same file are usually the same size, so
+   * "I have one of those" is not "do not send me yours". Measured: the file was
+   * sent, written, and somebody's own version was gone.
+   *
+   * So the bytes are read now and put back afterwards. Nothing subtle, and it
+   * cannot be defeated by the far end sending something anyway.
+   */
+  const held = new Map();
+  for (const path of mineToKeep) {
+    const at = joinPath(into, path);
+    const bytes = await readTheFile(at);
+    if (bytes !== null) held.set(path, bytes);
   }
 
   const out = await parcelOf.unwrap(channel.incoming, into, {
@@ -308,6 +355,11 @@ export async function bring({ channel, into, snapshotWith = null, onProgress = n
    * leave somebody with a project that is quietly missing a file, and every
    * number on the way would have agreed.
    */
+  // Put back exactly what somebody said to keep, before anything is measured.
+  for (const [path, bytes] of held) {
+    await putTheFileBack(joinPath(into, path), bytes);
+  }
+
   const landed = await manifest(into, { everything: false });
   const wantedFiles = Number(head.whole?.files ?? 0);
   const wantedBytes = Number(head.whole?.bytes ?? 0);
@@ -330,12 +382,20 @@ export async function bring({ channel, into, snapshotWith = null, onProgress = n
     wayBack,
     at: out.at,
     changed: work.toSend.length,
+    kept: work.kept,
     bytes: work.bytesToSend,
     unchanged: work.bytesUnchanged,
     sentence: work.toSend.length
       ? `${work.toSend.length} file${work.toSend.length === 1 ? '' : 's'} changed — ${parcelOf.inWords(work.bytesToSend)} came over.`
       : 'Nothing had changed, so nothing came over.',
-    action: `${parcelOf.inWords(work.bytesUnchanged)} was already here and stayed where it was.`,
+    // What was kept is said out loud. Somebody who chose to keep their own
+    // version needs to see that it was kept, not infer it from a total.
+    action: [
+      `${parcelOf.inWords(work.bytesUnchanged)} was already here and stayed where it was.`,
+      work.kept.length
+        ? `${work.kept.length} you chose to keep ${work.kept.length === 1 ? 'was' : 'were'} left exactly as ${work.kept.length === 1 ? 'it is' : 'they are'}.`
+        : '',
+    ].filter(Boolean).join(' '),
   };
 }
 
