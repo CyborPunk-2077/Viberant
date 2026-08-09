@@ -213,15 +213,27 @@ function saidHtml() {
 // Where we are
 // ---------------------------------------------------------------------------
 
+/**
+ * One mark per place, drawn rather than typed.
+ *
+ * They were letters — the kind of characters a font happens to have — and
+ * every one of them was a different width, a different weight and sat on a
+ * different part of the line. Centred in a box they still looked scattered,
+ * because the shapes themselves do not agree. These are all one viewBox, one
+ * stroke weight, and one optical size, so the column of them is a column.
+ */
+const mark = (d) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+  stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+
 const TABS = [
-  { id: 'projects', name: 'Projects', glyph: '◳' },
-  { id: 'ask', name: 'AI Assistant', glyph: '◇' },
-  { id: 'apps', name: 'AI apps', glyph: '✦' },
-  { id: 'terminals', name: 'Terminals', glyph: '❯' },
-  { id: 'workspace', name: 'Workspace', glyph: '⌸' },
-  { id: 'activity', name: 'Activity', glyph: '◷' },
-  { id: 'ship', name: 'Deploy', glyph: '↗' },
-  { id: 'settings', name: 'Settings', glyph: '⚙' },
+  { id: 'projects', name: 'Projects', glyph: mark('<rect x="2" y="2.5" width="12" height="11" rx="1.8"/><path d="M2 6.2h12"/>') },
+  { id: 'ask', name: 'AI Assistant', glyph: mark('<path d="M13.5 9.5A2.5 2.5 0 0 1 11 12H6l-3 2.2V4.5A2.5 2.5 0 0 1 5.5 2h5.5A2.5 2.5 0 0 1 13.5 4.5Z"/>') },
+  { id: 'apps', name: 'AI apps', glyph: mark('<path d="M8 1.8 9.6 6 14 7.6 9.6 9.2 8 13.4 6.4 9.2 2 7.6 6.4 6Z"/>') },
+  { id: 'terminals', name: 'Terminals', glyph: mark('<rect x="1.8" y="2.6" width="12.4" height="10.8" rx="1.6"/><path d="M4.8 6.4 7 8.4l-2.2 2M8.8 10.6h2.6"/>') },
+  { id: 'workspace', name: 'Workspace', glyph: mark('<circle cx="4.6" cy="4.6" r="2.1"/><circle cx="11.4" cy="4.6" r="2.1"/><path d="M1.6 13.4c0-2 1.4-3.2 3-3.2s3 1.2 3 3.2M8.4 13.4c0-2 1.4-3.2 3-3.2s3 1.2 3 3.2"/>') },
+  { id: 'activity', name: 'Activity', glyph: mark('<path d="M1.4 8h3l1.8-4.6L9.6 12.6 11.4 8h3.2"/>') },
+  { id: 'ship', name: 'Deploy', glyph: mark('<path d="M8 13.6V3.2M8 3.2 4.4 6.8M8 3.2l3.6 3.6"/>') },
+  { id: 'settings', name: 'Settings', glyph: mark('<circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.8M8 12.6v1.8M14.4 8h-1.8M3.4 8H1.6M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3M12.5 12.5l-1.3-1.3M4.8 4.8 3.5 3.5"/>') },
 ];
 
 /**
@@ -242,7 +254,11 @@ const GROUPS = [
 
 /** The two behind the icons at the far end, out of the way of the daily five. */
 const ASIDE = [
-  { id: 'feedback', name: 'Tell us what is wrong', glyph: '✎' },
+  {
+    id: 'feedback',
+    name: 'Tell us what is wrong',
+    glyph: mark('<path d="M11.2 2.6 13.4 4.8 5.6 12.6 2.6 13.4l.8-3Z"/>'),
+  },
 ];
 
 /** The mark. Drawn, not fetched — this app never reaches the network to draw itself. */
@@ -1081,14 +1097,42 @@ async function askAssistant(kind, where, body = {}) {
     <div class="ai-exchange">
       <div class="ai-head">
         <span class="who">${esc(r.model ?? 'the model')}${r.using ? ` · ${esc(modelShort(r.using))}` : ''}</span>
+        ${r.insteadOf ? `<span class="chip">${esc(r.insteadOf)} could not, so this one did</span>` : ''}
         <span class="rest"></span>
         <button class="quiet small" id="ai-copy">Copy</button>
       </div>
       ${body.question || body.wanted ? `
         <div class="ai-asked">${esc(body.question ?? body.wanted)}</div>` : ''}
       <div class="ai-said">${asParagraphs(r.text)}</div>
+      ${r.becauseOf ? `<div class="ai-from">${esc(r.becauseOf)}</div>` : ''}
       <div class="ai-from">Read only what this question needed, from ${esc(me.currentName ?? 'this project')} and nowhere else.</div>
+      <div class="bar" style="margin:.7rem 0 0">
+        <label class="find" style="flex:1;min-width:12rem">
+          <span class="mark" aria-hidden="true">?</span>
+          <input id="ai-more" placeholder="Ask something else about this" aria-label="Ask something else">
+        </label>
+        <button class="small" id="ai-more-go">Ask</button>
+      </div>
     </div>`;
+
+  /*
+   * The next question, where the last answer is.
+   *
+   * Somebody who has just read an answer has another question, and making them
+   * scroll back up to a box at the top is how a useful thing comes to feel like
+   * a form. It is the same box and the same errand — not a chat, and nothing
+   * is remembered between questions, which is what keeps every answer about the
+   * project rather than about the conversation.
+   */
+  const askMore = () => {
+    const next = $('#ai-more')?.value.trim();
+    if (!next) return;
+    const top = $('#ai-q');
+    if (top) top.value = next;
+    askAssistant('ask', '/ai/ask', { question: next });
+  };
+  $('#ai-more-go').onclick = askMore;
+  $('#ai-more').onkeydown = (e) => { if (e.key === 'Enter') askMore(); };
 
   $('#ai-copy').onclick = async () => {
     await navigator.clipboard?.writeText(r.text ?? '');
@@ -5475,22 +5519,41 @@ async function doSomethingOn(deviceId, t) {
     title: `On ${one?.displayName ?? 'that computer'}`,
     narrow: true,
     body: `
-      <p style="margin-top:0">${esc(one?.how ?? '')}. Whatever you ask for happens on that
-        computer, and it decides whether to \u2014 not this one.</p>
+      <p style="margin-top:0"><b>${esc(one?.displayName ?? 'That computer')}</b> is on
+        ${esc(one?.how ?? 'this network')}. Everything below happens <b>there</b>, and that
+        computer decides whether to allow it \u2014 not this one.</p>
+      ${me.current ? '' : `<div class="said"><b>No project is open here.</b>
+        <span>Most of these are about a project, so they need one open first.</span></div>`}
       <div class="menu">
-        <button class="pick" data-on="terminal"><b>Open a terminal</b>
-          <span>A shell on that computer, in this project's folder.</span></button>
-        <button class="pick" data-on="run"><b>Run it there</b>
-          <span>Whatever the project calls its dev command.</span></button>
-        <button class="pick" data-on="build"><b>Build it there</b>
-          <span>Runs the project's own build, and tells you how it went.</span></button>
-        <button class="pick" data-on="bring"><b>Bring back what it built</b>
-          <span>Lands beside your project rather than in it, so nothing of yours is replaced.</span></button>
-        <button class="pick" data-on="preview"><b>Look at what is running there</b>
-          <span>Opens on this computer only. Nothing is put on the internet.</span></button>
-        <button class="pick" data-on="sync"><b>Catch this project up with theirs</b>
-          <span>Only what changed comes over, and what would be replaced is kept first.</span></button>
-      </div>`,
+        <button class="pick" data-on="sync" ${me.current ? '' : 'disabled'}>
+          <b>See what is different</b>
+          <span>Compares this project with theirs. Nothing moves until you say so, and
+            what would be replaced is kept first.</span>
+          <span class="go">${me.current ? '\u2192' : 'needs a project'}</span></button>
+        <button class="pick" data-on="terminal">
+          <b>Open a terminal there</b>
+          <span>A shell on that computer, in this project's folder.</span>
+          <span class="go">\u2192</span></button>
+        <button class="pick" data-on="run" ${me.current ? '' : 'disabled'}>
+          <b>Run it there</b>
+          <span>Whatever the project calls its dev command.</span>
+          <span class="go">${me.current ? '\u2192' : 'needs a project'}</span></button>
+        <button class="pick" data-on="build" ${me.current ? '' : 'disabled'}>
+          <b>Build it there</b>
+          <span>Runs the project's own build, and tells you how it went.</span>
+          <span class="go">${me.current ? '\u2192' : 'needs a project'}</span></button>
+        <button class="pick" data-on="bring">
+          <b>Bring back what it built</b>
+          <span>Lands beside your project rather than in it, so nothing of yours is replaced.</span>
+          <span class="go">\u2192</span></button>
+        <button class="pick" data-on="preview">
+          <b>Look at what is running there</b>
+          <span>Opens on this computer only. Nothing is put on the internet.</span>
+          <span class="go">\u2192</span></button>
+      </div>
+      <p style="color:var(--quiet);font-size:var(--t-meta)">Running things on somebody
+        else's computer is off until they allow it, one at a time. If one of these is
+        refused, that is why, and it will say so.</p>`,
     foot: '<button class="quiet" id="on-close">Close</button>',
   });
   $('#on-close').onclick = closeLayer;
@@ -5510,10 +5573,9 @@ async function doSomethingOn(deviceId, t) {
 
       if (which === 'preview') return openPreview(deviceId, one);
 
-      if (which === 'sync') {
-        say(await post('/sync/bring', { device: deviceId }));
-        return draw();
-      }
+      // Looking first, and never moving anything because a menu item was
+      // pressed. What to do about it is the next press, inside that sheet.
+      if (which === 'sync') return whatIsDifferent({ id: deviceId, name: one?.displayName }, t);
 
       const out = await post('/remote/do', { asDevice: deviceId, name: which === 'run' ? 'dev' : 'build' });
       say(out);

@@ -80,12 +80,25 @@ export const CATALOGUE = {
   gemini: {
     default: 'gemini-flash-latest',
     models: [
-      { id: 'gemini-flash-latest', name: 'Gemini Flash', why: 'The balanced one. Google keeps this pointed at their current one.' },
-      { id: 'gemini-pro-latest', name: 'Gemini Pro', why: 'Slower and better at hard problems.' },
-      { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite', why: 'Fast and cheap.' },
+      { id: 'gemini-flash-latest', name: 'Gemini Flash', why: 'Free to use, with a limit per minute. Start here.', free: true },
+      { id: 'gemini-flash-lite-latest', name: 'Gemini Flash Lite', why: 'Free too, and faster. Good for short questions.', free: true },
+      { id: 'gemini-pro-latest', name: 'Gemini Pro', why: 'Better at hard problems. This one is paid.' },
     ],
   },
 };
+
+/**
+ * Which company will answer without being paid first.
+ *
+ * The one thing somebody wanting to try this needs to know, and it was nowhere
+ * on screen: two of these three want a card before they will say anything, and
+ * the third has a free allowance that is plenty for asking about a project.
+ * Somebody who pasted a key and got "out of credit" had done everything right
+ * and been told nothing useful.
+ */
+export const FREE_TO_START = 'gemini';
+export const isFree = (providerId, modelId) => !!CATALOGUE[providerId]?.models
+  ?.find((one) => one.id === modelId)?.free;
 
 /**
  * The companies this can talk to.
@@ -273,7 +286,16 @@ export async function ready() {
     return { ok: true, model: m, name: m.name, using: m.model };
   }
 
-  for (const one of MODELS) {
+  /*
+   * Whichever has a key, and the free one first.
+   *
+   * Somebody who has set up more than one and whose chosen company has run out
+   * wants the question answered, not a lecture about which company they picked
+   * a fortnight ago. The order here is the order of "will this actually answer"
+   * — free allowance before anything that needs topping up.
+   */
+  const orderly = [...MODELS].sort((a, b) => Number(b.id === FREE_TO_START) - Number(a.id === FREE_TO_START));
+  for (const one of orderly) {
     const key = await settings.get(one.keySetting);
     if (key) {
       const m = await withModel(one);
@@ -612,6 +634,48 @@ async function askModel({ system, message, mostTokens }) {
 
     await new Promise((r) => setTimeout(r, askedFor * 1000));
     waited += askedFor;
+  }
+
+  /*
+   * The chosen company cannot answer, and another one here can.
+   *
+   * Only for the two refusals that are about the company rather than about the
+   * question: an account with nothing left on it, and a company having trouble.
+   * A bad key is not one of these — quietly asking somebody else would hide
+   * the thing that needs fixing — and neither is a queue, which passes.
+   *
+   * It says which one answered, in the answer. Being charged by a company you
+   * did not pick is a surprise nobody should get from a manager, and the way to
+   * avoid that is to say so, not to refuse to be useful.
+   */
+  const worthAnotherOne = last?.kind === TROUBLE.quotaExceeded
+    || last?.kind === TROUBLE.providerUnavailable;
+
+  if (worthAnotherOne) {
+    for (const other of MODELS) {
+      if (other.id === set.model.id) continue;
+      const theirKey = await settings.get(other.keySetting);
+      if (!theirKey) continue;
+
+      const withTheirs = {
+        ...other,
+        model: CATALOGUE[other.id]?.default ?? other.model,
+      };
+      const out = await quiet(() => withTheirs.ask.call(
+        withTheirs, { key: theirKey, system, message, mostTokens },
+      ));
+
+      if (out?.ok && out.text) {
+        return {
+          ok: true,
+          text: out.text,
+          model: other.name,
+          using: withTheirs.model,
+          insteadOf: set.name,
+          becauseOf: last.sentence,
+        };
+      }
+    }
   }
 
   // Waited what it asked for and it is still saying no, so it goes to the

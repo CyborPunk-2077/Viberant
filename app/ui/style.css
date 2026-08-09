@@ -745,14 +745,24 @@ nav {
   position: relative;
   transition: background var(--m-hover) var(--ease), color var(--m-hover) var(--ease);
 }
+/*
+ * One box, one size, every mark.
+ *
+ * They were letters, and every letter was a different width and sat on a
+ * different part of the line — so a column of them read as scattered however
+ * they were centred. A fixed square with the drawing centred in it is the only
+ * thing that makes a column of marks actually line up.
+ */
 .rail .tab .glyph {
-  width: 1.05rem;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
   flex: none;
-  text-align: center;
-  font-size: .95rem;
-  opacity: .75;
+  opacity: .8;
   transition: opacity var(--m-hover) var(--ease), color var(--m-hover) var(--ease);
 }
+.rail .tab .glyph svg { width: 16px; height: 16px; display: block; }
 .rail .tab .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail .tab:hover { background: var(--hover); color: var(--ink); }
 .rail .tab:hover .glyph { opacity: 1; }
@@ -1577,6 +1587,21 @@ h2:first-of-type { margin-top: 0; }
  */
 .apps-cols {
   grid-template-columns: 40px minmax(0, 1fr) minmax(0, 10rem) minmax(0, auto);
+}
+/*
+ * The controls at the end of a row start where the row above them started.
+ *
+ * Every row here carries a different set — an account and a way to open, an
+ * account and nothing else, an instruction and an install — so shrink-wrapped
+ * they each began at a different place and the right-hand edge of the list read
+ * as ragged. Laid out from the right, at one width, they form a column.
+ */
+.apps-cols .tacts {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 16.5rem;
 }
 .term-cols {
   grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto);
@@ -2531,6 +2556,42 @@ select { cursor: pointer; }
   flex-wrap: wrap;
 }
 .sheet footer .left { margin-right: auto; color: var(--quiet); font-size: var(--t-meta); }
+
+/*
+ * A thing you can press, drawn as one.
+ *
+ * These had no styling of their own at all, so a name and a sentence about it
+ * fell onto one line as a plain button and the whole sheet read as a table of
+ * definitions rather than a list of things to do. Name on its own line,
+ * sentence under it, arrow at the end — and the ones that are not allowed
+ * yet say so instead of failing when pressed.
+ */
+.menu .pick {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s2) var(--s3);
+  width: 100%;
+  height: auto;
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-input);
+  background: var(--raised);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-sub);
+  text-align: left;
+  white-space: normal;
+  cursor: pointer;
+}
+.menu .pick b { grid-column: 1; font-weight: var(--w-semi); }
+.menu .pick > span { grid-column: 1; color: var(--quiet); font-size: var(--t-meta); }
+.menu .pick .go { grid-column: 2; grid-row: 1 / span 2; color: var(--faint); }
+.menu .pick:hover:not(:disabled) { background: var(--hover); border-color: var(--line-strong); }
+.menu .pick:hover:not(:disabled) .go { color: var(--vibe-b); }
+.menu .pick:disabled { cursor: default; opacity: .7; }
+.menu .pick:disabled .go { color: var(--attention); font-size: var(--t-meta); }
+.menu .pick.danger b { color: var(--trouble); }
 
 .menu { display: flex; flex-direction: column; gap: var(--s1); }
 .menu .opt {
