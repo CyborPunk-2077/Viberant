@@ -2704,6 +2704,32 @@ select { cursor: pointer; }
 /* Notes between computers                                                   */
 /* ========================================================================= */
 
+/*
+ * A person, and the computers they sit at.
+ *
+ * These used to be one flat list, which read a computer's name as a person's
+ * name and made somebody with a laptop and a desktop look like two people.
+ * They are different things: a person has a role and was invited; a computer
+ * is a key, and is either reachable or not.
+ */
+.person { margin-bottom: var(--s4); }
+.person .who {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 0 var(--s3) var(--s2);
+  min-width: 0;
+}
+.person .who b { font-size: var(--t-sub); font-weight: var(--w-semi); color: var(--ink); }
+.person .who .rest { flex: 1 1 auto; }
+.person .who .count { font-size: var(--t-meta); color: var(--faint); }
+.person .sheetlist { margin: 0; }
+
+/* A note on its way, and one that did not go. */
+.bubble.going { opacity: .62; }
+.bubble.nope { border-color: var(--attention); }
+.bubble.nope span { color: var(--attention); }
+
 /* Notes are a panel on the page, not the page. */
 .talk.short { max-height: 13rem; }
 .talk { display: flex; flex-direction: column; gap: var(--s3); max-height: 22rem; overflow-y: auto; padding-right: var(--s1); }

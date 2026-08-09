@@ -3,7 +3,7 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 8 August 2026
-**Tests:** 546 in the app and 107 in core — 653 in all — passing on Windows. The ones added last hold the two decisions
+**Tests:** 551 in the app and 107 in core — 658 in all — passing on Windows. The ones added last hold the two decisions
 that would be most expensive to lose: nothing that decides where work goes can
 read a Google account, and there is no code anywhere that could download an
 update and run it.
@@ -480,6 +480,35 @@ Now about 210 ms. D-87.
 **Four sentences pointed at a page that was deleted by D-35.** "Sign in from the
 Accounts tab" — there is no Accounts tab. An action naming a place that does not
 exist is a dead end with a helpful tone.
+
+---
+
+## Somebody can actually join
+
+Joining could not work at all, and the reason was one line. Every message two
+computers exchange begins with "are you in this workspace", which is right for
+all of them except the one whose whole job is to put somebody in it.
+
+Joining has its own way in now: its own door, one kind of message, hands over
+the workspace and closes. The fingerprint of a code is shouted on the network,
+whoever holds a live invitation answers, and the real code goes down one
+connection to that computer alone. No private key is in any of it. D-178.
+
+**Verified with two independent instances**, separate profiles, separate ports:
+A creates — one member. B is not a member and has no workspace. A invites. B
+joins. Both sides then list the same two computers, by the names they were
+given, in the same workspace. Both restarted: still there. A revokes B: B is
+gone from A, and a fresh code does not let it back in.
+
+**Found doing it, and worse than the thing being fixed:** nine routes built
+their answer as `{ ...out, ...around() }`, and `around()` ends with `ok: true`.
+A refusal came back saying "That invitation does not work" with `ok: true` on
+it, so the page reported success. Nothing was let in — the refusal was real
+— but everything on screen said otherwise. D-179.
+
+People and computers are drawn as two things now, and a computer has one name
+rather than one per list. D-180. A note appears when you press the button
+rather than several seconds later behind a page rebuild. D-181.
 
 ---
 

@@ -192,7 +192,33 @@ export async function answerJoiners({ liveOnes, letThemIn, whoAmI }) {
     shouts.send(back, where.port, where.address, () => {});
   });
 
-  await new Promise((done) => shouts.bind(SHOUT_PORT, () => { shouts.setBroadcast(true); done(); }));
+  /*
+   * Listening on a door somebody else already has is a fact, not a hang.
+   *
+   * This waited for a callback that never comes when the port is taken — the
+   * error arrives on the socket instead, and the socket's handler swallowed it.
+   * So the whole thing stopped there, forever, and took whatever was waiting on
+   * it with it. Another copy of Viberant already answering is the ordinary way
+   * to reach that, and it is not an error worth a sentence: the other copy is
+   * answering.
+   */
+  const heard = await new Promise((done) => {
+    let settled = false;
+    const finish = (v) => { if (!settled) { settled = true; done(v); } };
+    shouts.once('error', () => finish(false));
+    shouts.bind(SHOUT_PORT, () => { shouts.setBroadcast(true); finish(true); });
+  });
+
+  if (!heard) {
+    try { shouts.close(); } catch { /* never opened */ }
+    await new Promise((done) => door.close(() => done()));
+    return {
+      ok: false,
+      alreadyTaken: true,
+      sentence: 'Another copy of Viberant on this computer is already listening for people joining.',
+      action: 'Use that one to invite somebody.',
+    };
+  }
 
   listening = { door, shouts };
   return { ok: true, port: door.address()?.port };

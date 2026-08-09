@@ -1970,6 +1970,49 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 ---
 
+### D-178 `[LOCKED]` — Joining has its own way in, and it can do exactly one thing
+
+**Decision.** A separate listener, on its own door, that accepts one kind of message: a code and the joining computer's public card. It hands over the workspace and closes. It is not the channel the rest of the app uses and it never becomes that channel.
+
+**Why it has to be separate.** Every other message between computers begins with "are you in this workspace", which is right for all of them except the one whose whole job is to put somebody in it. That check is why joining could not work at all.
+
+**Why it is safe to let it skip that check.** Because it can do only one thing. A second message on this path would be a way past the check everything else begins with, so a test reads the source and fails if one is ever added.
+
+**What travels:** the fingerprint of the code, shouted; an answer saying where to knock; then the real code and the public card down one connection to that computer alone; then the workspace. Anybody listening learns that somebody is joining something, which they could see anyway, and cannot join with it. No private key is in any of it — held by a test that fails if the file can even name one.
+
+**Invitations do not travel with the workspace.** A computer that had just joined, holding a list of live codes, could let in people the owner never invited.
+
+**And a revoked computer does not get back in with a fresh code.** Invitations are read aloud across desks and forwarded; coming back has to be the owner's decision.
+
+---
+
+### D-179 `[LOCKED]` — The answer wins over the state attached to it
+
+**Decision.** One helper builds `{ ...state, ...answer }`, in that order. Nine routes had written it the other way round by hand.
+
+**Why.** `around()` ends with `ok: true`. A refusal combined with it came back saying "That invitation does not work" **with `ok: true` on it**, so the page reported success. Nothing was let in — the refusal was real — but everything on screen said otherwise. That is worse than the bug it was hiding.
+
+---
+
+### D-180 `[DECIDED]` — A person and a computer are different things, and are drawn as two
+
+**Decision.** The workspace lists people, and each person's computers under them. A person has a role and was invited; a computer is a key, has a platform, and is either reachable or not.
+
+**Why.** One flat list read a computer's name as a person's name, and made somebody with a laptop and a desktop look like two people.
+
+**And a computer has one name.** The setting named it for one list while `device.mjs` kept its own for the other, so renaming changed it in one place and not the other.
+
+---
+
+### D-181 `[DECIDED]` — A note appears when you press the button
+
+**Decision.** It is on the screen immediately, marked as on its way, and the mark changes when it lands. Nothing is redrawn.
+
+**Why.** It used to wait for an errand that reaches GitHub and takes seconds, then redraw the whole page. So Send did nothing visible for several seconds, then the page rebuilt underneath you and put you back at the top — with what you typed already gone from the box and nothing anywhere to show it had been said.
+
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

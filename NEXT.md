@@ -3,118 +3,95 @@
 *Written at the end of a pass, for whoever picks it up. Exact state, exact
 continuation point. Everything below is unstarted unless it says otherwise.*
 
-**Where it is:** `01b3afe`, working tree clean, 653 tests passing (546 app,
-107 core), three consecutive clean runs.
+**Where it is:** working tree clean, 658 tests passing (551 app, 107 core),
+three consecutive clean runs.
+
+**Joining works now.** The thing this file used to be about is done — see
+`app/joining.mjs` and D-178. Two independent instances, separate profiles,
+separate ports: A creates, A invites, B joins, both sides agree, membership
+survives a restart, revoking B keeps B out.
 
 ---
 
-## 1. Joining a workspace from a computer that has never seen it — D-174
+## 1. Presence inside a members workspace
 
-**This is the one that matters.** Everything else here is polish; this is a
-promise the product makes and does not keep.
+**The nearest thing to finished, and the most worth doing.**
 
-A code is permission to join. It is not the workspace. The workspace record —
-who is in it, what each may do, the keys they know each other by — lives on the
-computer that made it, in `~/.viberant/members.json`. Something has to carry it
-across, and today only a service both computers can reach does.
+Two computers that have joined the same workspace list each other correctly and
+both say *offline*, because presence still comes from the older discovery: the
+beacon in `lan.mjs` is keyed on the **GitHub** workspace secret
+(`app/server.mjs`, `localSharing()`, around line 221), so computers that joined
+by code have no key to recognise each other with.
 
-`POST /team/join` refuses when there is no local workspace, and now says exactly
-that. Reproduced with two instances on one machine (`PORT=7788` and a separate
-`USERPROFILE`): A creates, A invites, B joins → refused, correctly.
+**What to do.** Give the beacon a second identity: the members workspace's own
+id plus a key both sides now hold — every device's public card is in
+`ws.devices`, so a shared value can be derived without inventing anything. Do
+not weaken the existing GitHub-keyed beacon; add alongside it.
 
-**What is already built and can be used.** `app/server.mjs` has an authenticated
-question-and-answer channel between computers — `askPeer` / `answerPeer`, around
-line 2325. It already carries `machine`, `manifest`, `can` and `do`. Adding a
-`join` message is a small amount of code.
+Once that lands, `anywhere.around()` already computes `online` and `how`
+correctly — it reads `lan.around()` and the introducing service — so presence
+lights up with no page changes at all.
 
-**The one real obstacle.** Every branch of `answerPeer` begins by checking that
-the asker is already in the workspace:
+## 2. Notes between computers, and the event channel
 
-```js
-if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
-```
+A note appears on the screen the moment it is pressed and never redraws the page
+(D-181). It still travels through GitHub, so the other computer sees it on the
+next sync rather than at once.
 
-That is the right check for every message except the one whose whole job is to
-create membership. A `join` branch must be authorised by **the code itself** —
-`membersOf.redeem` already does that work, already refuses expired, used and
-made-up codes, and is already held by tests in `app/test/membership.test.mjs`.
+The peer channel in `app/server.mjs` (`askPeer` / `answerPeer`, around line 2325)
+already carries authenticated messages between members and is the right place: a
+`note` message, membership-checked like every other branch there. That plus one
+subscription in the page — rather than the per-screen timers — is the event bus.
 
-**Before that can be reached,** a computer with no workspace has to discover the
-one that has it. `lan.start()` in `app/server.mjs` around line 221 is given a
-`key` derived from the workspace, so discovery today is between computers that
-already share one. Joining needs a narrower announcement — something like "I am
-looking for the workspace this code opens" — that carries the code's hash and
-nothing else. Do not weaken the existing discovery to get there.
+**Do not add a second transport.** The one that exists is authenticated,
+membership-checked and already used by four message kinds.
 
-**The shape to aim for:** joiner announces the hash of the code on the network →
-whoever holds a live invitation matching it answers → the joiner asks that peer
-`what: 'join'` with the code → the owner redeems it and replies with the
-workspace card → the joiner writes it down. Both sides then already work.
+## 3. Shared projects and sync
 
-**Do not** put the workspace record in the invitation. Ten characters read aloud
-over a desk is the point of the code, and anything a code has to carry stops
-being ten characters.
+`syncing.manifest` and the `manifest` peer message exist; the transfer engine
+with resume and verification exists; snapshots before anything is written over
+exist (`app/snapshots.mjs`, surfaced under Activity).
 
----
-
-## 2. Real-time workspace events
-
-Notes between computers arrive on the next poll rather than when they are sent,
-and the pipeline is per-page rather than shared. One subscription that carries
-membership changes, notes, project changes and transfer progress, delivered
-whichever screen is open, would replace several polls.
-
-The flicker fix (D-171) makes this cheap to do well: a screen redrawn with
-identical content now costs nothing, so an event that changes nothing is free.
-
----
-
-## 3. Workspace project sync
-
-Manifest comparison exists (`syncing.manifest`, and `what: 'manifest'` on the
-peer channel). What is missing is the surface: per-member per-project state —
-up to date, so many changes available, syncing, conflict, offline — and a way in
-from the member's inspector.
-
-Snapshots already keep a way back before anything is written over
-(`app/snapshots.mjs`, listed under Activity), so the safety half is done.
-
----
+What is missing is the surface: which projects a workspace shares, per-member
+state (up to date, so many changes, syncing, conflict, offline), and a way in
+from the member's inspector. Sharing must stay explicit — a project is not
+shared because it is open.
 
 ## 4. Signing in at first run
 
-There is no first-run sign-in. Account-dependent parts of the page are drawn
-whether or not anybody is signed in, and say so in each place rather than once.
-
----
+There is no first-run sign-in, and account-dependent parts of the page say so
+in each place rather than once.
 
 ## 5. Pages still on the old layout
 
-Projects, Project Detail, AI Apps and Terminals were not recomposed. They use
-the shared row system and the summary cards, so they are consistent, but they
-are not the reference composition: no inspector, and Terminals in particular
-leaves most of the window empty.
+Projects, Project Detail, AI Apps and Terminals use the shared row system and
+the summary cards, so they are consistent, but they are not the reference
+composition: no inspector, and Terminals leaves most of the window empty.
 
-The pieces to build them from all exist: `summary()`, `inspect()` with its
-counts / actions / map, `.sheetlist` with per-table `-cols`, and the
-`wireInspect` helper that makes a row select without a press on a control
-selecting it.
+The pieces exist: `summary()`, `inspect()` with counts / action list / topology
+map, `.sheetlist` with per-table `-cols`, and `wireInspect`.
 
 ---
 
 ## Things worth knowing before touching any of this
 
-**`view.innerHTML` is guarded** (`app/ui/app.js`, near the top). It compares
-against what a screen last *produced*, not against the page, because several
-screens draw in two stages. Writing the same page twice is free; rely on it.
+**`view.innerHTML` is guarded.** It compares against what a screen last
+*produced*, not against the page, because several screens draw in two stages.
+Writing the same page twice is free; rely on it (D-171).
 
-**A screen that needs to notice something must ask on its own.** Activity does
-(`activityTimer`), Workspace does (`workspaceTimer`). Both clear on leaving.
+**Answers are combined state-first, answer-last** — `withWorkspace()` in
+`app/server.mjs`. Writing `{ ...out, ...around() }` by hand reverses it and
+turns refusals into successes (D-179). That bug shipped nine times.
 
-**The vocabulary audit reads three-character runs** now, so short labels are
-checked. `app/test/words.test.mjs`.
+**The joining door may only ever carry one message.** A test reads
+`app/joining.mjs` and fails if a second kind is added. That single purpose is
+the entire reason it is allowed to skip the membership check (D-178).
+
+**Ports are fixed and tests run in parallel.** `joining` binds 47779; a bind
+that fails now reports rather than hanging, which is what caused two unrelated
+tests to fail when a stray server was running.
 
 **Two tests read source rather than behaviour** and will fail loudly if the
-shape changes: `app/test/membership.test.mjs` counts the places that add to the
-member list, and `app/test/leftrunning.test.mjs` counts clocks against the
-things that clear them. Both are deliberate.
+shape changes: `membership.test.mjs` counts the places that add to the member
+list, `leftrunning.test.mjs` counts clocks against the things that clear them.
+Both are deliberate.

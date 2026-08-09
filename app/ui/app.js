@@ -4715,7 +4715,25 @@ async function drawTeam() {
     return;
   }
 
-  const row = (one) => `
+  /*
+   * A person, and the computers they sit at.
+   *
+   * These were one flat list, so somebody with a laptop and a desktop looked
+   * like two people — and worse, a computer's name was read as a person's name.
+   * They are different things: a person has a role and was invited; a computer
+   * is a key, and is either reachable or not.
+   */
+  const everybody = [...t.mine, ...t.team];
+  const people = new Map();
+  for (const one of everybody) {
+    const who = one.person || one.displayName;
+    if (!people.has(who)) people.set(who, { person: who, devices: [], you: false });
+    const theirs = people.get(who);
+    theirs.devices.push(one);
+    theirs.you ||= one.you;
+  }
+
+  const deviceRow = (one) => `
     <div class="trow tap" data-teamdev="${esc(one.deviceId)}">
       <span class="dot ${one.online ? 'live' : 'off'}"></span>
       <span class="tname">
@@ -4729,6 +4747,23 @@ async function drawTeam() {
       </span></span>
     </div>`;
 
+  const personRow = (who) => {
+    const on = who.devices.filter((d) => d.online).length;
+    return `
+      <div class="person">
+        <div class="who">
+          <span class="dot ${on ? 'live' : 'off'}"></span>
+          <b>${esc(who.person)}</b>
+          ${who.you ? '<span class="chip vibe">you</span>' : ''}
+          <span class="rest"></span>
+          <span class="count">${on
+    ? `${on} of ${who.devices.length} here`
+    : `${who.devices.length} computer${who.devices.length === 1 ? '' : 's'}, none here`}</span>
+        </div>
+        <div class="sheetlist machine-cols">${who.devices.map(deviceRow).join('')}</div>
+      </div>`;
+  };
+
   box.innerHTML = `
     <div class="sect"><h2>${esc(t.workspace.name)}</h2>
       <span class="count">${t.mine.length + t.team.length}</span>
@@ -4739,12 +4774,7 @@ async function drawTeam() {
 
     ${t.stillWorks ? `<div class="said"><b>${esc(t.stillWorks.sentence)}</b></div>` : ''}
 
-    <div class="label-tiny" style="padding:0 0 .4rem">My devices</div>
-    <div class="sheetlist machine-cols">${t.mine.map(row).join('')}</div>
-
-    ${t.team.length ? `
-      <div class="label-tiny" style="padding:.9rem 0 .4rem">Team</div>
-      <div class="sheetlist machine-cols">${t.team.map(row).join('')}</div>` : ''}
+    ${[...people.values()].sort((a, b) => Number(b.you) - Number(a.you)).map(personRow).join('')}
 
     <div id="lately"></div>`;
 
@@ -5485,13 +5515,48 @@ SCREENS.workspace = async () => {
   if (talk) talk.scrollTop = talk.scrollHeight;
 
   $('#w-say').onkeydown = (e) => { if (e.key === 'Enter') $('#w-send').click(); };
+
+  /**
+   * A note appears when you press the button, not when a service agrees.
+   *
+   * It used to wait for the whole errand — which reaches GitHub and takes
+   * seconds — and then redraw the page. So pressing Send did nothing visible
+   * for several seconds, and then the page rebuilt underneath you and put you
+   * back at the top. What you typed was gone from the box the whole time, with
+   * nothing anywhere to show it had been said.
+   *
+   * It is on the screen immediately, marked as on its way, and the mark
+   * changes when it lands. Nothing is redrawn: this appends one element to a
+   * list, which is what actually happened.
+   */
   $('#w-send').onclick = async () => {
-    const text = $('#w-say').value.trim();
+    const box = $('#w-say');
+    const text = box.value.trim();
     if (!text) return;
-    $('#w-say').value = '';
+    box.value = '';
+
+    const talkBox = $('#talk');
+    const mine = document.createElement('div');
+    mine.className = 'bubble mine going';
+    mine.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">You · <span>sending</span></div>${esc(text)}`;
+    talkBox?.append(mine);
+    if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
+
     const r = await post('/workspace/say', { text });
-    if (!r.ok) say(r);
-    draw();
+    if (!mine.isConnected) return;
+
+    mine.classList.remove('going');
+    const when = mine.querySelector('span');
+    if (r.ok) {
+      if (when) when.textContent = 'just now';
+      return;
+    }
+
+    // It did not go. Said on the note itself rather than as a sentence at the
+    // top of a page it would have been redrawn away from.
+    mine.classList.add('nope');
+    if (when) when.textContent = 'not sent';
+    mine.title = [r.sentence, r.action].filter(Boolean).join(' ');
   };
   // Acknowledged before anything is asked of the manager, per D-62 — this
   // reaches GitHub and takes seconds, and it used to look untouched for all of

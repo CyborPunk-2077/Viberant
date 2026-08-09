@@ -395,6 +395,15 @@ const routes = {
     const r = await settings.set(body.id, body.value);
     if (r.ok && body.id === 'watchFolder') await watchProject(current?.dir ?? null);
     if (r.ok && body.id === 'localSharing') await localSharing();
+    /*
+     * What this computer is called is one name, not two.
+     *
+     * The setting named it for the older workspace and `device.mjs` kept its
+     * own for the newer one, so renaming a computer changed it in one list and
+     * not the other — and two profiles on one machine both introduced
+     * themselves by the same hostname whatever anybody had typed.
+     */
+    if (r.ok && body.id === 'machineName') await device.rename(body.value).catch(() => null);
     if (r.ok && body.id === 'machineName' && lan.isOn()) {
       // The others know this computer by its name, so a new one has to go out.
       await lan.stop();
