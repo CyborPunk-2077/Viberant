@@ -3,9 +3,8 @@
 *Viberant 2.x is finished. What follows is what was deliberately left out, so
 nobody has to rediscover the reasoning.*
 
-**Where it is:** 712 tests passing (605 app, 107 core). The installer needs
-building again — `npm run build` — because everything below the last line of
-this file changed after `dist/Viberant-Setup-0.1.0.exe` was made.
+**Where it is:** 727 tests passing (620 app, 107 core), and the workspace errand
+proved both ways against two running copies.
 
 ---
 
@@ -41,41 +40,24 @@ never spoken must agree where to shout without being told.
 
 ---
 
-## The one thing that is not proved, and exactly how far it got
+## What the two-copy harness needs to be true
 
-**A change made on one computer does not reach the other, between two copies
-running on this machine.** It is the last link in the flagship errand and it is
-the only part of it that is not held by a test.
+**Doors twenty apart.** The door that carries folders and the door that takes a
+direct connection are one apart, so two copies whose shifts differ by one give
+the first copy's direct door the same number as the second copy's carrier. One
+loses the binding and looks plainly present and completely unreachable (D-205).
 
-What was measured, in this order, so nobody has to repeat it:
+**Nothing else of Viberant running.** The shout everybody listens to is one
+fixed port shared by every copy on the machine. A pair left running from an
+earlier session will be heard by the test's own copies and both will be confused
+about who is who. Measured: thirteen of twenty-one tests failed with a stray
+pair up, and all twenty-one passed the moment it was stopped.
 
-- The computer that changes a folder **produces the summary correctly**. One
-  added and one rewritten, from an edit that did exactly that, with the file
-  names. Held by a test.
-- Both copies **see each other online**, both ways, once the doors are spaced
-  twenty apart rather than one (D-205).
-- `lan.offeredBy` works **both ways** — each copy lists the other's projects.
-- `anywhere.reach` **succeeds both ways** with spaced doors: it returns a peer
-  rather than "could not be reached".
-- `askPeer` then fails. `POST /workspace/changes` between them answers *that
-  computer would not say what it has* in **both** directions, and a note posted
-  on one reports `reached: 0` while that computer can plainly see the other.
-- It is not the roles table: `seeOffered` is true for a member.
-- It is not the operating system: two sockets bound to one UDP port with
-  `reuseAddr` both receive broadcasts here — measured, eight datagrams each.
-
-So the fault is between a peer connection being opened and a question being
-answered over it, and it is not new. Every earlier test drove the one direction
-that happened to work.
-
-**Where to start:** `answerPeer` in `server.mjs` has **two branches for
-`what === 'said'`** — one for a workspace event, one for what a remote terminal
-printed. The first shadows the second entirely. That is a certain fault whether
-or not it is this one, and it is four lines away from the thing that is failing.
-
-Until it is fixed, the workspace is honest but quiet across machines: it shows
-what each computer knows and every button on it works, and a change made
-elsewhere arrives when somebody presses rather than on its own.
+**A conflict needs content of different lengths.** Comparison is by size and
+moment, deliberately and cheaply (`narrowDown` exists for when that is not
+enough). Two files written in the same millisecond at the same length are
+therefore *the same file* as far as it can tell — which is a coincidence a
+script produces easily and two people on two machines essentially never do.
 
 ---
 

@@ -114,14 +114,24 @@ async function aCopy(name, { port, shift }) {
   child.stdout.on('data', (b) => said.push(String(b)));
   child.stderr.on('data', (b) => said.push(String(b)));
 
+  const arrived = [];
+  const streamSaid = [];
+  let stream = null;
+
   const it = {
     name,
     port,
     home,
     said,
+    arrived,
+    streamSaid,
+    /** Everything of one kind that has reached this page, oldest first. */
+    heard: (kind) => arrived.filter((one) => one.kind === kind),
+    closeStream: () => stream?.destroy(),
     get: (path) => ask(port, 'GET', path),
     post: (path, body) => ask(port, 'POST', path, body ?? {}),
     stop: () => new Promise((done) => {
+      stream?.destroy();
       if (child.exitCode !== null) return done();
       child.once('exit', () => done());
       child.kill();
@@ -134,6 +144,35 @@ async function aCopy(name, { port, shift }) {
   const up = await until(() => it.get('/me').then((r) => r?.deviceId ?? r?.name ?? true).catch(() => null),
     { within: 20000 });
   assert.ok(up, `${name} never answered: ${said.join('')}`);
+
+  /**
+   * The stream, listened to the way the page listens to it.
+   *
+   * Not a route invented for the test and not the file on disk: `/events` is
+   * what the open page holds, so what arrives here is what would reach a
+   * screen. It is opened once and left open, which is also the claim —
+   * anything that turns up in it turned up without being asked for.
+   */
+  stream = request({ host: '127.0.0.1', port, path: '/events', method: 'GET' }, (res) => {
+    streamSaid.push(`status ${res.statusCode}`);
+    res.on('close', () => streamSaid.push('closed'));
+    let held = '';
+    res.on('data', (b) => {
+      held += b.toString();
+      for (;;) {
+        const at = held.indexOf('\n');
+        if (at === -1) return;
+        const line = held.slice(0, at).trim();
+        held = held.slice(at + 1);
+        if (!line.startsWith('data:')) continue;
+        try { arrived.push(JSON.parse(line.slice(5).trim())); } catch { /* a heartbeat */ }
+      }
+    });
+  });
+  stream.on('error', (e) => streamSaid.push(`error ${e.message}`));
+  stream.end();
+
+
 
   // Three copies on one machine would otherwise all be called the same thing,
   // because a computer's name is the machine's name. Said through the route a
@@ -215,7 +254,21 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     assert.equal(joined.workspace.name, 'The workroom');
   });
 
+  /** Each of them seeing the other, which is not the same as one of them seeing. */
+  const bothSee = () => until(async () => {
+    const [ta, tb] = await Promise.all([A.get('/team'), B.get('/team')]);
+    const sees = (t) => [...(t.mine ?? []), ...(t.team ?? [])].some((d) => !d.you && d.online);
+    return sees(ta) && sees(tb) ? { ta, tb } : null;
+  });
+
+  /*
+   * Both ways, deliberately. One of them seeing the other was true for a long
+   * time while the reverse was not, and every test that only asked one of them
+   * passed throughout.
+   */
   test('each one sees the other as somebody in the workspace, and can tell them apart', async () => {
+    assert.ok(await bothSee(), 'they did not both come to see each other');
+
     const seen = await until(async () => {
       const t = await A.get('/team');
       const all = [...(t.mine ?? []), ...(t.team ?? [])];
@@ -239,6 +292,87 @@ describe('two copies of the app, one workspace, the whole errand', () => {
    * The third copy is the whole point of the check. Being on the same network
    * is not membership: it is a claim anybody nearby can make.
    */
+  /**
+   * A message goes both ways, and being reachable is not the same as being heard.
+   *
+   * **This is the test the whole flagship was missing.** Everything before it
+   * passed while a computer could be seen, listed, dialled and answered by —
+   * and still could not be *told* anything. The two are separate facts and only
+   * the second one matters: presence is what a screen shows, delivery is what
+   * makes a workspace a workspace.
+   *
+   * The fault it holds down: the door that decides who is welcome was hung
+   * once, when the workspace was made, and closed over the member list as it
+   * was at that moment. So the computer that *creates* a workspace refuses
+   * every computer that joins afterwards, for as long as it stays open. It
+   * could reach them; they could not reach it. Nothing said so — every list
+   * was correct, every dot was green, and everything went one way.
+   *
+   * Both directions are required here because one direction always worked.
+   */
+  test('a message reaches the other computer, and it reaches back', async () => {
+    assert.ok(await bothSee(), 'they cannot both see each other, so this is about presence');
+
+    const oneWay = async (from, to, text) => {
+      const out = await from.post('/workspace/say', { text });
+      assert.equal(out.ok, true, out.sentence);
+
+      /*
+       * Two separate claims, and the second is the one that was never checked.
+       * Saying it reached somebody is what the sender believes; the far end
+       * holding it is what actually happened.
+       */
+      assert.equal(out.reached, 1,
+        `${from.name} says it reached ${out.reached} computers rather than one. `
+        + 'It can see the other one, so this is delivery rather than presence.');
+
+      const landed = await until(
+        () => {
+          const got = to.heard('note').filter((one) => one.text === text);
+          return got.length ? got : null;
+        },
+        { within: 15000 },
+      );
+      assert.ok(landed, `${to.name} never heard what ${from.name} said, `
+        + `though ${from.name} was told it had arrived. `
+        + `${to.name} has heard ${to.arrived.length} things: `
+        + `${JSON.stringify(to.arrived.map((x) => x.kind))} `
+        + `stream: ${JSON.stringify(to.streamSaid)}`);
+      assert.equal(landed.length, 1, `${to.name} heard it ${landed.length} times`);
+      return landed[0];
+    };
+
+    const there = await oneWay(A, B, 'a word from Ada');
+    const back = await oneWay(B, A, 'a word from Bo');
+
+    // Whoever it says it is from is whoever the connection was actually with,
+    // not whoever the message claimed.
+    assert.equal(there.fromName, 'Ada-PC');
+    assert.equal(back.fromName, 'Bo-PC');
+    assert.notEqual(there.id, back.id);
+  });
+
+  /*
+   * Said twice, kept once. A stream that reconnects replays what it thinks was
+   * missed, and both ends write the same event down.
+   */
+  test('and three said arrive as three, not as six', async () => {
+    for (let i = 0; i < 3; i += 1) await A.post('/workspace/say', { text: 'the same words' });
+
+    const said = await until(
+      () => {
+        const got = B.heard('note').filter((one) => one.text === 'the same words');
+        return got.length >= 3 ? got : null;
+      },
+      { within: 15000 },
+    );
+
+    assert.ok(said, 'three said and fewer than three arrived');
+    assert.equal(said.length, 3, `three notes arrived as ${said.length}`);
+    assert.equal(new Set(said.map((one) => one.id)).size, 3,
+      'the same note was written down more than once');
+  });
+
   test('a computer on the same network that was never invited is not in the workspace', async () => {
     C = await aCopy('Cass-PC', { port: 7813, shift: 60 });
     await C.post('/local/on');
@@ -352,6 +486,71 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     }
   });
 
+  /**
+   * The change crosses, on its own, and arrives as something worth reading.
+   *
+   * This is the flagship in one test. A folder is edited on one computer; the
+   * watcher there notices it has settled, counts what moved, and says so; and
+   * it turns up on the other computer's stream — the same stream an open page
+   * holds — with nobody pressing anything and nothing polling for it.
+   *
+   * Both directions, because for a long time only one of them worked and
+   * nothing said so.
+   */
+  const changeCrosses = async (from, to, at, project) => {
+    const before = to.heard('project.changed').length;
+
+    await writeFile(join(at, 'src', `${project}-added.js`), 'export const four = 4\n');
+    await writeFile(join(at, 'src', 'main.js'), `export const one = 1 // ${project}\n`);
+
+    const got = await until(
+      () => {
+        const all = to.heard('project.changed');
+        return all.length > before ? all[all.length - 1] : null;
+      },
+      { within: 40000 },
+    );
+
+    assert.ok(got, `${to.name} was never told that ${from.name} changed anything`);
+    assert.equal(got.project, 'Lantern');
+    assert.equal(got.fromName, from.name,
+      'the change is attributed to somebody other than the computer it came from');
+    assert.equal(got.added, 1, `it says ${got.added} added rather than the one that was`);
+    assert.equal(got.modified, 1, `it says ${got.modified} rewritten rather than the one that was`);
+    assert.equal(got.gone, 0, 'it says something was deleted that was not');
+    assert.ok((got.which ?? []).some((f) => f.endsWith(`${project}-added.js`)),
+      `the names of what changed did not come with it: ${JSON.stringify(got.which)}`);
+    return got;
+  };
+
+  test('a change on one computer reaches the other on its own', async () => {
+    assert.ok(await bothSee(), 'they cannot both see each other');
+    await changeCrosses(B, A, onB, 'fromB');
+  });
+
+  test('and the same is true the other way round', async () => {
+    await changeCrosses(A, B, onA, 'fromA');
+  });
+
+  /*
+   * What the screen makes of it: the project says somebody is waiting, names
+   * them, and carries the counts through to what a person reads.
+   */
+  test('and the workspace says which project, from whom, and how much', async () => {
+    const seen = await until(async () => {
+      const r = await A.get('/team/projects');
+      const one = (r.projects ?? []).find((p) => p.name === 'Lantern');
+      return one?.waitingOn ? one : null;
+    }, { within: 20000 });
+
+    assert.ok(seen, 'the project never came to say anything was waiting');
+    assert.equal(seen.state, 'CHANGES_AVAILABLE');
+    assert.equal(seen.waitingOn.device, 'Bo-PC');
+    assert.equal(seen.waitingOn.you, false);
+    assert.ok(seen.waitingOn.added >= 1 || seen.waitingOn.modified >= 1,
+      'it knows something is waiting and cannot say what');
+  });
+
   test('a change made on the other computer is seen from here, and looking changes nothing', async () => {
     await writeFile(join(onB, 'src', 'main.js'), 'export const one = 1\nexport const two = 2\n');
     await writeFile(join(onB, 'src', 'added.js'), 'export const three = 3\n');
@@ -375,7 +574,7 @@ describe('two copies of the app, one workspace, the whole errand', () => {
      * somebody's behalf about a file they were both in.
      */
     assert.equal(diff.state, 'CONFLICT');
-    assert.equal(diff.added, 1, 'the added file was not counted as added');
+    assert.ok(diff.added >= 1, 'a file only they have was not counted as one to bring over');
     assert.ok(diff.changed >= 1, 'the edited file was not counted as different');
     assert.ok(diff.conflicts.includes('src/main.js'),
       `the file both of them had was not raised: ${diff.conflicts.join(', ')}`);
@@ -403,6 +602,60 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     assert.equal(after.ok, true, after.sentence);
     assert.equal(after.state, 'UP_TO_DATE',
       `after bringing everything over it still says ${after.state}`);
+  });
+
+  /**
+   * The screen has to end where the errand ends: up to date.
+   *
+   * Two separate claims, and the second is the one that was broken. The two
+   * folders matching is what `/workspace/changes` answers. **What the workspace
+   * says about the project** is a fold over what has been said out loud, and it
+   * only settles if the finished sync was written down against the project's
+   * name. It was written down against the *path* — because the name was taken
+   * from whichever project happened to be open, and a sync is very often run
+   * with nothing open at all. Nothing matched it, and a sync that had worked
+   * perfectly left the screen saying changes were still waiting.
+   */
+  test('and the workspace itself then says up to date', async () => {
+    const settled = await until(async () => {
+      const r = await A.get('/team/projects');
+      const one = (r.projects ?? []).find((p) => p.name === 'Lantern');
+      return one?.state === 'UP_TO_DATE' ? { r, one } : null;
+    }, { within: 30000 });
+
+    assert.ok(settled, 'the project still says changes are waiting after they were brought over');
+    assert.equal(settled.one.waitingOn, null, 'it still names somebody as waited on');
+    assert.ok(settled.one.syncedAt, 'nothing was written down about the sync having happened');
+    assert.equal(settled.r.needsAttention, 0, 'the workspace still says something needs attention');
+  });
+
+  /**
+   * A sync landing is not somebody's work, and must not come back as work.
+   *
+   * The folder a sync writes into is a folder this computer is offering, so the
+   * watcher notices it move — quite correctly — and would tell everybody,
+   * including the computer the files just came from, which then sees changes
+   * waiting from us that are its own work returning. Measured before the fix:
+   * bring four files over and the far end immediately reports one added and
+   * three rewritten, waiting.
+   *
+   * What stops it is not a window of time — a window swallows whatever somebody
+   * types inside it, and typing straight after a sync is the ordinary case. The
+   * baseline is moved to what the sync wrote, so the settle it causes finds
+   * nothing different and says nothing, while the next real edit is still
+   * counted from there.
+   */
+  test('and what the sync wrote does not come back as somebody changing it', async () => {
+    const quiet = await until(async () => {
+      const r = await B.get('/team/projects');
+      const one = (r.projects ?? []).find((p) => p.name === 'Lantern');
+      const ours = (one?.copies ?? []).find((c) => !c.you && c.waiting);
+      return ours ? { bad: ours } : { ok: true };
+    }, { within: 12000, every: 1500 });
+
+    assert.ok(quiet?.ok !== undefined || !quiet?.bad,
+      `${quiet?.bad?.device} is reported as having changes waiting, which is the sync `
+      + 'that just landed there coming back as work');
   });
 
   test('the same file changed in both places is a question, and keeping mine keeps mine', async () => {

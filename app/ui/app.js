@@ -7101,8 +7101,16 @@ SCREENS.workspace = async () => {
   }
 
   wireProjectInWorkspace(here, t);
-  drawLately();
   drawWorkspaceNotes();
+
+  /*
+   * The inspector, filled rather than waiting to be.
+   *
+   * A panel that is empty until somebody guesses to press something is a panel
+   * most people never see. Whatever the middle column is about is what it is
+   * about, until somebody presses a person or a computer.
+   */
+  if (here && !inspecting) inspectSharedProject(here);
 
   /*
    * Looked at again every so often, and almost always for nothing.
@@ -7120,23 +7128,39 @@ SCREENS.workspace = async () => {
 /**
  * The middle column: one project, and everything there is to do about it.
  *
- * The order is the order of the questions. What is this and how does it stand;
- * who has a copy and which of them moved; then, only if something is waiting,
- * the two things to do about it. Everything operational is under that, compact,
- * because it is history and history is for afterwards.
+ * The order is the order of the questions somebody actually has. What is this
+ * and how does it stand; is anything waiting and what do I do about it; who
+ * else has a copy and which of them moved; what has happened here lately.
+ *
+ * **It fills the column on purpose.** The version before this said the name,
+ * one row, and two collapsed headings, and left two thirds of the screen
+ * empty — which reads as a feature that was started and abandoned rather than
+ * as a workspace with nothing wrong in it. A project with one copy and nothing
+ * waiting is a perfectly ordinary state and it now says so, in words, with the
+ * thing to do about it.
  */
 function projectInWorkspace(p) {
   const state = PROJECT_STATE[p.state] ?? PROJECT_STATE.ONLY_HERE;
   const from = p.waitingOn ?? null;
   const what = from ? changeInWords(from) : null;
+  const alone = p.copies.length === 1;
 
   return `
     <div class="wsproj">
       <div class="top">
-        <h2>${esc(p.name)}</h2>
-        <span class="state ${esc(state.tone)}">${esc(state.says)}</span>
-        <span class="rest"></span>
-        ${p.mine ? '<button class="quiet small" id="ws-open">Open it here</button>' : ''}
+        <div class="grow">
+          <h2>${esc(p.name)}</h2>
+          <div class="facts">
+            <span class="state ${esc(state.tone)}">${esc(state.says)}</span>
+            ${p.mine?.files ? `<span>${p.mine.files} files</span>` : ''}
+            ${p.mine?.bytes ? `<span>${esc(size(p.mine.bytes))}</span>` : ''}
+            <span>${p.copies.length} cop${p.copies.length === 1 ? 'y' : 'ies'}</span>
+            ${p.syncedAt ? `<span>brought over ${esc(ago(p.syncedAt))}</span>` : ''}
+          </div>
+        </div>
+        <div class="acts">
+          ${p.mine ? '<button class="quiet small" id="ws-open">Open it here</button>' : ''}
+        </div>
       </div>
 
       ${from ? `
@@ -7171,17 +7195,41 @@ function projectInWorkspace(p) {
           </div>`).join('')}
       </div>
 
-      ${p.mine ? '' : `<p class="sub">Nobody on this computer has a copy of this one.
-        Press a computer that does to bring one over.</p>`}
+      ${alone ? `
+        <div class="wsalone">
+          <b>This project is only on this computer.</b>
+          <span>Nobody else in this workspace has a copy of ${esc(p.name)} yet. Invite
+            somebody, or turn on a computer of your own that is offering it, and it will
+            appear here with a copy of its own.</span>
+          <span class="acts">
+            <button class="go small" id="ws-alone-invite">Invite somebody</button>
+            <button class="quiet small" id="ws-alone-offer">Offer another folder\u2026</button>
+          </span>
+        </div>` : ''}
+
+      ${!p.mine ? `<p class="sub">Nobody on this computer has a copy of this one.
+        Press a computer that does to bring one over.</p>` : ''}
 
       <div id="job"></div>
 
+      <div class="label-tiny stacked">Lately <span class="count">${(p.lately ?? []).length}</span></div>
+      ${(p.lately ?? []).length ? `
+        <ul class="wsevents">
+          ${p.lately.map((one) => `
+            <li class="${one.kind === 'sync.failed' ? 'bad' : ''}">
+              <span class="mark">${one.kind === 'project.changed' ? '\u25cf' : one.kind === 'sync.failed' ? '\u25b3' : '\u2713'}</span>
+              <span class="grow">${esc(one.you ? 'You' : one.who ?? 'Somebody')}
+                ${one.kind === 'project.changed'
+    ? `changed it${changeInWords(one) ? ` \u00b7 ${esc(changeInWords(one))}` : ''}`
+    : one.kind === 'sync.failed' ? 'tried to bring changes over and could not'
+      : 'brought changes over'}</span>
+              <span class="when">${esc(ago(one.at))}</span>
+            </li>`).join('')}
+        </ul>`
+    : '<p class="sub quiet">Nothing has happened to this one yet.</p>'}
+
       <details class="wsmore">
-        <summary>What has happened here</summary>
-        <div id="lately"></div>
-      </details>
-      <details class="wsmore">
-        <summary>Notes</summary>
+        <summary>Notes to the workspace</summary>
         <div id="wsnotes"></div>
       </details>
     </div>`;
@@ -7189,6 +7237,9 @@ function projectInWorkspace(p) {
 
 function wireProjectInWorkspace(p, t) {
   if (!p) return;
+
+  $('#ws-alone-invite')?.addEventListener('click', inviteSomebody);
+  $('#ws-alone-offer')?.addEventListener('click', () => { inWorkspace = false; draw(); });
 
   $('#ws-open')?.addEventListener('click', async () => {
     say(await post('/open', { path: p.mine.path }));

@@ -82,15 +82,37 @@ export const WHAT_ROLES_MAY_DO = {
 export const CAPABILITIES = Object.keys(WHAT_ROLES_MAY_DO.owner);
 
 /** Everything this computer knows about who is in what. */
+/**
+ * The workspace this computer takes part in, answerable without waiting.
+ *
+ * Everything else here reads the book from disk, which is right and is what
+ * `current` does. This exists for the one caller that cannot wait: the door
+ * that decides whether an arriving computer is welcome. That decision is made
+ * inside a socket handler, and putting a read of the disk in the middle of one
+ * loses whatever the far end said next — measured, and it looked exactly like
+ * the fault it was meant to fix.
+ *
+ * Kept current by the two functions every read and every write already goes
+ * through, so there is no third place to keep in step.
+ */
+let asOfNow = null;
+export const now = () => asOfNow;
+
+const holdOnTo = (state) => {
+  asOfNow = state.joined ? state.workspaces?.[state.joined] ?? null : null;
+  return state;
+};
+
 async function book() {
-  if (!existsSync(BOOK)) return { workspaces: {}, joined: null };
-  return (await quiet(async () => JSON.parse(await readFile(BOOK, 'utf8'))))
-    ?? { workspaces: {}, joined: null };
+  if (!existsSync(BOOK)) return holdOnTo({ workspaces: {}, joined: null });
+  return holdOnTo((await quiet(async () => JSON.parse(await readFile(BOOK, 'utf8'))))
+    ?? { workspaces: {}, joined: null });
 }
 
 async function keep(state) {
   await mkdir(HOUSE, { recursive: true });
   await writeFile(BOOK, JSON.stringify(state, null, 2), 'utf8');
+  holdOnTo(state);
 }
 
 // ---------------------------------------------------------------------------

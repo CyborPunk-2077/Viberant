@@ -2,10 +2,11 @@
 
 *What is done and what is left, in plain language. Updated every session.*
 
-**Last updated:** 9 August 2026
-**Tests:** 605 in the app and 107 in core — 712 in all — passing on Windows. The
-whole workspace errand is driven against two copies of the app that are actually
-running; it has now found five faults that every other test passed straight over.
+**Last updated:** 10 August 2026
+**Tests:** 620 in the app and 107 in core — 727 in all — passing on Windows. The
+whole workspace errand is driven **both ways** against two copies of the app
+that are actually running; it has now found nine faults that every other test
+passed straight over.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
@@ -832,6 +833,39 @@ colour that means something it does not mean.
 
 ---
 
+## The last one going one way, and why nothing said so
+
+**A computer could be seen, listed, dialled and answered by — and still could
+not be told anything.** The door that decides who is welcome was hung once, when
+the workspace was made, and closed over the member list as it stood at that
+moment. So the computer that *creates* a workspace refused every computer that
+joined afterwards, for as long as it stayed open. Proved by restarting that one
+computer and changing nothing else: both directions began working. It cut the
+other way too, and that half is worse — a computer revoked while the app ran
+went on being let in until a restart. D-206.
+
+Three more came out with it. `answerPeer` answered `said` in **two** branches,
+so the second could never run (D-207). A finished sync was written down against
+the *path* rather than the project's name, so nothing matched it and **a sync
+that worked perfectly left the screen saying changes were still waiting**
+(D-209). And the folder a sync writes into is a folder this computer offers —
+so the watcher announced the sync landing as work, to the very computer the
+files had come from, which then saw changes waiting that were its own work
+returning (D-210).
+
+**What is now held, both ways, against two running copies:** a message reaches
+the other computer and reaches back; three said arrive as three; a change made
+on one turns up on the other's stream on its own, with the counts it actually
+made; looking writes nothing; the sync ends with the workspace itself saying up
+to date; what the sync wrote does not come back as somebody changing it; and a
+file changed in both places is still a question whose answer is honoured.
+
+Two tests hold the shape rather than the behaviour, because a shape can rot back
+into place long after a behaviour test was written: nothing may be answered in
+two places, and what the door allows may not be a workspace it was handed.
+
+---
+
 ## The workspace, recomposed around the project
 
 Two columns and the inspector the shell already has. **Left:** people, with
@@ -857,9 +891,23 @@ derived from which shared project their computer last reported a change in —
 truthful, and the only answer available. A test fails on the words *editing*,
 *has open*, *typing*, *cursor* and *viewing* anywhere in that answer.
 
-Verified with a real payload in the real page: *Rahul changed Viberant · 3 added
-· 8 rewritten · 1 gone · 1 min ago · on Rahul-Laptop*, with the file names, and
-below it You / Rahul / SERVER each with its own standing and its own action.
+**Verified against two real copies, driving the actual screen.** Bo-PC edits the
+shared project; Ada-PC's workspace says *changed CodeSage-AI-master · 1 added ·
+1 rewritten · just now · on Bo-PC* with the file names, without anybody pressing
+anything; View changes shows the read-only comparison and writes nothing;
+Sync brings it over and the project says **Up to date** with the header reading
+*Everything up to date*. Then the same the other way round. Then both change one
+file: the conflict is raised on that file, what was chosen to be kept is exactly
+what is on the disk afterwards, and a way back is recorded.
+
+Four inspector states checked in the running app — project, person, this
+computer, the other computer — each saying something different and true. Across
+a full ten-second cycle with nothing happening: same elements, same selection,
+same scroll, nothing redrawn.
+
+**One copy is an ordinary state and now says so** rather than leaving two thirds
+of the column empty: what is true about the project, that nobody else has it
+yet, and the two things that change that. D-212.
 
 ---
 

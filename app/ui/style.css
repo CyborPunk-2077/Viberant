@@ -3315,7 +3315,13 @@ select { cursor: pointer; }
 
 .wsenv {
   display: grid;
-  grid-template-columns: minmax(0, 17.5rem) minmax(0, 1fr);
+  /*
+   * The left column is a list of names and a list of projects, so it is given
+   * what those need and no more. Every pixel it does not use goes to the only
+   * column where anything happens — which matters most exactly when the
+   * inspector is open, because that is when the middle is narrowest.
+   */
+  grid-template-columns: minmax(0, 15.5rem) minmax(0, 1fr);
   gap: var(--s6);
   align-items: start;
 }
@@ -3435,13 +3441,6 @@ select { cursor: pointer; }
 
 /* --- the project itself -------------------------------------------------- */
 
-.wsproj .top {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  margin-bottom: var(--s5);
-}
-.wsproj .top h2 { margin: 0; font-size: var(--t-h3); }
 
 .wsproj .state {
   padding: 2px var(--s3);
@@ -3574,3 +3573,77 @@ select { cursor: pointer; }
   border-color: color-mix(in srgb, var(--attention) 45%, transparent);
   color: var(--attention);
 }
+
+/* --- the project, as the thing the column is about ----------------------- */
+
+.wsproj .top {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s4);
+  margin-bottom: var(--s5);
+  padding-bottom: var(--s4);
+  border-bottom: 1px solid var(--line);
+}
+.wsproj .top .grow { display: grid; gap: var(--s2); min-width: 0; flex: 1 1 auto; }
+.wsproj .top h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--t-h2);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wsproj .top .acts { flex: none; }
+
+/*
+ * What is true about it, in a line: how it stands, how big it is, how many
+ * copies there are, when anything last came over. Four facts beat a heading
+ * followed by nothing, and they are all things somebody would otherwise press
+ * something to find out.
+ */
+.wsproj .facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s3); }
+.wsproj .facts > span { color: var(--quiet); font-size: var(--t-meta); white-space: nowrap; }
+.wsproj .facts > span + span::before {
+  content: "\00b7";
+  margin-right: var(--s3);
+  color: var(--faint);
+}
+.wsproj .facts .state::before { content: none; }
+
+/*
+ * One copy is an ordinary state, not an empty one.
+ *
+ * It used to be a name, one row and two collapsed headings over two thirds of
+ * an empty column, which reads as something half-built. Saying what is true and
+ * offering the thing that changes it is the same amount of room, used.
+ */
+.wsalone {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s5);
+  padding: var(--s5);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-card);
+  background: var(--raised);
+}
+.wsalone b { font-size: var(--t-sub); font-weight: var(--w-semi); }
+.wsalone > span { max-width: 46ch; color: var(--quiet); font-size: var(--t-meta); line-height: 1.5; }
+.wsalone .acts { display: flex; gap: var(--s2); margin-top: var(--s2); }
+
+/* What has happened to this one, which is a different question from what has
+   happened in the workspace. */
+.wsevents { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
+.wsevents li {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  color: var(--quiet);
+  font-size: var(--t-meta);
+}
+.wsevents li + li { border-top: 1px solid var(--line); }
+.wsevents .mark { flex: none; width: 1rem; color: var(--good); text-align: center; }
+.wsevents li.bad .mark { color: var(--trouble); }
+.wsevents .grow { overflow: hidden; color: var(--ink); text-overflow: ellipsis; white-space: nowrap; }
+.wsevents .when { flex: none; color: var(--faint); }
+
+.wsproj .sub.quiet { color: var(--faint); font-size: var(--t-meta); }

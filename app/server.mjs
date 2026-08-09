@@ -301,6 +301,8 @@ async function watchWhatIsOffered() {
        * who could see their own screen.
        */
       held.was = await syncing.manifest(one.path, { everything: !!one.everything }).catch(() => null);
+      held.path = one.path;
+      held.everything = !!one.everything;
 
       held.watcher = watch(sameName ? one.path : known, { recursive: true }, (_kind, name) => {
         const path = String(name ?? '');
@@ -347,6 +349,16 @@ async function sayItChanged(offer, held = null) {
   const moved = was ? syncing.compare(now, was) : null;
   if (held) held.was = now;
 
+  /*
+   * A folder that settled with nothing different in it says nothing.
+   *
+   * Which is what a sync landing looks like, because the baseline was moved to
+   * what the sync wrote the moment it finished. It also covers the ordinary
+   * cases — a file saved with no change in it, a tool touching timestamps —
+   * where announcing would be telling everybody about nothing.
+   */
+  if (moved && !moved.missing.length && !moved.changed.length && !moved.extra.length) return;
+
   const said = chatter.anEvent({
     kind: 'project.changed',
     workspace: ws.id,
@@ -369,6 +381,35 @@ async function sayItChanged(offer, held = null) {
 
   await chatter.remember(said);
   await sayItToTheOthers(ws, said).catch(() => null);
+}
+
+/**
+ * A folder that moved because a sync landed in it, not because anybody worked.
+ *
+ * **Without this the two computers talk themselves in circles.** A sync writes
+ * into a folder this computer is offering; the watcher notices, quite correctly,
+ * that the folder changed; and it tells everybody — including the computer the
+ * files just came from, which then sees changes waiting from us that are its own
+ * work coming back. Measured between two running copies: bring three files over
+ * and the far end immediately reports one added and three rewritten, waiting.
+ *
+ * One settle is absorbed, once, and the folder is taken as the new baseline so
+ * the next real edit is still counted from here. Anything somebody types after
+ * that is theirs and is said. The sync itself is not lost — it is already
+ * written down as having been brought over, which is the truthful description of
+ * it and is what Lately shows.
+ */
+async function broughtOverInto(dir) {
+  const at = resolve(dir);
+  for (const held of watchingOffers.values()) {
+    if (!held.path || resolve(held.path) !== at) continue;
+    // The folder as it is now, so the settle this is about to cause finds
+    // nothing to report. Not a window of time: a window swallows whatever
+    // somebody types inside it, and somebody typing straight after a sync is
+    // the ordinary case rather than an unlikely one.
+    held.was = await syncing.manifest(held.path, { everything: !!held.everything })
+      .catch(() => held.was);
+  }
 }
 
 /** Three numbers, and only the ones that are not nought. */
@@ -1162,11 +1203,36 @@ const routes = {
       const waiting = withNews.filter((c) => c.waiting);
       const newest = waiting.reduce((most, c) => (c.lastChanged > (most?.lastChanged ?? 0) ? c : most), null);
 
+      /*
+       * The last few things that happened to this project, and only to it.
+       *
+       * A workspace-wide list answers "what has been going on"; this answers
+       * "what has been going on with the thing I am looking at", which is the
+       * question somebody actually has while looking at it. Folded from the
+       * same events, so it costs nothing beyond the filter.
+       */
+      const lately = events
+        .filter((e) => lower(e.project) === key
+          && ['project.changed', 'sync.completed', 'sync.failed'].includes(e.kind))
+        .slice(-6)
+        .reverse()
+        .map((e) => ({
+          kind: e.kind,
+          at: e.at,
+          who: ws.devices?.[e.from]?.displayName ?? e.fromName ?? null,
+          you: e.from === me.deviceId,
+          added: e.added ?? null,
+          modified: e.modified ?? null,
+          gone: e.gone ?? null,
+          text: e.text ?? null,
+        }));
+
       return {
         ...one,
         copies: withNews,
         mine: withNews.find((c) => c.you) ?? null,
         others: withNews.filter((c) => !c.you),
+        lately,
         syncedAt: settled || null,
         waitingOn: newest,
         // Whether anybody else has one at all is the only thing knowable
@@ -1668,11 +1734,24 @@ const routes = {
       return { ok: false, sentence: 'No project chosen.', action: 'Open one first.' };
     }
 
+    /*
+     * The project this is about, named by the folder it lands in.
+     *
+     * It used to be whichever project happened to be open, falling back to the
+     * whole path — and a sync is very often run with nothing open at all. So
+     * what got written down was `D:\...\CodeSage-AI-master` where the name
+     * belonged, nothing that reads these events by name ever matched it, and
+     * **a sync that finished perfectly left the screen saying changes were
+     * still waiting.** The name of a project in a workspace is the name of its
+     * folder; that is how they are folded together in the first place.
+     */
+    const named = current?.dir === into ? current.name : basename(into);
+
     const job = jobs.begin({
       what: `Bringing changes from ${found.peer.who.displayName}`,
       where: into,
       kind: 'sync',
-      project: current?.name ?? null,
+      project: named,
     });
 
     (async () => {
@@ -1692,9 +1771,10 @@ const routes = {
         const theirName = found.peer.who.displayName;
         found.peer.close();
         jobs.end(job, out);
-        activity.remember(out.ok ? 'synced' : 'sync failed', {
-          who: theirName, what: current?.name ?? into,
-        });
+        // The folder just moved because of this, so the watcher is told not to
+        // announce the settle it is about to see as somebody's work.
+        if (out.ok) await broughtOverInto(into).catch(() => {});
+        activity.remember(out.ok ? 'synced' : 'sync failed', { who: theirName, what: named });
 
         // Said out loud to the workspace, so every screen anywhere knows the
         // moment it finishes rather than the next time somebody looks.
@@ -1706,7 +1786,7 @@ const routes = {
             workspace: ws.id,
             from: me.deviceId,
             fromName: me.displayName,
-            project: current?.name ?? into,
+            project: named,
             changed: out.changed ?? 0,
             kept: out.kept?.length ?? 0,
             text: out.sentence,
@@ -3122,8 +3202,19 @@ async function answerPeer(peer, asked) {
     return reply(out);
   }
 
-  if (asked.what === 'said') {
+  /*
+   * What a terminal opened here has printed, for whoever asked for it.
+   *
+   * **Called `printed` because it was called `said`,** which is what a
+   * workspace event is called, and the workspace event is handled a hundred
+   * lines above this. So this branch could never be reached: every message
+   * either way went to the first one, and a question about a terminal arrived
+   * as an event with no event in it and was refused. Two names for two things,
+   * now, and a test refuses to let one kind be answered in two places again.
+   */
+  if (asked.what === 'printed') {
     if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
+    if (!membersOf.may(ws, from, 'remoteTerminal')) return reply({ ok: false });
     return reply(remote.whatItSaid(asked.session));
   }
 

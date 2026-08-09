@@ -2259,6 +2259,68 @@ Four project states and no more: **Changes waiting**, **Up to date**, **Only on 
 
 ---
 
+### D-206 `[LOCKED]` — A door decides who is welcome now, not who was welcome when it was hung
+
+**Decision.** The listener that takes connections asks `members.now()` on every knock. `members.mjs` keeps that answer in step from the two functions every read and every write already pass through, so it costs nothing and cannot be forgotten.
+
+**The fault it fixes, which had been there since the door was built.** `beAbout` hangs the listener once, and its `allow` closed over the workspace it was handed at that moment. **So the computer that *makes* a workspace refuses every computer that joins afterwards, for as long as it stays open.** It could reach them; they could not reach it. Every list was correct, every dot was green, and everything went one way. Proved by restarting that computer and nothing else: both directions started working.
+
+It cut the other way too, and that half is worse: **a computer revoked while the app was running went on being let in until somebody restarted it.**
+
+**Why it is not awaited.** Reading the book from disk inside the socket handler is the obvious way to ask fresh, and it does not work: the far end says what it wants immediately after the handshake, and an `await` there lands between the greeting and the listener that would have heard it. Measured — every connection was then accepted and sat silent.
+
+---
+
+### D-207 `[DECIDED]` — One kind of message, one place that answers it
+
+**Decision.** `answerPeer` answers each `what` in exactly one branch, and a test fails on any duplicate. What a remote terminal printed is asked for as `printed`.
+
+**Why.** It was `said`, which is also what a workspace event is called, and the event branch came first — so the terminal branch could never run, and a question about a terminal arrived as an event with no event in it and was refused. Nothing anywhere said why.
+
+---
+
+### D-208 `[DECIDED]` — Reached is not delivered, and a test may not confuse them
+
+**Decision.** A message is counted when the far end says it kept it, never when a connection opened. The errand between two running copies sends **both ways** and reads what arrived off `/events` — the stream an open page holds — rather than out of a route invented for a test.
+
+**Why.** One direction worked throughout, so every test that asked only one of them passed while half the product did not exist. Being seen, listed, dialled and answered are four facts, and none of them is *heard*.
+
+---
+
+### D-209 `[DECIDED]` — A sync is finished against a project's name, not against a path
+
+**Decision.** `/sync/bring` names what it did after the folder it landed in.
+
+**Why.** It used the name of whichever project happened to be open, falling back to the whole path — and a sync is very often run with nothing open at all. So `D:\...\CodeSage-AI-master` went where the name belonged, nothing that reads these by name ever matched it, and **a sync that finished perfectly left the screen saying changes were still waiting.** The name of a project in a workspace is the name of its folder; that is how the copies are folded together in the first place.
+
+---
+
+### D-210 `[DECIDED]` — A folder that settled with nothing different in it says nothing
+
+**Decision.** After a sync lands, the watcher's baseline is moved to what the sync wrote. A settle that finds no difference is not announced.
+
+**Why.** The folder a sync writes into is a folder this computer offers, so the watcher notices it move — correctly — and told everybody, **including the computer the files had just come from, which then saw changes waiting from us that were its own work returning.** Measured: bring four files over, and the far end immediately reports one added and three rewritten, waiting. Left alone the two would have talked in circles.
+
+**A window of time was tried first and is wrong.** Twenty seconds swallowed a genuine edit made straight after a sync — which is the ordinary case, not an unlikely one. Moving the baseline is exact: the sync's own writing finds nothing to report, and the next real keystroke is still counted.
+
+---
+
+### D-211 `[DECIDED]` — A sync keeps what only this end has, and is not failed for it
+
+**Decision.** The far end sends the paths it does not have; the closing count leaves them out.
+
+**Why.** A sync merges, so a file only this end holds stays — that is the whole point of merging rather than replacing, and it means the two folders are not meant to match afterwards. Counting them against each other made a sync that had done exactly the right thing report a shortfall. The same shape as D-194, one step further out: any folder with anything of its own in it.
+
+---
+
+### D-212 `[DECIDED]` — One copy is an ordinary state and is written as one
+
+**Decision.** A project nobody else has says so, in a sentence, with the two things that change it: invite somebody, or offer another folder. The middle column also carries what is true about the project — how it stands, how many files, how big, how many copies, when anything last came over — and what has happened to *this* project, which is a different question from what has happened in the workspace.
+
+**Why.** It was the name, one row and two collapsed headings over two thirds of an empty column. Nothing was wrong and it read as something half-built. The room was already there; it was not being used to say anything.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

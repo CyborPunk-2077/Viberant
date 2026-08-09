@@ -490,7 +490,17 @@ export function listenDirect({ port = DIRECT_PORT, arriving, allow = null }) {
     socket.setNoDelay(true);
     const known = await greet(socket);
     if (!known) return socket.destroy();
-    // The workspace decides. A greeting proves who; it never proves welcome.
+    /*
+     * The workspace decides. A greeting proves who; it never proves welcome.
+     *
+     * **Answered without waiting, deliberately.** Making this `await` anything
+     * is the obvious way to let it ask the workspace fresh, and it does not
+     * work: the far end says what it wants immediately after the handshake,
+     * and an `await` here lands between the greeting and the listener that
+     * would have heard it. Measured — every connection was accepted and then
+     * sat silent. Whoever supplies `allow` answers from something it already
+     * holds; `members.now()` is there for exactly this.
+     */
     if (allow && !allow(known.who)) return socket.destroy();
     arriving(conversation(socket, { ...known, kind: DIRECT }));
   });

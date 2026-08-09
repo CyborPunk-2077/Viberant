@@ -240,12 +240,47 @@ export async function beAbout({ workspace = null } = {}) {
 
   const me = await device.card();
 
+  /**
+   * The door, opened once and answered fresh every time.
+   *
+   * **The workspace it asks is the one that exists when somebody knocks, not
+   * the one that existed when the door was hung.** This closed over `ws`, and
+   * the door is only ever hung once, so the answer was frozen at that moment.
+   * What that meant in practice: the computer that *makes* a workspace hangs
+   * its door knowing only itself, and every computer that joins afterwards is
+   * refused by it — for as long as the app stays open. It could reach them and
+   * they could not reach it. Every note, every change said out loud, every
+   * question went one way and looked for all the world like a network fault.
+   *
+   * It cut the other way too, and that half is worse: a computer revoked while
+   * the app was running went on being let in until somebody restarted it.
+   * Asking each time fixes both, and costs one small read from disk on a thing
+   * that happens when a computer arrives rather than in any loop.
+   */
   if (!listening) {
     listening = peers.listenDirect({
-      arriving: (peer) => arrived(peer, ws),
-      // Who is allowed in, decided by the workspace and nothing else. Proving
-      // who you are is not the same as being welcome, and this is the line.
-      allow: (who) => !!ws.devices?.[who.deviceId] && !members.isRevoked(ws, who.deviceId),
+      arriving: (peer) => arrived(peer, members.now() ?? ws),
+      /**
+       * Who is allowed in, decided by the workspace **as it is now**.
+       *
+       * Proving who you are is not the same as being welcome, and this is the
+       * line. It used to read `ws` — the workspace as it was when the door was
+       * hung, which happens once. So the computer that *makes* a workspace hung
+       * its door knowing only itself, and refused every computer that joined
+       * afterwards for as long as the app stayed open. It could reach them;
+       * they could not reach it. Every note, every change said out loud, every
+       * question went one way, and it looked exactly like a network fault.
+       *
+       * It cut the other way too, and that half is worse: a computer revoked
+       * while the app was running went on being let in until a restart.
+       *
+       * `members.now()` and not a read of the disk, because this runs inside a
+       * socket handler and waiting in one loses whatever the far end says next.
+       */
+      allow: (who) => {
+        const say = members.now() ?? ws;
+        return !!say?.devices?.[who.deviceId] && !members.isRevoked(say, who.deviceId);
+      },
     });
   }
 

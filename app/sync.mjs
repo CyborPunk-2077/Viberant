@@ -364,8 +364,19 @@ export async function bring({
 
   const landed = await manifest(into, { everything: false });
   const wantedFiles = Number(head.whole?.files ?? 0);
-  const hereFiles = Object.keys(landed.files).length;
-  const hereBytes = Object.values(landed.files).reduce((sum, one) => sum + one.size, 0);
+
+  /*
+   * Only the files that are meant to be in both places.
+   *
+   * A sync merges, so a file only this end holds stays and is not part of what
+   * the far end said the project comes to. Leaving it in the count made every
+   * sync into a folder with anything of its own in it report a shortfall that
+   * was not one.
+   */
+  const mineAlone = new Set(head.extra ?? []);
+  const shared = Object.entries(landed.files).filter(([path]) => !mineAlone.has(path));
+  const hereFiles = shared.length;
+  const hereBytes = shared.reduce((sum, [, one]) => sum + one.size, 0);
 
   /*
    * What the folder should come to, given what somebody chose to keep.
@@ -450,6 +461,16 @@ export async function serve({ channel, dir, everything = false }) {
     // the folder should come to once anything it chose to keep is put back —
     // two versions of one file are rarely the same size.
     sizes: Object.fromEntries(work.toSend.map((path) => [path, whole.files[path]?.size ?? 0])),
+    /*
+     * What they have that this end does not.
+     *
+     * Sent so the closing count can leave it out. A sync merges: a file only
+     * the asking end holds is theirs and is kept, which is the whole point of
+     * merging rather than replacing — and it means the two folders are not
+     * meant to match afterwards. Counting them against each other made a sync
+     * that had done exactly the right thing report that it had failed.
+     */
+    extra: work.extra,
   })}\n`);
 
   await channel.pour(parcelOf.wrap(dir, { everything, seen: toSend }));
