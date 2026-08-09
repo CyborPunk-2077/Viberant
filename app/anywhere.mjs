@@ -145,9 +145,31 @@ async function oneWay(way, { ws, deviceId, wanted }) {
     // works. Nothing here reimplements it.
     const near = lan.around().find((one) => one.machine === deviceId);
     if (!near) return null;
+    /*
+     * The port that computer said it listens on, not the one this computer
+     * happens to use.
+     *
+     * They are the same number on two real machines and different when two
+     * copies share one, and assuming they match is what made the second copy
+     * unreachable while looking perfectly present.
+     */
+    const door = near.directPort ?? peers.DIRECT_PORT;
     for (const address of near.addresses ?? []) {
-      const got = await peers.dialDirect({ address, port: peers.DIRECT_PORT, expect: deviceId });
-      if (got) return { ...got, kind: peers.LAN, says: peers.inWords(peers.LAN) };
+      const got = await peers.dialDirect({ address, port: door, expect: deviceId });
+      /*
+       * Handed back as itself, with two facts attached.
+       *
+       * It used to be spread into a new object, and spreading keeps only what
+       * an object owns — so every method the connection carries was quietly
+       * left behind. What came back looked exactly like a peer, passed every
+       * check, and then failed at the moment anybody tried to say anything
+       * down it. The whole local-network path had been dead this way.
+       */
+      if (got) {
+        got.kind = peers.LAN;
+        got.says = peers.inWords(peers.LAN);
+        return got;
+      }
     }
     return null;
   }

@@ -51,6 +51,7 @@ import * as device from './device.mjs';
 import * as membersOf from './members.mjs';
 import * as anywhere from './anywhere.mjs';
 import * as joining from './joining.mjs';
+import * as chatter from './chatter.mjs';
 import * as remote from './remote.mjs';
 import * as machines from './machines.mjs';
 import * as syncing from './sync.mjs';
@@ -1985,8 +1986,86 @@ const routes = {
     return { ...(await workspace.leave({ machine })), ...(await workspace.state()) };
   },
 
+  /**
+   * Say something to the workspace.
+   *
+   * Written down here first, so it exists whatever happens next, then handed to
+   * every member who is reachable right now. It used to go through GitHub —
+   * written, committed, sent, and read back by whoever synced next, which could
+   * be minutes. Nobody types a sentence to somebody in the next room and
+   * expects it to travel via a hosting service.
+   */
   async 'POST /workspace/say'({ body }) {
-    return workspace.say({ machine, name: await myName(), text: body.text });
+    const text = String(body?.text ?? '').trim().slice(0, 2000);
+    if (!text) return { ok: false, sentence: 'There was nothing to say.', action: null };
+
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: 'Make one or join one.' };
+
+    const me = await device.card();
+    const one = chatter.anEvent({
+      kind: 'note',
+      workspace: ws.id,
+      from: me.deviceId,
+      fromName: me.displayName,
+      text,
+    });
+
+    await chatter.remember(one);
+    const reached = await sayItToTheOthers(ws, one);
+
+    return {
+      ok: true,
+      event: one,
+      reached,
+      sentence: reached ? null : 'Nobody else is reachable right now, so only this computer has it.',
+    };
+  },
+
+  /**
+   * Everything that has happened lately, and everything that happens next.
+   *
+   * One stream, opened once by the page, rather than a timer per screen asking
+   * whether anything changed. A note arriving writes one line down it; nothing
+   * is redrawn, and it arrives whichever screen somebody is looking at.
+   */
+  async 'GET /events'({ res, url }) {
+    const ws = await membersOf.current();
+    const since = Number(url.searchParams.get('since') ?? 0);
+
+    res.writeHead(200, {
+      'content-type': 'text/event-stream; charset=utf-8',
+      'cache-control': 'no-store',
+      connection: 'keep-alive',
+      'x-accel-buffering': 'no',
+    });
+
+    const write = (one) => {
+      if (ws && one.workspace && one.workspace !== ws.id) return;
+      res.write(`id: ${one.id}
+data: ${JSON.stringify(one)}
+
+`);
+    };
+
+    // What was missed, then everything from now on. The identifier on each is
+    // what lets the page throw away anything it has already seen.
+    for (const one of await chatter.lately({ workspace: ws?.id ?? null })) {
+      if (one.at > since) write(one);
+    }
+
+    const stop = chatter.listen(write);
+    // A silent stream is indistinguishable from a broken one, to anything in
+    // between. This says nothing, often enough that nothing gives up on it.
+    const beat = setInterval(() => res.write(`: still here
+
+`), 25000);
+
+    const done = () => { clearInterval(beat); stop(); };
+    res.on('close', done);
+    res.on('error', done);
+
+    return null;
   },
 
   async 'POST /workspace/refresh'() {
@@ -2472,10 +2551,22 @@ let listening = null;
  */
 const ANSWER_WITHIN = 20000;
 
+/**
+ * Ask one of your computers something, down a channel of its own.
+ *
+ * A channel is written to with `write`; a connection is written to with `send`.
+ * This handed a channel to something expecting a connection, so every question
+ * ever asked over the local network threw the moment it tried to speak — the
+ * connection was made, the other end was listening, and nothing was ever said.
+ * The answering side had already been adapted the same way; this half had not.
+ */
 async function askPeer(peer, question) {
   const post = channelsOf.channels(peer, { odd: false });
   const channel = await post.start('ask');
-  return askOn(channel, question);
+  return askOn({
+    send: (text) => channel.write(text),
+    incoming: channel.incoming,
+  }, question);
 }
 
 function askOn(peer, question) {
@@ -2527,6 +2618,28 @@ async function answerPeer(peer, asked) {
     // and versions, and being in the workspace at all is the check.
     if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
     return reply({ ok: true, machine: await machines.whatThisIs({ dir: asked.path || null }) });
+  }
+
+  /*
+   * Something said rather than asked, and the only message here that is.
+   *
+   * Membership-checked exactly like the rest — the way in that skips that
+   * check is `joining.mjs`, it can do one thing, and it is not this. Written
+   * down by its own identifier, so a computer repeating itself after
+   * reconnecting does not produce a second note.
+   */
+  if (asked.what === 'said') {
+    if (!ws?.devices?.[from] || membersOf.isRevoked(ws, from)) return reply({ ok: false });
+    if (asked.event?.workspace !== ws.id) return reply({ ok: false });
+
+    const out = await chatter.remember({
+      ...asked.event,
+      // Whoever it claims to be from is not taken on trust: it is whoever this
+      // connection is actually with.
+      from,
+      fromName: ws.devices[from].displayName ?? asked.event?.fromName ?? null,
+    });
+    return reply({ ok: true, ...out });
   }
 
   if (asked.what === 'manifest') {
@@ -2672,6 +2785,31 @@ function terminalSince(session) {
   return held;
 }
 
+/**
+ * Hand one event to every member who can be reached right now.
+ *
+ * Best effort by design: somebody whose computer is closed has not lost
+ * anything, because it is written down at both ends by its own identifier and
+ * the ordinary sync catches up. What this buys is that somebody who *is* there
+ * hears it at once.
+ */
+async function sayItToTheOthers(ws, one) {
+  const around = await anywhere.around({ workspace: ws }).catch(() => null);
+  const others = [...(around?.mine ?? []), ...(around?.team ?? [])]
+    .filter((who) => !who.you && who.online);
+
+  let reached = 0;
+  await Promise.all(others.map(async (who) => {
+    const found = await anywhere.reach(who.deviceId).catch(() => null);
+    if (!found?.ok) return;
+    const said = await askPeer(found.peer, { what: 'said', event: one }).catch(() => null);
+    found.peer.close?.();
+    if (said?.ok) reached += 1;
+  }));
+
+  return reached;
+}
+
 function listenForTheOthers() {
   if (listening) return;
   listening = (async () => {
@@ -2768,7 +2906,16 @@ const server = createServer(async (req, res) => {
       });
       body = raw ? JSON.parse(raw) : {};
     }
-    return json(res, await route({ url, body }));
+    /*
+     * A route that answers with nothing has answered already.
+     *
+     * The stream of what is happening writes its own headers and then keeps
+     * writing for as long as somebody is listening, which is the opposite of
+     * every other route here. It returns nothing, and nothing is the signal.
+     */
+    const answer = await route({ url, body, res, req });
+    if (answer === null) return null;
+    return json(res, answer);
   } catch (e) {
     json(res, { ok: false, sentence: 'Something went wrong here.', action: 'Try that again.', detail: String(e) }, 500);
   }
@@ -2802,4 +2949,20 @@ server.listen(port, '127.0.0.1', () => {
   // If this computer has already joined, it starts being findable by the
   // others without being asked again. Turning it off is one switch in Settings.
   localSharing().catch(() => {});
+
+  /*
+   * And it starts *answering*, which is a different thing and was missing.
+   *
+   * Being findable is a shout. Being reachable is a door somebody can knock
+   * on, and that door was only ever opened at the moment a workspace was made
+   * or joined — so every computer that had simply been restarted sat there
+   * present, visible, correct in every list, and impossible to connect to.
+   * Nothing said so, because being seen and being reachable look identical
+   * from the outside until something tries.
+   */
+  (async () => {
+    const ws = await membersOf.current();
+    if (ws) await anywhere.beAbout({ workspace: ws }).catch(() => null);
+    await listenForJoiners().catch(() => null);
+  })().catch(() => {});
 });

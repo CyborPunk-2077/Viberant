@@ -674,6 +674,7 @@ function paintMoving() {
   if (panel.hidden) return;
   panel.innerHTML = movingHtml();
   wireMoving();
+  listenToTheWorkspace();
 }
 
 const movingHtml = () => `
@@ -718,6 +719,80 @@ function openMovingPanel() {
   panel.innerHTML = movingHtml();
   openPanel(panel);
   wireMoving();
+}
+
+/**
+ * One stream of what is happening, opened once.
+ *
+ * Every screen used to ask on a timer whether anything had changed. This is the
+ * other way round: the manager says so, once, to whichever screen is open —
+ * so a note typed on another computer lands here without anybody pressing
+ * anything, and without a page being rebuilt to show one sentence.
+ *
+ * Everything carries an identifier and nothing is acted on twice, because a
+ * stream that reconnects replays what it thinks was missed and a note appearing
+ * twice is worse than one appearing late.
+ */
+const heardAlready = new Set();
+let stream = null;
+let backOff = 1000;
+
+function listenToTheWorkspace() {
+  stream?.close();
+  stream = new EventSource('/events');
+
+  stream.onopen = () => { backOff = 1000; };
+
+  stream.onmessage = (e) => {
+    let one;
+    try { one = JSON.parse(e.data); } catch { return; }
+    if (!one?.id || heardAlready.has(one.id)) return;
+    heardAlready.add(one.id);
+    somethingHappened(one);
+  };
+
+  /*
+   * A stream that drops comes back, slower each time, up to half a minute.
+   *
+   * Asking again immediately and forever is how a laptop that closed its lid
+   * wakes up having hammered something all night.
+   */
+  stream.onerror = () => {
+    stream?.close();
+    stream = null;
+    setTimeout(listenToTheWorkspace, backOff);
+    backOff = Math.min(backOff * 2, 30000);
+  };
+}
+
+/**
+ * One thing happened. Change the smallest part of the page that says so.
+ *
+ * Never a redraw. The whole reason this exists is that a sentence arriving
+ * should cost a sentence, not a rebuilt screen and a lost scroll position.
+ */
+function somethingHappened(one) {
+  if (one.kind !== 'note') return;
+
+  const box = $('#talk');
+  if (!box || !box.isConnected) return;
+
+  // Already on screen because this computer said it. The identifier is the
+  // same at both ends, which is what makes that knowable.
+  if (box.querySelector(`[data-note="${CSS.escape(one.id)}"]`)) return;
+
+  const wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+
+  const said = document.createElement('div');
+  said.className = 'bubble';
+  said.dataset.note = one.id;
+  said.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">${
+    esc(one.fromName ?? 'Another computer')} · ${esc(ago(one.at))}</div>${esc(one.text ?? '')}`;
+  box.append(said);
+
+  // Following along only if you were already at the bottom. Scrolling back to
+  // read something is a decision, and it is not ours to undo.
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
 }
 
 const SCREENS = {};
@@ -5638,7 +5713,17 @@ SCREENS.workspace = async () => {
     mine.classList.remove('going');
     const when = mine.querySelector('span');
     if (r.ok) {
-      if (when) when.textContent = 'just now';
+      // Marked with the identifier the manager gave it, so the same note
+      // arriving back down the stream is recognised rather than added twice.
+      if (r.event?.id) {
+        mine.dataset.note = r.event.id;
+        heardAlready.add(r.event.id);
+      }
+      if (when) {
+        when.textContent = r.reached
+          ? `sent to ${r.reached} ${r.reached === 1 ? 'computer' : 'computers'}`
+          : 'saved here';
+      }
       return;
     }
 

@@ -29,6 +29,7 @@ import { networkInterfaces } from 'node:os';
 
 import { HOUSE } from './projects.mjs';
 import * as parcel from './parcel.mjs';
+import * as peers from './peers.mjs';
 
 /**
  * The two doors your computers find each other through.
@@ -317,6 +318,11 @@ function callOut() {
     name: me.name,
     account: me.account,
     port: me.carryPort,
+    // The door this computer accepts a direct connection on, said out loud
+    // rather than assumed to be the same number everywhere. Two copies on one
+    // machine cannot share it, and each one shouting its own is what lets them
+    // reach each other at all.
+    directPort: peers.DIRECT_PORT,
     addresses: myAddresses(),
     proof: sign(me.key, `${me.account}|${me.machine}|${minute()}`),
   }));
@@ -349,6 +355,9 @@ function heard(raw) {
     name: said.name,
     account: said.account,
     port: said.port,
+    // Kept, so anything dialling that computer uses the door it named rather
+    // than the one this computer happens to listen on.
+    directPort: said.directPort ?? null,
     addresses: answers ? [answers, ...offered.filter((a) => a !== answers)] : offered,
     answers,
     lastHeard: Date.now(),

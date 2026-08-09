@@ -49,8 +49,23 @@ export const inWords = (kind) => ({
   [RELAY]: 'Relay',
 }[kind] ?? 'Not connected');
 
-/** The port a Viberant listens on for direct connections from outside. */
-export const DIRECT_PORT = 47779;
+/**
+ * The port a Viberant listens on for direct connections from outside.
+ *
+ * Moved by `VIBERANT_PORT_SHIFT`, for the same reason `lan.mjs` moves the door
+ * that carries folders: only one process on a machine may hold a listening
+ * port, so two copies could never both accept a connection and mutual anything
+ * was untestable. Whoever dials is told which port to use — the shout carries
+ * it — so moving it changes nothing about how two real computers meet.
+ *
+ * Test-only. There is no setting and no route.
+ */
+const SHIFT = (() => {
+  const said = Number(process.env.VIBERANT_PORT_SHIFT ?? 0);
+  return Number.isFinite(said) && said > 0 && said < 1000 ? Math.floor(said) : 0;
+})();
+
+export const DIRECT_PORT = 47779 + SHIFT;
 
 /** How long anything gets to answer before the next way is tried. */
 const ANSWER_WITHIN = 5000;
