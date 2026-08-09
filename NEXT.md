@@ -3,64 +3,71 @@
 *Written at the end of a pass, for whoever picks it up. Exact state, exact
 continuation point. Everything below is unstarted unless it says otherwise.*
 
-**Where it is:** working tree clean, 665 tests passing (558 app, 107 core),
-three consecutive clean runs.
+**Where it is:** working tree clean, 677 tests passing (570 app, 107 core).
 
-**Joining works** (`app/joining.mjs`, D-178) and **members recognise each other
-without GitHub** (`members.beaconKey`, D-183). Two independent instances: A
-creates, A invites, B joins, both agree, membership survives a restart, revoking
-B keeps B out, and the recognition value works out identical on both sides.
+**What now works, verified with two independent profiles on one machine:**
+joining by code (D-178), mutual presence (D-183, D-185, D-186), realtime notes
+in under 30ms without GitHub (D-184), and comparing a project across two
+computers without moving anything (D-187).
 
-**Two copies on one machine cannot both be findable** — the beacon uses fixed
-ports 47777/47778. That is a limit of testing two profiles on one box, not of
-the code; on two machines each holds its own. If you want it testable locally,
-those two would have to become configurable.
+**Two copies on one machine can be told apart** with `VIBERANT_PORT_SHIFT=10`
+on the second one, plus its own `USERPROFILE` and `PORT`. That is how the above
+was tested and how anything else here should be. It shifts only the ports a
+single process must hold alone; the shout everybody listens to does not move.
 
 ---
 
-## 1. Notes between computers, and the event channel
+## 1. Running a sync, not just seeing one
 
-**The nearest thing to finished.**
+`POST /workspace/changes` says what differs. Nothing yet acts on it.
 
-A note appears on the screen the moment it is pressed and never redraws the page
-(D-181). It still travels through GitHub, so the other computer sees it on the
-next sync rather than at once.
+Everything needed exists and none of it should be rewritten:
 
-The peer channel in `app/server.mjs` (`askPeer` / `answerPeer`, around line 2325)
-already carries authenticated messages between members and is the right place: a
-`note` message, membership-checked like every other branch there. That plus one
-subscription in the page — rather than the per-screen timers — is the event bus.
+- `sync.compare` gives `toSend` — exactly the files that must move
+- `sync.whatToSend` narrows a survey to those, and hands it to the same
+  `wrap` that resume and integrity already go through
+- `sync.bring` takes `snapshotWith`, so the copies about to be written over are
+  kept first and appear under Ways back
+- `sync.conflicts` already names the files both sides changed, and
+  `KEEP_MINE` / `KEEP_THEIRS` / `LOOK_FIRST` are already the three answers
 
-**Do not add a second transport.** The one that exists is authenticated,
-membership-checked and already used by four message kinds.
+**What to build:** a route that takes a device, an offer and a decision for any
+conflicting file, and runs `bring` as a job. The Activity screen already draws
+jobs, so progress and the result need nothing new.
 
-## 2. Shared projects and sync
+**Do not** let it run without a decision for every conflicting file. The
+comparison already refuses to guess; the transfer must too.
 
-`syncing.manifest` and the `manifest` peer message exist; the transfer engine
-with resume and verification exists; snapshots before anything is written over
-exist (`app/snapshots.mjs`, surfaced under Activity).
+## 2. More kinds of event
 
-What is missing is the surface: which projects a workspace shares, per-member
-state (up to date, so many changes, syncing, conflict, offline), and a way in
-from the member's inspector. Sharing must stay explicit — a project is not
-shared because it is open.
+`chatter.mjs` carries anything with a `kind`. Only `note` is sent and only
+`note` is drawn. The obvious next ones — a member joining, a device arriving or
+leaving, a project changing — need a `chatter.anEvent` at the moment they
+happen and a branch in `somethingHappened` in the page.
 
-## 3. Signing in at first run
+`sayItToTheOthers(ws, event)` in `app/server.mjs` already fans out to every
+member who is reachable.
 
-There is no first-run sign-in, and account-dependent parts of the page say so
-in each place rather than once.
+## 3. Watching a shared project for changes
 
-## 4. Pages still short of the reference
+Nothing watches yet, so `project.changed` has nowhere to come from. `watchFolder`
+already exists for the open project; a shared project needs the same with
+debouncing, and the manifest recomputed at most once every few seconds rather
+than once per filesystem notification.
 
-Terminals and AI Apps now open with their own summary, and Terminals shows what
-is running on it for somebody else and what a terminal here can reach — it no
-longer leaves most of the window empty.
+## 4. Signing in at first run
 
-What is still missing on both, and on Projects and Project Detail, is the right
-inspector: selecting a row should describe it beside the list rather than doing
-nothing. `inspect()` already takes facts, counts, an action list and a topology
-map, and `wireInspect` already makes a row select without a press on a control
-inside it selecting it. It is composition, not new machinery.
+There is no first-run sign-in. Account-dependent parts of the page say so in
+each place rather than once.
+
+## 5. Contextual inspectors
+
+Workspace has one (member, device, offered item). Projects, Project Detail, AI
+Apps and Terminals do not: selecting a row does nothing beside the list.
+
+`inspect()` takes facts, counts, an action list and a topology map. `wireInspect`
+makes a row select without a press on a control inside it selecting it. It is
+composition, not new machinery.
 
 ---
 
@@ -70,19 +77,22 @@ inside it selecting it. It is composition, not new machinery.
 *produced*, not against the page, because several screens draw in two stages.
 Writing the same page twice is free; rely on it (D-171).
 
-**Answers are combined state-first, answer-last** — `withWorkspace()` in
-`app/server.mjs`. Writing `{ ...out, ...around() }` by hand reverses it and
-turns refusals into successes (D-179). That bug shipped nine times.
+**Answers are combined state-first, answer-last** — `withWorkspace()`. Writing
+`{ ...out, ...around() }` by hand reverses it and turns refusals into successes
+(D-179). That shipped nine times.
+
+**Never spread a peer.** Spreading keeps only what an object owns, and a
+connection's methods are not that. It passes every check and fails when
+something tries to speak (D-186).
+
+**A channel is written to with `write`, a connection with `send`.** Handing one
+to something expecting the other throws at the moment it speaks, which looks
+exactly like the far end being absent.
 
 **The joining door may only ever carry one message.** A test reads
-`app/joining.mjs` and fails if a second kind is added. That single purpose is
-the entire reason it is allowed to skip the membership check (D-178).
+`app/joining.mjs` and fails if a second kind is added (D-178).
 
-**Ports are fixed and tests run in parallel.** `joining` binds 47779; a bind
-that fails now reports rather than hanging, which is what caused two unrelated
-tests to fail when a stray server was running.
-
-**Two tests read source rather than behaviour** and will fail loudly if the
+**Three tests read source rather than behaviour** and will fail loudly if the
 shape changes: `membership.test.mjs` counts the places that add to the member
-list, `leftrunning.test.mjs` counts clocks against the things that clear them.
-Both are deliberate.
+list, `leftrunning.test.mjs` counts clocks against the things that clear them,
+and `saying.test.mjs` holds the membership check on the stream. All deliberate.
