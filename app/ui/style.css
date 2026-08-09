@@ -2183,6 +2183,45 @@ button.working::after {
 }
 @keyframes turn { to { transform: rotate(360deg); } }
 
+/*
+ * Lines about things that happened somewhere else.
+ *
+ * In the corner, over everything, touching nothing. A computer in another room
+ * changing a file must not move anything under somebody's hands.
+ */
+#mentions {
+  position: fixed;
+  right: var(--s5);
+  bottom: var(--s5);
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  align-items: flex-end;
+  pointer-events: none;
+}
+.mention {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: min(26rem, 80vw);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-panel);
+  background: var(--card);
+  box-shadow: var(--shadow-lift);
+  color: var(--ink);
+  font-size: var(--t-sub);
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  animation: mention-in var(--m-panel) var(--ease);
+}
+.mention:hover { border-color: var(--line-strong); }
+.mention.bad { border-color: color-mix(in oklab, var(--attention) 34%, var(--line)); }
+@keyframes mention-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .mention { animation: none; } }
+
 /* The one of a pair that is chosen, marked so the choice is readable at rest. */
 .pair > button.on {
   background: var(--vibe-wash);

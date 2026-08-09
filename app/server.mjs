@@ -201,6 +201,99 @@ async function watchProject(dir) {
 }
 
 // ---------------------------------------------------------------------------
+// Noticing that a shared project changed
+// ---------------------------------------------------------------------------
+
+/**
+ * Watch the folders this computer has explicitly offered, and say when they
+ * settle.
+ *
+ * **Only the offered ones.** A project is not shared because it is open, and a
+ * workspace that told everybody about every keystroke in every folder on the
+ * machine would be worse than one that told them nothing.
+ *
+ * **Only when they settle.** Saving one file in an editor produces a handful of
+ * notifications; a build produces thousands. One event per notification is a
+ * storm, so nothing is said until the folder has been quiet for a moment, and
+ * what is said is one summary rather than a list of what the disk did.
+ */
+const SETTLES_AFTER = 2500;
+const watchingOffers = new Map();
+
+async function watchWhatIsOffered() {
+  const ws = await membersOf.current();
+  const offers = ws ? await lan.offers() : [];
+  const wanted = new Map(offers.filter((one) => one.kind !== 'file').map((one) => [one.id, one]));
+
+  // Anything no longer offered stops being watched, which is the half that
+  // leaks if it is forgotten.
+  for (const [id, held] of watchingOffers) {
+    if (wanted.has(id)) continue;
+    clearTimeout(held.settling);
+    try { held.watcher?.close(); } catch { /* already gone */ }
+    watchingOffers.delete(id);
+  }
+
+  for (const [id, one] of wanted) {
+    if (watchingOffers.has(id)) continue;
+    if (!existsSync(one.path)) continue;
+
+    const held = { watcher: null, settling: null };
+    try {
+      /*
+       * Watched at the path it was offered at.
+       *
+       * Resolving it first looks tidier and is how this was written, and on
+       * Windows it can hand back a form of the path that `watch` accepts and
+       * then never reports anything from — no error, no events, and an entry
+       * left in the list so it is never tried again. Measured: the same folder
+       * watched at its own path fired twice and at its resolved path fired
+       * never.
+       */
+      held.watcher = watch(one.path, { recursive: true }, (_kind, name) => {
+        const path = String(name ?? '');
+        // The noisy folders nobody shares on purpose.
+        if (path.includes('node_modules') || path.includes('.git')) return;
+        clearTimeout(held.settling);
+        held.settling = setTimeout(() => sayItChanged(one).catch(() => {}), SETTLES_AFTER);
+        held.settling.unref?.();
+      });
+      // A watcher that fails is forgotten rather than left in the list, so the
+      // next time anything is offered it is tried again.
+      held.watcher.on('error', () => { held.watcher = null; watchingOffers.delete(id); });
+    } catch {
+      // Watching is a convenience. A computer that will not do it still works.
+      continue;
+    }
+    watchingOffers.set(id, held);
+  }
+}
+
+/** One summary, once the folder has stopped moving. */
+async function sayItChanged(offer) {
+  const ws = await membersOf.current();
+  if (!ws || !existsSync(offer.path)) return;
+
+  const now = await syncing.manifest(offer.path, { everything: !!offer.everything });
+  const me = await device.card();
+
+  const said = chatter.anEvent({
+    kind: 'project.changed',
+    workspace: ws.id,
+    from: me.deviceId,
+    fromName: me.displayName,
+    project: offer.name,
+    offer: offer.id,
+    files: now.count,
+    bytes: now.bytes,
+    text: `${me.displayName} changed ${offer.name}`,
+  });
+
+  await chatter.remember(said);
+  await sayItToTheOthers(ws, said).catch(() => null);
+}
+
+// ---------------------------------------------------------------------------
 // Being findable by your other computers
 // ---------------------------------------------------------------------------
 
@@ -2228,12 +2321,17 @@ data: ${JSON.stringify(one)}
         return { ok: false, sentence: 'There is nothing in that folder to send.', action: 'Choose another one.' };
       }
     }
-    return lan.offer({
+    const made = await lan.offer({
       path: body.path,
       everything: !!body.everything,
       about: body.about ?? '',
       kind: body.kind ?? null,
     });
+
+    // What is offered decides what is watched, so watching follows it — after
+    // the offer exists, which is the whole point of doing it here.
+    watchWhatIsOffered().catch(() => {});
+    return made;
   },
 
   /**
@@ -2322,7 +2420,10 @@ data: ${JSON.stringify(one)}
   },
 
   async 'POST /local/withdraw'({ body }) {
-    return lan.withdraw(body.id);
+    const out = await lan.withdraw(body.id);
+    // Watching follows what is offered, which includes stopping.
+    watchWhatIsOffered().catch(() => {});
+    return out;
   },
 
   async 'GET /local/offers'({ url }) {
@@ -3045,5 +3146,6 @@ server.listen(port, '127.0.0.1', () => {
     const ws = await membersOf.current();
     if (ws) await anywhere.beAbout({ workspace: ws }).catch(() => null);
     await listenForJoiners().catch(() => null);
+    await watchWhatIsOffered().catch(() => null);
   })().catch(() => {});
 });

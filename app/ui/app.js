@@ -766,12 +766,62 @@ function listenToTheWorkspace() {
 }
 
 /**
+ * One line in the corner about something that happened somewhere else.
+ *
+ * Not a redraw and not a dialog. Somebody is in the middle of something, and a
+ * computer in another room changing a file is not a reason to move anything
+ * under their hands. It says what happened, it can be pressed to go where
+ * something can be done about it, and it goes away on its own.
+ *
+ * They stack, and there are never many, because what produces them is already
+ * coalesced — a folder that settles says one thing, not one per file.
+ */
+function mention({ what, bad = false, goTo = null }) {
+  let tray = $('#mentions');
+  if (!tray) {
+    tray = document.createElement('div');
+    tray.id = 'mentions';
+    document.body.append(tray);
+  }
+
+  const line = document.createElement('button');
+  line.className = `mention ${bad ? 'bad' : ''}`;
+  line.innerHTML = `<span class="dot ${bad ? 'attention' : 'live'}"></span><span>${esc(what)}</span>`;
+  line.onclick = () => { line.remove(); if (goTo) go(goTo); };
+  tray.append(line);
+
+  // Long enough to read a short sentence and look up, and no longer.
+  setTimeout(() => line.remove(), 9000);
+  // Never a wall of them: the oldest go when there are more than a handful.
+  while (tray.children.length > 4) tray.firstChild.remove();
+}
+
+/**
  * One thing happened. Change the smallest part of the page that says so.
  *
  * Never a redraw. The whole reason this exists is that a sentence arriving
  * should cost a sentence, not a rebuilt screen and a lost scroll position.
  */
 function somethingHappened(one) {
+  /*
+   * Something changed somewhere else. Said in the corner, not drawn over
+   * whatever somebody is doing.
+   *
+   * One line, coalesced by whoever sent it — a folder that settles produces
+   * one of these, not one per file the disk touched. Pressing it goes to the
+   * place where something can be done about it; ignoring it costs nothing.
+   */
+  if (one.kind === 'project.changed' || one.kind === 'sync.completed' || one.kind === 'sync.failed') {
+    mention({
+      bad: one.kind === 'sync.failed',
+      what: one.kind === 'project.changed'
+        ? `${one.fromName ?? 'Another computer'} changed ${one.project ?? 'a project'}`
+        : one.text ?? 'A sync finished',
+      goTo: one.kind === 'project.changed' ? 'workspace' : 'activity',
+    });
+    return;
+  }
+
   if (one.kind !== 'note') return;
 
   const box = $('#talk');
