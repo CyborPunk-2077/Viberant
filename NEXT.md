@@ -3,8 +3,9 @@
 *Viberant 2.x is finished. What follows is what was deliberately left out, so
 nobody has to rediscover the reasoning.*
 
-**Where it is:** 727 tests passing (620 app, 107 core), and the workspace errand
-proved both ways against two running copies.
+**Where it is:** 735 tests passing (628 app, 107 core). The workspace errand,
+notes, and offering one file are all proved both ways against two running
+copies.
 
 ---
 

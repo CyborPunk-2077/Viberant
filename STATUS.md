@@ -3,9 +3,9 @@
 *What is done and what is left, in plain language. Updated every session.*
 
 **Last updated:** 10 August 2026
-**Tests:** 620 in the app and 107 in core — 727 in all — passing on Windows. The
+**Tests:** 628 in the app and 107 in core — 735 in all — passing on Windows. The
 whole workspace errand is driven **both ways** against two copies of the app
-that are actually running; it has now found nine faults that every other test
+that are actually running; it has now found twelve faults that every other test
 passed straight over.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
@@ -863,6 +863,37 @@ file changed in both places is still a question whose answer is honoured.
 Two tests hold the shape rather than the behaviour, because a shape can rot back
 into place long after a behaviour test was written: nothing may be answered in
 two places, and what the door allows may not be a workspace it was handed.
+
+---
+
+## Two more that had never once run
+
+**Offer a file said *something went wrong here*, and the chooser never opened.**
+The line that sets a starting folder named something that has never existed in
+that file, inside a template built before the `try` that was there to catch a
+chooser refusing to open. Everything after it — the offer, the announcement, the
+far end seeing it, the transfer — had always worked and had never been reached.
+The words are their own function now so a test can read them, and what the
+computer says when it will not open is passed on rather than replaced by a
+guess. D-214.
+
+**Notes were written to one store and drawn from another.** They go to
+`chatter`, which is where a peer's arriving note is kept and what the stream
+carries; the box drew the older GitHub-backed workspace's own list, which
+nothing has put a note in since notes stopped travelling that way. A note
+arrived, was accepted, was written down, was carried — and was drawn from
+somewhere always empty. D-213.
+
+**What one computer is offering now lives on that computer**, behind pressing
+it, asked at the moment it is looked at — rather than one list of everything on
+every machine, which is a page about the network rather than about anybody's
+work. D-215.
+
+Verified against two running copies, both directions: notes with the right
+sender and no duplicates, arriving live on an open screen without a redraw, a
+lost scroll or a lost selection; a file offered, seen under the computer
+offering it, brought across with matching contents, and withdrawn out of sight
+again.
 
 ---
 

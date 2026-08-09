@@ -2321,6 +2321,36 @@ It cut the other way too, and that half is worse: **a computer revoked while the
 
 ---
 
+### D-213 `[DECIDED]` — Notes are drawn from the one place notes are kept
+
+**Decision.** `GET /workspace/notes` answers out of `chatter`, and the box draws that. An arriving note is one element appended, never a redraw. The fold says how many arrived while it was shut.
+
+**Why.** Notes are written to `chatter` — that is where `say` puts them, where a peer's arriving note is kept, and what the stream carries. The box drew the older GitHub-backed workspace's own list, which nothing has put a note in since notes stopped travelling that way. **So a note from another computer arrived, was accepted, was written down and was carried on the stream — and was drawn from somewhere else that was always empty.** Every part of the journey worked and the feature looked broken end to end.
+
+**And the mark on a note says only what is true.** `reached` is how many computers said back that they had written it down — not how many were online, and not how many a connection opened to. A note nobody has yet says so, with the way to try again beside it.
+
+---
+
+### D-214 `[DECIDED]` — A template built for its side effect is built where nothing can read it
+
+**Decision.** The words handed to the file chooser are their own function, `fileChooserScript`, and a test reads them.
+
+**Why.** The line that sets a starting folder named `start`, and nothing in that file has ever been called `start`. It sat in a template built *before* the `try` that was there to catch a chooser refusing to open — so every press of *Offer a file* threw on the way in, and the person read *something went wrong here*, which is the sentence the server keeps for a fault nobody expected. **The chooser never opened once, and everything after it had always worked and had never been reached.**
+
+Two things follow, and both are the general lesson rather than this one line. A template that is only ever built for its side effect cannot be tested, so it is a value now. And a `catch` that reports one sentence whatever happened is how a mistake of this kind hides for months — what the computer said is passed on.
+
+---
+
+### D-215 `[DECIDED]` — What somebody shares belongs to them, not to a list of everything
+
+**Decision.** Offered things appear in the inspector for the computer offering them, asked of that computer at the moment it is looked at, with **Bring here** going through the transfer that already exists.
+
+**Why.** There was one section called *available from your other computers*: a page about the network rather than about anybody's work, and a wall of names with no way to tell whose was whose as soon as there were two computers with a few folders each. Somebody looking for what Rahul is sharing should press Rahul.
+
+Only what was explicitly offered, and a computer that is not here says that rather than showing a stale list.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
