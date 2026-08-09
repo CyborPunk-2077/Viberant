@@ -22,24 +22,28 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { HOUSE } from './projects.mjs';
+import * as thisapp from './thisapp.mjs';
 import * as github from './github.mjs';
 
 const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
 /**
- * Where a report about **this manager** goes.
+ * Where a report about **this manager** goes, if anywhere.
  *
- * This is the one account name written down anywhere in this product, and it is
- * deliberately not an identity: it is the address of Viberant's own issue list,
- * the way a support address is fixed. It is never the account you are signed in
- * as, never a project's owner, and never a default for anything.
+ * It used to be one person's own GitHub account, spelled out here and compiled
+ * into every copy that shipped. A name in source travels to computers that have
+ * nothing to do with whoever it names, cannot be changed without a rebuild, and
+ * tells anybody reading the code whose account it is. None of that is worth a
+ * fixed support address.
  *
- * Named `ISSUES_FOR_VIBERANT` rather than `HOME`, because `HOME` beside an
- * owner/name pair reads like somebody's account and that is exactly the
- * confusion worth removing. A test below holds it to the one use it has.
+ * Read out of `package.json` now, where a project already records where it
+ * lives, and **allowed to be absent**: with nothing written there, no account
+ * exists anywhere in this app. A report is then still written down here —
+ * which was always the half that mattered — and says it has nowhere to go
+ * rather than quietly reaching somebody's account.
  */
-export const ISSUES_FOR_VIBERANT = 'rSlashGIT/Viberant';
+export const issuesGoTo = async () => (await thisapp.whereItLives()).issues;
 
 const KEPT = join(HOUSE, 'feedback.jsonl');
 
@@ -84,9 +88,21 @@ export async function send({ what, kind = 'wrong', about = {} }) {
     `Sent from ${about.machine ?? 'a computer'}${about.version ? `, version ${about.version}` : ''}.`,
   ].join('\n');
 
+  const goesTo = await issuesGoTo();
+  if (!goesTo) {
+    return {
+      ok: false,
+      kept: true,
+      nowhereToSend: true,
+      sentence: 'That is written down here, and there is nowhere to send it.',
+      action: 'This copy of Viberant does not say where its issue list is. What you wrote is in '
+        + 'the record folder, and nothing left this computer.',
+    };
+  }
+
   const made = await quiet(() => run('gh', [
     'issue', 'create',
-    '--repo', ISSUES_FOR_VIBERANT,
+    '--repo', goesTo,
     '--title', `${named.name}: ${text.split('\n')[0].slice(0, 70)}`,
     '--body', body,
   ], { maxBuffer: 8 * 1024 * 1024 }));

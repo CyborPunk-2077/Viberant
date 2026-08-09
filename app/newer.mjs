@@ -35,11 +35,20 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
+import * as thisapp from './thisapp.mjs';
+
 const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
-/** Where releases of this app are published. */
-export const RELEASES = 'rSlashGIT/Viberant';
+/**
+ * Where releases of this app are published, if anywhere.
+ *
+ * Read out of `package.json` rather than written down here. It used to be one
+ * person's account, in the source, in every copy that shipped — and a copy
+ * with nothing written there now says it does not know where to look, which is
+ * true, instead of asking a stranger's account whether you are up to date.
+ */
+export const releasesAt = async () => (await thisapp.whereItLives()).releases;
 
 /** How long an answer is worth reusing. Asked once an hour, not once a click. */
 const FRESH_FOR = 60 * 60 * 1000;
@@ -97,9 +106,28 @@ export const signing = () => ({
 export async function check(here, { force = false } = {}) {
   if (!force && held && Date.now() - held.at < FRESH_FOR) return held.answer;
 
+  const where = await releasesAt();
+  if (!where) {
+    /*
+     * Nowhere to look is a third thing, and it is not "up to date".
+     *
+     * The whole shape of this file is that not knowing is never reported as
+     * good news, and a copy that does not say where its releases are published
+     * knows less than it does when the network is down.
+     */
+    return {
+      ok: true,
+      known: false,
+      newer: false,
+      here,
+      sentence: 'This copy does not say where its releases are published, so it cannot check.',
+      action: 'It will not check again until it does.',
+    };
+  }
+
   let refused = null;
   const asked = await run('gh', [
-    'release', 'view', '--repo', RELEASES,
+    'release', 'view', '--repo', where,
     '--json', 'tagName,name,body,url,publishedAt',
   ], { maxBuffer: 4 * 1024 * 1024 }).catch((e) => { refused = e; return null; });
 

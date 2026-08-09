@@ -70,8 +70,30 @@ describe('a check that could not happen says so, rather than saying you are up t
     if (!answer.known) {
       assert.ok(answer.action, 'and something to do about it');
       assert.notEqual(answer.newer, true, 'it must not claim there is a newer one');
-      assert.match(answer.sentence, /could not be checked|could not be read/);
+      /*
+       * Three ways of not knowing, and a fourth would be fine too.
+       *
+       * What matters is never the wording: it is that not knowing is never
+       * dressed up as good news. A copy with nowhere written down to look
+       * knows less than one whose network is down, and both are honest here.
+       */
+      assert.match(answer.sentence, /could not be checked|could not be read|does not say where/);
     }
+  });
+
+  test('nowhere written down to look is its own answer, and not "up to date"', async () => {
+    // The account this used to look at was one person's, written into the
+    // source of every copy that shipped. It is read out of `package.json` now,
+    // and absent by default — so a copy that does not know says so.
+    const { check, forget, releasesAt } = await import('../newer.mjs');
+    forget();
+
+    assert.equal(await releasesAt(), null, 'an account name is written into this app again');
+
+    const answer = await check('0.1.0', { force: true });
+    assert.equal(answer.known, false, 'not knowing was reported as knowing');
+    assert.equal(answer.newer, false);
+    assert.ok(answer.action);
   });
 
   test('the answer is kept for a while, so the page can ask freely', async () => {

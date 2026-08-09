@@ -391,7 +391,7 @@ wrong place to be when the thought arrives.
 
 ## Run it
 
-**Installed.** Run the installer in `dist/` — 87 MB to download, 302 MB installed, and it carries everything it needs, so a computer with no Node still runs it. This is the one to put on your other devices. The code is at github.com/rSlashGIT/Viberant (private).
+**Installed.** Run the installer in `dist/` — 87 MB to download, 302 MB installed, and it carries everything it needs, so a computer with no Node still runs it. This is the one to put on your other devices. Where the code lives is recorded in `package.json`, not written into the app.
 
 **Double-click.** `start.bat`. Starts the manager and opens your browser at it. Needs Node 22 or newer.
 

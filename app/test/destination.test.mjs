@@ -223,12 +223,58 @@ describe('nothing decides an account from a name in the source', () => {
       'an owner/name written into code that decides destinations is a default nobody chose');
   });
 
-  test('the one name that does exist is the issue list, and only that', async () => {
+  test('and now there is no account name in the source at all', async () => {
+    /*
+     * There used to be exactly one, and one was one too many.
+     *
+     * It was the address of this app's own issue list — not an identity, not
+     * a default for anything, and genuinely useful. It was also one person's
+     * GitHub account, spelled out in the source, compiled into every copy that
+     * shipped. A name in a program travels to computers that have nothing to do
+     * with whoever it names and cannot be changed without a rebuild.
+     *
+     * It is read out of `package.json` now, and allowed to be absent. With
+     * nothing written there, nothing anywhere in this app names anybody.
+     */
     const feedback = await import('../feedback.mjs');
-    assert.equal(typeof feedback.ISSUES_FOR_VIBERANT, 'string');
-    assert.match(feedback.ISSUES_FOR_VIBERANT, /\//);
-    assert.equal(feedback.HOME, undefined,
-      'the old name read like somebody account and is gone');
+    const newer = await import('../newer.mjs');
+
+    assert.equal(feedback.ISSUES_FOR_VIBERANT, undefined,
+      'the account name is written into the source again');
+    assert.equal(newer.RELEASES, undefined,
+      'the account name is written into the source again');
+    assert.equal(typeof feedback.issuesGoTo, 'function');
+    assert.equal(typeof newer.releasesAt, 'function');
+  });
+
+  test('an address is read out of the project, in whichever shape it was written', async () => {
+    const { ownerAndName } = await import('../thisapp.mjs');
+
+    for (const [was, becomes] of [
+      ['somebody/thing', 'somebody/thing'],
+      ['https://github.com/somebody/thing.git', 'somebody/thing'],
+      ['git+https://github.com/somebody/thing.git', 'somebody/thing'],
+      ['git@github.com:somebody/thing.git', 'somebody/thing'],
+      [{ url: 'https://github.com/somebody/thing' }, 'somebody/thing'],
+    ]) assert.equal(ownerAndName(was), becomes, `${JSON.stringify(was)} was read wrong`);
+
+    // A path fragment has the same shape and is not an account.
+    for (const not of ['./app', '../core', '', null, undefined, {}]) {
+      assert.equal(ownerAndName(not), null, `${JSON.stringify(not)} was read as an account`);
+    }
+  });
+
+  test('with nowhere written down, neither feature reaches anybody', async () => {
+    const newer = await import('../newer.mjs');
+
+    // This project's own package.json says nothing, which is the default and
+    // the point: a copy that does not know says so.
+    assert.equal(await newer.releasesAt(), null);
+
+    const asked = await newer.check('0.1.0', { force: true });
+    assert.equal(asked.known, false, 'not knowing was reported as knowing');
+    assert.equal(asked.newer, false);
+    assert.match(asked.sentence, /does not say where/);
   });
 });
 

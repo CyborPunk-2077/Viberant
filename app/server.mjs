@@ -1326,7 +1326,7 @@ const routes = {
   },
 
   async 'GET /feedback'() {
-    return { kinds: feedback.KINDS, said: await feedback.said(), home: feedback.ISSUES_FOR_VIBERANT };
+    return { kinds: feedback.KINDS, said: await feedback.said(), home: await feedback.issuesGoTo() };
   },
 
   async 'POST /feedback'({ body }) {
