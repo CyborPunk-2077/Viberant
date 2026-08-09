@@ -6,3 +6,12 @@ node_modules/
 # both hold paths that only mean something on the machine that made them.
 dist/
 Viberant.lnk
+
+# Two copies of the app, started side by side to prove the workspace between
+# them. Each keeps a home of its own with its own device key in it, and a key
+# is the one thing in this project that must never be written down anywhere
+# but the computer that made it.
+.twoup/
+.twoup.log
+.smoke/
+.smoke.log

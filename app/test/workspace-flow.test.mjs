@@ -345,6 +345,24 @@ describe('two copies of the app, one workspace, the whole errand', () => {
     const there = await oneWay(A, B, 'a word from Ada');
     const back = await oneWay(B, A, 'a word from Bo');
 
+    /*
+     * And drawn from the store notes are actually written to.
+     *
+     * The box that shows them used to read the older GitHub-backed workspace's
+     * own list, which nothing has put a note in since notes stopped travelling
+     * that way. So a note arrived, was accepted, was written down and was
+     * carried on the stream, and was then drawn from somewhere else that was
+     * always empty. Every part of the journey worked and notes looked broken.
+     */
+    for (const [who, text, from] of [[B, 'a word from Ada', 'Ada-PC'], [A, 'a word from Bo', 'Bo-PC']]) {
+      const drawn = (await who.get('/workspace/notes')).notes ?? [];
+      const mine = drawn.filter((one) => one.text === text);
+      assert.equal(mine.length, 1,
+        `${who.name} draws it ${mine.length} times, so the box and the stream disagree`);
+      assert.equal(mine[0].fromName, from, 'it is drawn as having come from somebody else');
+      assert.equal(mine[0].you, false, 'it is drawn as though this computer had said it');
+    }
+
     // Whoever it says it is from is whoever the connection was actually with,
     // not whoever the message claimed.
     assert.equal(there.fromName, 'Ada-PC');

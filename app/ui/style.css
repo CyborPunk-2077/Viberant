@@ -3647,3 +3647,40 @@ select { cursor: pointer; }
 .wsevents .when { flex: none; color: var(--faint); }
 
 .wsproj .sub.quiet { color: var(--faint); font-size: var(--t-meta); }
+
+/*
+ * What one computer is offering, in the panel about that computer.
+ *
+ * Not a section of its own anywhere: offered things belong to whoever is
+ * offering them, and a list of everything on every machine is a page about the
+ * network rather than about anybody's work.
+ */
+.insp-shares { display: flex; flex-direction: column; gap: 1px; }
+.insp-shares .quiet { color: var(--faint); font-size: var(--t-meta); line-height: 1.5; }
+.insp-shares .share {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  min-width: 0;
+}
+.insp-shares .share + .share { border-top: 1px solid var(--line); }
+.insp-shares .kindmark { flex: none; color: var(--faint); }
+.insp-shares .grow { display: grid; gap: 1px; min-width: 0; }
+.insp-shares b {
+  overflow: hidden;
+  font-size: var(--t-meta);
+  font-weight: var(--w-semi);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.insp-shares .what { color: var(--faint); font-size: var(--t-tiny); }
+.insp-shares button { flex: none; }
+
+/* A note, and what became of it. */
+.talk .bubble .who { color: var(--faint); font-size: .74rem; }
+.talk .bubble.going { opacity: .6; }
+.talk .bubble.nope .who span { color: var(--trouble); }
+.talk .bubble.alone .who span { color: var(--attention); }
+.talk .bubble .again { margin-top: var(--s2); }
+.wsmore.notes > summary .count { margin-left: var(--s2); color: var(--attention); }

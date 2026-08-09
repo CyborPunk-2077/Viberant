@@ -121,7 +121,11 @@ const ago = (at) => {
 };
 
 const size = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB`
-  : bytes >= 1e6 ? `${Math.round(bytes / 1e6)} MB` : `${Math.round(bytes / 1e3)} KB`);
+  : bytes >= 1e6 ? `${Math.round(bytes / 1e6)} MB`
+    // Under a kilobyte, "0 KB" is worse than saying nothing. A file of a few
+    // dozen bytes is a real thing somebody offered and it has a real size.
+    : bytes >= 1e3 ? `${Math.round(bytes / 1e3)} KB`
+      : `${Math.round(bytes)} bytes`);
 
 const tail = (path) => String(path ?? '').split(/[\\/]/).filter(Boolean).pop() ?? '';
 
@@ -884,27 +888,22 @@ function somethingHappened(one) {
     return;
   }
 
-  if (one.kind !== 'note') return;
-
-  const box = $('#talk');
-  if (!box || !box.isConnected) return;
-
-  // Already on screen because this computer said it. The identifier is the
-  // same at both ends, which is what makes that knowable.
-  if (box.querySelector(`[data-note="${CSS.escape(one.id)}"]`)) return;
-
-  const wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-
-  const said = document.createElement('div');
-  said.className = 'bubble';
-  said.dataset.note = one.id;
-  said.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">${
-    esc(one.fromName ?? 'Another computer')} · ${esc(ago(one.at))}</div>${esc(one.text ?? '')}`;
-  box.append(said);
-
-  // Following along only if you were already at the bottom. Scrolling back to
-  // read something is a decision, and it is not ours to undo.
-  if (wasAtBottom) box.scrollTop = box.scrollHeight;
+  /*
+   * A note, put where notes are drawn — one element appended, never a redraw.
+   *
+   * It follows along only if you were already at the bottom. Scrolling back to
+   * read something is a decision, and it is not ours to undo. And if the fold
+   * is shut there is nothing to append to, so the fold counts it instead of the
+   * note being lost.
+   */
+  if (one.kind === 'note') {
+    noteArrived({
+      id: one.id,
+      at: one.at,
+      text: one.text ?? '',
+      fromName: one.fromName ?? 'Another computer',
+    });
+  }
 }
 
 const SCREENS = {};
@@ -1446,13 +1445,85 @@ function inspect(what) {
       <span class="go" aria-hidden="true">${a.danger ? '' : '\u2192'}</span>
     </button>`).join('')
 }</div>` : ''}
+    ${what.sharesFrom ? `
+      <div class="insp-part">Shared with this workspace</div>
+      <div class="insp-shares" id="insp-shares">
+        <span class="quiet">Asking\u2026</span>
+      </div>` : ''}
     ${what.map ? `
       <div class="insp-part">How it is reached</div>
       ${topology(what.map)}` : ''}`;
 
+  if (what.sharesFrom) whatTheyShare(what.sharesFrom);
+
   $('#insp-close').onclick = () => inspect(null);
   for (const b of box.querySelectorAll('[data-insp]')) {
     b.onclick = () => what.acts[Number(b.dataset.insp)].run();
+  }
+}
+
+/**
+ * What one computer is offering, shown where it belongs: on that computer.
+ *
+ * **Not a list of everything everywhere.** There used to be one section called
+ * *available from your other computers*, which is a page about the network
+ * rather than about anybody's work — and the moment there were two computers
+ * with a few folders each it was a wall of names with no way to tell whose was
+ * whose. Offered things belong to whoever is offering them, so they are here,
+ * behind pressing that computer.
+ *
+ * Only what was explicitly offered. Asked of that computer each time it is
+ * looked at, so what is shown is what is true now rather than what was true
+ * when something was last drawn.
+ */
+async function whatTheyShare({ deviceId, name, online }) {
+  const box = $('#insp-shares');
+  if (!box) return;
+
+  if (!online) {
+    box.innerHTML = `<span class="quiet">${esc(name)} is not here, so what it is
+      offering cannot be asked for.</span>`;
+    return;
+  }
+
+  const said = await get(`/local/offers?machine=${encodeURIComponent(deviceId)}`);
+  if (!box.isConnected) return;
+
+  const offers = said?.offers ?? [];
+  if (!offers.length) {
+    box.innerHTML = `<span class="quiet">${esc(name)} is not offering anything to this
+      workspace.</span>`;
+    return;
+  }
+
+  // A folder offered whole is a project as far as anybody here is concerned;
+  // the only distinction that matters is whether it is one file or many.
+  const kindOf = (one) => (one.kind === 'file' ? 'file' : 'project');
+
+  box.innerHTML = offers.map((one) => `
+    <div class="share">
+      <span class="kindmark" aria-hidden="true">${KIND_MARK[kindOf(one)]}</span>
+      <span class="grow">
+        <b>${esc(one.name)}</b>
+        <span class="what">${esc(KIND_WORD[kindOf(one)])}${
+  one.files > 1 ? ` \u00b7 ${one.files} files` : ''}${one.bytes ? ` \u00b7 ${esc(size(one.bytes))}` : ''}</span>
+      </span>
+      <button class="small" data-bring-share="${esc(one.id)}"
+        data-share-name="${esc(one.name)}">Bring here</button>
+    </div>`).join('');
+
+  for (const b of box.querySelectorAll('[data-bring-share]')) {
+    b.onclick = async () => {
+      b.disabled = true;
+      b.textContent = 'Bringing\u2026';
+      const out = await post('/local/take', {
+        machine: deviceId, offer: b.dataset.bringShare, name: b.dataset.shareName,
+      });
+      if (out.job) return watchJob(out.job);
+      say(out);
+      draw();
+      return undefined;
+    };
   }
 }
 
@@ -5367,6 +5438,8 @@ function inspectTeamDevice(one, t) {
       },
       { label: 'Known by', value: one.deviceId, mono: true, dim: true },
     ],
+    // What this computer is offering, asked of it rather than assumed.
+    sharesFrom: { deviceId: one.deviceId, name: one.displayName, online: one.online },
     acts: one.you ? [] : [
       { what: 'Compare with this computer', run: () => compareWith(one.deviceId) },
       ...(one.online ? [{ what: 'Do something on it\u2026', run: () => doSomethingOn(one.deviceId, t) }] : []),
@@ -5840,57 +5913,72 @@ function wireSaying() {
   $('#w-say').onkeydown = (e) => { if (e.key === 'Enter') $('#w-send').click(); };
 
   /**
-   * A note appears when you press the button, not when a service agrees.
+   * A note appears when you press the button, and then says what became of it.
    *
-   * It used to wait for the whole errand — which reaches GitHub and takes
-   * seconds — and then redraw the page. So pressing Send did nothing visible
-   * for several seconds, and then the page rebuilt underneath you and put you
-   * back at the top. What you typed was gone from the box the whole time, with
-   * nothing anywhere to show it had been said.
+   * It used to wait for the whole errand and then redraw the page, so pressing
+   * Send did nothing visible for seconds and then rebuilt the screen underneath
+   * you. It is on screen immediately, marked as on its way, and the mark
+   * changes when it lands. Nothing is redrawn: one element is appended, which
+   * is what actually happened.
    *
-   * It is on the screen immediately, marked as on its way, and the mark
-   * changes when it lands. Nothing is redrawn: this appends one element to a
-   * list, which is what actually happened.
+   * **What the mark says is what is true, and only that.** `reached` is the
+   * number of computers that said back that they had written it down — not
+   * how many were online, and not how many a connection opened to. So a note
+   * that nobody has yet says so, plainly, with the way to try again next to it,
+   * rather than claiming it was sent because sending was attempted.
    */
   $('#w-send').onclick = async () => {
     const box = $('#w-say');
     const text = box.value.trim();
     if (!text) return;
     box.value = '';
-
-    const talkBox = $('#talk');
-    const mine = document.createElement('div');
-    mine.className = 'bubble mine going';
-    mine.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">You · <span>sending</span></div>${esc(text)}`;
-    talkBox?.append(mine);
-    if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
-
-    const r = await post('/workspace/say', { text });
-    if (!mine.isConnected) return;
-
-    mine.classList.remove('going');
-    const when = mine.querySelector('span');
-    if (r.ok) {
-      // Marked with the identifier the manager gave it, so the same note
-      // arriving back down the stream is recognised rather than added twice.
-      if (r.event?.id) {
-        mine.dataset.note = r.event.id;
-        heardAlready.add(r.event.id);
-      }
-      if (when) {
-        when.textContent = r.reached
-          ? `sent to ${r.reached} ${r.reached === 1 ? 'computer' : 'computers'}`
-          : 'saved here';
-      }
-      return;
-    }
-
-    // It did not go. Said on the note itself rather than as a sentence at the
-    // top of a page it would have been redrawn away from.
-    mine.classList.add('nope');
-    if (when) when.textContent = 'not sent';
-    mine.title = [r.sentence, r.action].filter(Boolean).join(' ');
+    await sendOneNote(text);
   };
+}
+
+/** Say one thing, and keep saying what became of it until it is settled. */
+async function sendOneNote(text, into = null) {
+  const talkBox = $('#talk');
+  const empty = talkBox?.querySelector('p.quiet');
+  if (empty) empty.remove();
+
+  const mine = into ?? document.createElement('div');
+  mine.className = 'bubble mine going';
+  mine.innerHTML = `<div class="who">You \u00b7 <span>Sending\u2026</span></div>${esc(text)}`;
+  if (!into) talkBox?.append(mine);
+  if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
+
+  const r = await post('/workspace/say', { text });
+  if (!mine.isConnected) return;
+
+  mine.classList.remove('going');
+  const when = mine.querySelector('.who span');
+
+  if (r.ok) {
+    // Marked with the identifier the manager gave it, so the same note arriving
+    // back down the stream is recognised rather than added twice.
+    if (r.event?.id) {
+      mine.dataset.note = r.event.id;
+      heardAlready.add(r.event.id);
+    }
+    if (when) {
+      when.textContent = r.reached
+        ? `Sent to ${r.reached} ${r.reached === 1 ? 'computer' : 'computers'}`
+        : 'Here only \u2014 nobody else has it';
+    }
+    mine.classList.toggle('alone', !r.reached);
+    return;
+  }
+
+  mine.classList.add('nope');
+  if (when) when.textContent = 'Failed';
+  mine.title = [r.sentence, r.action].filter(Boolean).join(' ');
+
+  const again = document.createElement('button');
+  again.className = 'quiet small again';
+  again.textContent = 'Try again';
+  again.onclick = () => { again.remove(); sendOneNote(text, mine); };
+  mine.append(again);
 }
 
 async function drawWorkspaceOverview() {
@@ -7103,6 +7191,11 @@ SCREENS.workspace = async () => {
   wireProjectInWorkspace(here, t);
   drawWorkspaceNotes();
 
+  // Opened, so whatever arrived while it was shut is read.
+  document.querySelector('.wsmore.notes')?.addEventListener('toggle', (e) => {
+    if (e.target.open) drawWorkspaceNotes();
+  });
+
   /*
    * The inspector, filled rather than waiting to be.
    *
@@ -7228,8 +7321,8 @@ function projectInWorkspace(p) {
         </ul>`
     : '<p class="sub quiet">Nothing has happened to this one yet.</p>'}
 
-      <details class="wsmore">
-        <summary>Notes to the workspace</summary>
+      <details class="wsmore notes">
+        <summary>Notes to the workspace <span class="count" hidden></span></summary>
         <div id="wsnotes"></div>
       </details>
     </div>`;
@@ -7259,21 +7352,30 @@ function wireProjectInWorkspace(p, t) {
   }
 }
 
-/** Notes, kept small and put where they belong: beside the work, not above it. */
+/**
+ * Notes, kept small, and drawn from the one place they are actually written.
+ *
+ * **This read the older GitHub-backed workspace's own list**, which nothing has
+ * put a note in since notes stopped travelling that way. A note from another
+ * computer arrived, was accepted, was written down and was carried on the
+ * stream — and this drew a different store, which was always empty. So notes
+ * looked broken end to end while every part of the journey was working.
+ */
 async function drawWorkspaceNotes() {
   const box = $('#wsnotes');
   if (!box) return;
 
-  const w = await get('/workspace');
+  const said = await get('/workspace/notes');
   if (!box.isConnected) return;
+
+  notesOnScreen = (said.notes ?? []).length;
+  for (const one of said.notes ?? []) heardAlready.add(one.id);
+  markUnreadNotes(0);
 
   fill(box, `
     <div class="talk short" id="talk">
-      ${(w.said ?? []).map((one) => `
-        <div class="bubble ${one.you ? 'mine' : ''}">
-          <div style="font-size:.74rem;color:var(--faint)">${esc(one.fromName)} \u00b7 ${esc(ago(one.at))}</div>
-          ${esc(one.text)}
-        </div>`).join('') || '<p style="color:var(--quiet);margin:0">Nothing said yet.</p>'}
+      ${(said.notes ?? []).map(noteHtml).join('')
+    || '<p class="quiet" style="margin:0">Nothing said yet. Anybody in this workspace will see it.</p>'}
     </div>
     <div class="bar" style="margin:.7rem 0 0">
       <input id="w-say" placeholder="Say something to the workspace" style="flex:1">
@@ -7285,35 +7387,57 @@ async function drawWorkspaceNotes() {
   wireSaying();
 }
 
-/** A person, in the inspector: who they are, what they have, what they did. */
-function inspectPerson(who, projects, busy = null) {
-  if (!who) return inspect(null);
+/** One note, in the shape both the first draw and an arriving one use. */
+function noteHtml(one) {
+  return `
+    <div class="bubble ${one.you ? 'mine' : ''}" data-note="${esc(one.id)}">
+      <div class="who">${esc(one.you ? 'You' : one.fromName)} \u00b7 <span>${esc(ago(one.at))}</span></div>
+      ${esc(one.text)}
+    </div>`;
+}
 
-  const theirs = projects.filter((p) => p.copies.some((c) => c.person === who.person));
-  const on = who.devices.filter((d) => d.online).length;
+/**
+ * How many have arrived while nobody was looking.
+ *
+ * Notes are secondary and stay folded away, which would make one arriving
+ * invisible — so the fold says how many. Pressed open, it is nought again.
+ */
+let notesOnScreen = 0;
+let unreadNotes = 0;
 
-  inspect({
-    name: who.person,
-    kind: who.you ? 'You' : 'In this workspace',
-    mark: on ? '\u25c9' : '\u25cb',
-    facts: [
-      { label: 'Right now', value: on ? `Here, on ${on} of ${who.devices.length}` : 'Not here' },
-      // Which shared project their computer last reported a change in. Never
-      // which file they have open: nothing here can know that, and a manager
-      // that guessed would be wrong in front of somebody looking at their own
-      // screen.
-      { label: 'Last worked in', value: busy ? `${busy.project} \u00b7 ${ago(busy.at)}` : 'nothing shared lately' },
-      { label: 'What changed', value: busy ? (changeInWords(busy) ?? 'not said') : null },
-      { label: 'Computers', value: who.devices.map((d) => d.displayName).join(', ') },
-      { label: 'Sharing', value: theirs.length ? theirs.map((p) => p.name).join(', ') : 'nothing yet' },
-    ],
-    countsAre: 'What they bring',
-    counts: [
-      { many: who.devices.length, what: who.devices.length === 1 ? 'computer' : 'computers' },
-      { many: on, what: 'here now' },
-      { many: theirs.length, what: 'projects' },
-    ],
-  });
+function markUnreadNotes(many) {
+  unreadNotes = many;
+  const at = document.querySelector('.wsmore.notes > summary .count');
+  if (at) {
+    at.textContent = many ? String(many) : '';
+    at.hidden = !many;
+  }
+}
+
+/**
+ * A note that has just arrived, put on the screen where it belongs.
+ *
+ * Appended rather than redrawn: a note is one element, and rebuilding a screen
+ * to show one sentence is how somebody loses their place mid-sentence. If the
+ * fold is shut there is nothing to append to, so the fold counts it instead.
+ */
+function noteArrived(one) {
+  const box = $('#talk');
+  if (!box || !box.isConnected) {
+    if (inWorkspace) markUnreadNotes(unreadNotes + 1);
+    return;
+  }
+  if (box.querySelector(`[data-note="${CSS.escape(one.id)}"]`)) return;
+
+  const wasAtBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+  const empty = box.querySelector('p.quiet');
+  if (empty) empty.remove();
+
+  box.insertAdjacentHTML('beforeend', noteHtml({
+    id: one.id, at: one.at, text: one.text, fromName: one.fromName, you: false,
+  }));
+  notesOnScreen += 1;
+  if (wasAtBottom) box.scrollTop = box.scrollHeight;
 }
 
 /** A shared project, in the inspector: where its copies are and what to do. */

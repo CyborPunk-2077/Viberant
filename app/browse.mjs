@@ -123,6 +123,44 @@ export async function look(at, { hidden = false } = {}) {
  * different question attached ("as one thing, or as several?"), and guessing
  * which somebody meant is how a transfer arrives in a shape nobody asked for.
  */
+/**
+ * The words handed to the chooser, built on their own so they can be read.
+ *
+ * **Its own function because of what went wrong in it.** The line that sets a
+ * starting folder said `start`, and nothing in this file has ever been called
+ * `start`. It sits in a template built *before* the `try` that wraps opening
+ * the chooser — so every press of *Offer a file* threw a `ReferenceError` on the
+ * way in, the route turned that into the one sentence it keeps for a fault
+ * nobody expected, and the person read *something went wrong here*. The chooser
+ * never opened once, and nothing downstream of it was ever wrong.
+ *
+ * A mistake inside a template is invisible until the template is built, and a
+ * template built for its side effect is built nowhere a test can see. This one
+ * is a value now, so a test can look at it.
+ *
+ * A single quote inside a single-quoted PowerShell string is written twice, and
+ * a folder may contain one.
+ */
+export function fileChooserScript(where = null) {
+  const at = where ? String(where).replace(/'/g, "''") : null;
+  return `
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -Namespace Native -Name Win -MemberDefinition '
+      [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
+    $owner = New-Object System.Windows.Forms.NativeWindow
+    $owner.AssignHandle([Native.Win]::GetForegroundWindow())
+    $box = New-Object System.Windows.Forms.OpenFileDialog
+    $box.Title = 'Choose a file to offer'
+    $box.Filter = 'Any file (*.*)|*.*'
+    $box.Multiselect = $false
+    ${at ? `$box.InitialDirectory = '${at}'` : ''}
+    if ($box.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
+      Write-Output $box.FileName
+    }
+    $owner.ReleaseHandle()
+  `;
+}
+
 export async function chooseFile({ startAt = null } = {}) {
   if (!WINDOWS) {
     return {
@@ -133,34 +171,13 @@ export async function chooseFile({ startAt = null } = {}) {
   }
 
   /*
-   * Rooted at the computer, always — never at where you happen to be.
+   * Where it opens, if anywhere.
    *
-   * The fourth argument is the *root* of the tree, not a starting selection,
-   * and passing the current folder made it the top of the world: opened from
-   * Documents, the chooser showed Documents and nothing above it, with no way
-   * to reach another drive. Somebody wanting a folder on D: had to cancel and
-   * find another way in.
-   *
-   * There is no way to ask this chooser to open somewhere and still show
-   * everything, so it shows everything. The path box below it is how somebody
-   * who knows where they are going gets there in one go.
+   * Anything that is not a folder that is actually there is simply not passed,
+   * and then the chooser opens wherever it likes — which is what this did in
+   * practice anyway, and is better than refusing to open at all.
    */
-  const script = `
-    Add-Type -AssemblyName System.Windows.Forms
-    Add-Type -Namespace Native -Name Win -MemberDefinition '
-      [DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow();'
-    $owner = New-Object System.Windows.Forms.NativeWindow
-    $owner.AssignHandle([Native.Win]::GetForegroundWindow())
-    $box = New-Object System.Windows.Forms.OpenFileDialog
-    $box.Title = 'Choose a file to offer'
-    $box.Filter = 'Any file (*.*)|*.*'
-    $box.Multiselect = $false
-    ${start ? `$box.InitialDirectory = '${start}'` : ''}
-    if ($box.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) {
-      Write-Output $box.FileName
-    }
-    $owner.ReleaseHandle()
-  `;
+  const script = fileChooserScript(startAt && existsSync(startAt) ? startAt : null);
 
   try {
     const { stdout } = await run(
@@ -178,11 +195,19 @@ export async function chooseFile({ startAt = null } = {}) {
       };
     }
     return { ok: true, path: picked };
-  } catch {
+  } catch (e) {
+    /*
+     * Whatever it was, said rather than swallowed.
+     *
+     * This caught everything and reported the same sentence, which is how a
+     * mistake in the words above spent months looking like a chooser that would
+     * not open. What the computer said is kept, because the one time somebody
+     * needs it is the one time the guess is wrong.
+     */
     return {
       ok: false,
       sentence: 'The file chooser would not open.',
-      action: 'Offer the folder the file is in instead.',
+      action: e?.message ? `This computer said: ${e.message}` : 'Offer the folder the file is in instead.',
     };
   }
 }

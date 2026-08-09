@@ -2518,6 +2518,36 @@ const routes = {
    * be minutes. Nobody types a sentence to somebody in the next room and
    * expects it to travel via a hosting service.
    */
+  /**
+   * What has been said in this workspace, out of the one place it is written.
+   *
+   * **The page was reading the wrong store.** Notes are written to `chatter` —
+   * that is where `say` puts them, where a peer's arriving note is kept, and
+   * what the stream carries. The box that draws them was reading the older
+   * GitHub-backed workspace's own list, which nothing has written a note to
+   * since notes stopped going through GitHub. So a note from another computer
+   * arrived, was accepted, was written down, was carried on the stream — and
+   * was drawn from somewhere else entirely, which was always empty.
+   */
+  async 'GET /workspace/notes'() {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: true, notes: [] };
+
+    const me = await device.card();
+    const said = await chatter.lately({ workspace: ws.id, most: 200 });
+    return {
+      ok: true,
+      notes: said.filter((one) => one.kind === 'note').slice(-60).map((one) => ({
+        id: one.id,
+        at: one.at,
+        text: one.text,
+        fromName: ws.devices?.[one.from]?.displayName ?? one.fromName ?? 'somebody',
+        person: ws.devices?.[one.from]?.person ?? null,
+        you: one.from === me.deviceId,
+      })),
+    };
+  },
+
   async 'POST /workspace/say'({ body }) {
     const text = String(body?.text ?? '').trim().slice(0, 2000);
     if (!text) return { ok: false, sentence: 'There was nothing to say.', action: null };
