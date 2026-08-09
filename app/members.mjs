@@ -155,6 +155,32 @@ export async function switchTo(id) {
   return { ok: true, sentence: `${state.workspaces[id].name} is the workspace now.` };
 }
 
+/**
+ * Write down a workspace this computer has just been let into.
+ *
+ * Handed over by whoever owns it, at the end of joining, and it is the whole
+ * point of joining: without this, a code is permission to do something nothing
+ * can then do.
+ *
+ * **Invitations are dropped on the way in.** They are somebody else's
+ * permission to join, and a computer that has just joined holding a list of
+ * live codes could let in people the owner never invited. Whatever arrives in
+ * that field, what is kept is nothing.
+ */
+export async function remember(workspace) {
+  if (!workspace?.id || !workspace?.devices) {
+    return { ok: false, sentence: 'That is not a workspace.', action: null };
+  }
+
+  const state = await book();
+  const kept = { ...workspace, invites: {}, tries: 0 };
+  state.workspaces[kept.id] = kept;
+  state.joined = kept.id;
+  await keep(state);
+
+  return { ok: true, workspace: kept };
+}
+
 /** Write a workspace back, however it changed. */
 export async function save(workspace) {
   const state = await book();
@@ -313,6 +339,24 @@ export async function redeem({ workspace, code, person, device }) {
       ok: false,
       sentence: 'Too many invitations have been tried on this workspace.',
       action: 'Ask the owner to make a new one.',
+    };
+  }
+
+  /*
+   * Somebody who was taken out does not get back in with a new code.
+   *
+   * Taking a computer out of a workspace is a decision about that computer, and
+   * a fresh invitation is not a reversal of it — invitations are read aloud
+   * across desks and forwarded. Coming back has to be deliberate, which means
+   * the owner clearing the revocation rather than a code doing it silently.
+   */
+  if (workspace.revoked?.[device?.deviceId]) {
+    await save(workspace);
+    return {
+      ok: false,
+      wasRevoked: true,
+      sentence: 'That computer was taken out of this workspace.',
+      action: 'Whoever owns it has to let it back in — a new code does not undo that.',
     };
   }
 

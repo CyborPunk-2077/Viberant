@@ -152,6 +152,71 @@ describe('a workspace holds the computers that joined it, and no others', () => 
   });
 });
 
+describe('getting in from a computer that has never seen the workspace', () => {
+  test('a workspace handed over is written down, and the codes in it are not', async () => {
+    // Invitations are somebody else's permission to join. A computer that has
+    // just joined holding a list of live codes could let in people the owner
+    // never invited, so whatever arrives in that field, nothing is kept.
+    const handed = {
+      id: 'ws-from-somewhere',
+      name: 'Atlas',
+      owner: 'danni',
+      devices: { mine: { deviceId: 'mine', displayName: 'Danni-PC', person: 'danni' } },
+      members: { danni: { person: 'danni', role: 'owner' } },
+      invites: { abc: { of: 'abc', expiresAt: Date.now() + 60000, usedAt: null } },
+    };
+
+    const out = await members.remember(handed);
+    assert.equal(out.ok, true);
+    assert.deepEqual(out.workspace.invites, {}, 'live codes belonging to somebody else were kept');
+    assert.equal((await members.current()).id, 'ws-from-somewhere');
+  });
+
+  test('and something that is not a workspace is refused', async () => {
+    assert.equal((await members.remember({ id: 'x' })).ok, false);
+    assert.equal((await members.remember(null)).ok, false);
+  });
+
+  test('the way in for joining can do one thing and only that thing', async () => {
+    // The whole reason it is allowed to skip the membership check every other
+    // message begins with. A second message on this path would be a way past
+    // that check.
+    const source = await readFile(join(here, '..', 'joining.mjs'), 'utf8');
+    const door = source.slice(source.indexOf('const door = createServer'), source.indexOf('const up = await'));
+
+    assert.match(door, /asked\.what !== 'join'/, 'it accepts something other than joining');
+    assert.equal(/what === '(?!join)/.test(door), false, 'it answers a second kind of message');
+    assert.match(door, /tooMany\(from\)/, 'nothing limits how many codes may be tried');
+  });
+
+  test('and it never reads a private key', async () => {
+    const source = await readFile(join(here, '..', 'joining.mjs'), 'utf8');
+    for (const never of [/signPrivate/, /agreePrivate/, /privateKey/, /secret\(/]) {
+      assert.equal(never.test(source), false, `joining can reach ${never}`);
+    }
+  });
+
+  test('a computer taken out does not get back in with a fresh code', async () => {
+    const ws = await aWorkspace();
+    const first = await members.invite({ workspace: ws, by: 'danni' });
+    await members.redeem({
+      workspace: await members.current(), code: first.code, person: 'rahul',
+      device: aDevice('theirs', 'Rahul-Laptop', 'rahul'),
+    });
+    await members.revoke(await members.current(), 'theirs');
+
+    const second = await members.invite({ workspace: await members.current(), by: 'danni' });
+    const back = await members.redeem({
+      workspace: await members.current(), code: second.code, person: 'rahul',
+      device: aDevice('theirs', 'Rahul-Laptop', 'rahul'),
+    });
+
+    assert.equal(back.ok, false, 'a revoked computer let itself back in with a new code');
+    assert.equal(back.wasRevoked, true);
+    assert.equal(Object.keys((await members.current()).devices).includes('theirs'), false);
+  });
+});
+
 describe('what the workspace shows is what the workspace holds', () => {
   test('it is built from the members and from nothing else', async () => {
     // The one line that decides. Read from the source, because the fault being

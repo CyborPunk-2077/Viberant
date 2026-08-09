@@ -50,6 +50,7 @@ import * as peers from './peers.mjs';
 import * as device from './device.mjs';
 import * as membersOf from './members.mjs';
 import * as anywhere from './anywhere.mjs';
+import * as joining from './joining.mjs';
 import * as remote from './remote.mjs';
 import * as machines from './machines.mjs';
 import * as syncing from './sync.mjs';
@@ -219,6 +220,55 @@ async function localSharing() {
   }
   const key = await workspace.secret();
   return lan.start({ machine, name: await myName(), account: state.account, key });
+}
+
+/**
+ * Answer people trying to join, whenever there is a live invitation.
+ *
+ * Started when one is made and again when the app starts, so a code read aloud
+ * five minutes ago still works. It answers nobody when there is nothing live,
+ * which is the ordinary state of a workspace.
+ */
+/**
+ * An answer, with the state of the workspace attached — and the answer wins.
+ *
+ * Written out by hand at nine call sites as `{ ...out, ...around() }`, which
+ * quietly reverses what it says: `around()` ends with `ok: true`, so a refusal
+ * combined with it came back as a success. A made-up invitation was answered
+ * "That invitation does not work" **with `ok: true` on it**, so the page said
+ * it had worked. Nothing was let in — the refusal was real — but everything
+ * on the screen said otherwise, which is the failure this project cares about
+ * most.
+ */
+async function withWorkspace(out) {
+  const around = await anywhere.around();
+  return { ...around, ...out };
+}
+
+async function listenForJoiners() {
+  const ws = await membersOf.current();
+  if (!ws) return joining.stopAnswering();
+
+  const live = await membersOf.liveInvites(ws);
+  if (!live.length) return joining.stopAnswering();
+  if (joining.isAnswering()) return null;
+
+  return joining.answerJoiners({
+    liveOnes: async () => {
+      const now = await membersOf.current();
+      return now ? membersOf.liveInvites(now) : [];
+    },
+    // Read fresh, and redeemed against the record this computer actually holds.
+    // Nothing the joiner said decides anything except which code was tried.
+    letThemIn: async (code, card, person) => {
+      const now = await membersOf.current();
+      if (!now) return { ok: false, sentence: 'This computer is not in a workspace.' };
+      const out = await membersOf.redeem({ workspace: now, code, person, device: card });
+      if (out.ok) await activity.remember('joined', { who: card.displayName ?? person, what: now.name });
+      return out;
+    },
+    whoAmI: async () => (await device.card()).displayName,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -788,7 +838,7 @@ const routes = {
     await anywhere.stop().catch(() => null);
     const out = await membersOf.leave(body?.workspace ?? ws.id, me.deviceId);
     if (out.ok) await activity.remember('left', { who: me.displayName });
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   /** End a workspace, as its owner. Separate, and harder to reach. */
@@ -799,7 +849,7 @@ const routes = {
     const me = await device.card();
     await anywhere.stop().catch(() => null);
     const out = await membersOf.close(body?.workspace ?? ws.id, me.deviceId);
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   async 'POST /team/rename'({ body }) {
@@ -808,16 +858,16 @@ const routes = {
     if (!ws || !membersOf.may(ws, me.deviceId, 'manageMembers')) {
       return { ok: false, sentence: 'Only whoever owns this workspace can rename it.', action: null };
     }
-    return { ...(await membersOf.rename(ws.id, body?.name)), ...(await anywhere.around()) };
+    return await withWorkspace(await membersOf.rename(ws.id, body?.name));
   },
 
   async 'POST /team/start'() {
     const out = await anywhere.beAbout();
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   async 'POST /team/stop'() {
-    return { ...(await anywhere.stop()), ...(await anywhere.around()) };
+    return await withWorkspace(await anywhere.stop());
   },
 
   // -- making a workspace, and letting somebody in ---------------------------
@@ -833,7 +883,7 @@ const routes = {
       await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
       await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
     }
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   async 'POST /team/invite'({ body }) {
@@ -848,7 +898,9 @@ const routes = {
         action: 'Ask them to send you a code.',
       };
     }
-    return membersOf.invite({ workspace: ws, by: me.displayName, role: body?.role ?? 'member' });
+    const made = await membersOf.invite({ workspace: ws, by: me.displayName, role: body?.role ?? 'member' });
+    if (made.ok) await listenForJoiners();
+    return made;
   },
 
   async 'POST /team/invite/cancel'({ body }) {
@@ -871,30 +923,47 @@ const routes = {
    * in words that read like a settings problem, which sent people to look for a
    * box that would not have helped.
    */
+  /**
+   * Use a code.
+   *
+   * Two ways, and the second is the one that used to be missing. A computer
+   * already in the workspace redeems the code against the record it has. A
+   * computer that has never seen the workspace has nothing to redeem against,
+   * so it goes and asks: it calls out the fingerprint of the code on this
+   * network, whoever holds a live invitation matching it answers, and the code
+   * itself is then said down one connection to that computer alone.
+   *
+   * The code is the whole of the authorisation. `redeem` runs on the owner's
+   * own record, on the owner's own computer, and already refuses one that has
+   * run out, been used, or been made up.
+   */
   async 'POST /team/join'({ body }) {
-    const ws = await membersOf.current();
-    if (!ws) {
-      return {
-        ok: false,
-        cannotYet: true,
-        sentence: 'This computer cannot reach the workspace that code belongs to.',
-        action: 'A code is permission to join, not the workspace itself — something has to '
-          + 'carry it across. Both computers need the address of the same service, which is '
-          + 'set under Your other computers in Settings. Nothing here has been changed.',
-      };
-    }
     const me = await device.card();
-    const out = await membersOf.redeem({
-      workspace: ws,
-      code: body?.code,
-      person: (await github.session())?.login || me.displayName,
-      device: me,
-    });
+    const person = (await github.session())?.login || me.displayName;
+    const ws = await membersOf.current();
+
+    if (!ws) {
+      const found = await joining.askToJoin({ code: body?.code, card: me, person });
+      if (!found.ok) return found;
+
+      const kept = await membersOf.remember(found.workspace);
+      await anywhere.beAbout({ workspace: kept.workspace }).catch(() => null);
+      await activity.remember('joined', { who: me.displayName, what: kept.workspace.name });
+
+      return withWorkspace({
+        ok: true,
+        workspace: kept.workspace,
+        sentence: `You are in ${kept.workspace.name}.`,
+        action: found.from ? `${found.from} let this computer in.` : null,
+      });
+    }
+
+    const out = await membersOf.redeem({ workspace: ws, code: body?.code, person, device: me });
     if (out.ok) {
       await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
       await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
     }
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   // -- who may do what -------------------------------------------------------
@@ -916,7 +985,7 @@ const routes = {
         what: { remoteTerminal: 'open a terminal', remoteRun: 'run things', remoteBuild: 'build' }[body.capability] ?? body.capability,
       });
     }
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   async 'POST /team/revoke'({ body }) {
@@ -928,7 +997,7 @@ const routes = {
     const gone = ws.devices?.[body?.what]?.displayName ?? body?.what;
     const out = await membersOf.revoke(ws, body?.what);
     if (out.ok) await activity.remember('revoked', { who: gone });
-    return { ...out, ...(await anywhere.around()) };
+    return await withWorkspace(out);
   },
 
   // -- doing something on a computer of yours --------------------------------
