@@ -3,8 +3,9 @@
 *Viberant 2.x is finished. What follows is what was deliberately left out, so
 nobody has to rediscover the reasoning.*
 
-**Where it is:** working tree clean, 686 tests passing (579 app, 107 core),
-installer built at `dist/Viberant-Setup-0.1.0.exe`.
+**Where it is:** 699 tests passing (592 app, 107 core). The installer needs
+building again — `npm run build` — because everything below the last line of
+this file changed after `dist/Viberant-Setup-0.1.0.exe` was made.
 
 ---
 
@@ -19,7 +20,15 @@ file. Comparing a project across two computers without moving anything, and
 then a sync that moves only what changed, keeps what somebody chose to keep,
 takes a copy of anything about to be written over, and checks the result.
 
-All of it tested with two independent profiles on one machine. To do that:
+**And the whole errand end to end, between two copies actually running.**
+`app/test/workspace-flow.test.mjs` starts them, forms a workspace through the
+routes the buttons use, and drives it: enter, see who is there, see a project
+somebody else changed, look at what is different, bring it over, settle a
+disagreement, up to date. It found three faults that every test above had passed
+over — D-193, D-194, D-196 — and two of them were only visible on the second
+press. Anything added to the workspace belongs in that file.
+
+The same thing by hand, with two independent profiles on one machine:
 
 ```
 USERPROFILE=<a folder> PORT=7801 node app/server.mjs

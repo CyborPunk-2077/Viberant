@@ -53,10 +53,12 @@ import * as parcel from './parcel.mjs';
 export async function manifest(root, { everything = false } = {}) {
   const seen = await parcel.survey(root, { everything });
 
+  // The survey has already asked the disk about every one of these, so the
+  // moment comes back with it. Asking a second time was a whole extra pass over
+  // the project for something already known.
   const files = {};
   for (const one of seen.files) {
-    const when = await stat(one.from ?? join(root, one.path)).then((s) => s.mtimeMs).catch(() => 0);
-    files[one.path] = { size: one.size, when: Math.round(when) };
+    files[one.path] = { size: one.size, when: one.when ?? 0 };
   }
 
   return {
@@ -362,11 +364,30 @@ export async function bring({
 
   const landed = await manifest(into, { everything: false });
   const wantedFiles = Number(head.whole?.files ?? 0);
-  const wantedBytes = Number(head.whole?.bytes ?? 0);
   const hereFiles = Object.keys(landed.files).length;
   const hereBytes = Object.values(landed.files).reduce((sum, one) => sum + one.size, 0);
 
-  if (wantedFiles && (hereFiles !== wantedFiles || hereBytes !== wantedBytes)) {
+  /*
+   * What the folder should come to, given what somebody chose to keep.
+   *
+   * The far end says what the whole project is over there. Here it is that,
+   * less their version of every file that was kept, plus this end's version of
+   * it. Without the adjustment, keeping so much as one line of your own made
+   * the closing count disagree and a sync that did exactly what it was asked
+   * reported that it had failed — the one thing this project promises never to
+   * do. A far end too old to say how big each file is says nothing, and then
+   * only the count of files is held against it, which is what was checked
+   * before any of this existed.
+   */
+  const theirSizes = head.sizes ?? null;
+  let wantedBytes = Number(head.whole?.bytes ?? 0);
+  let countBytes = !!theirSizes || held.size === 0;
+  for (const [path, bytes] of held) {
+    if (!theirSizes || theirSizes[path] === undefined) { countBytes = false; break; }
+    wantedBytes = wantedBytes - Number(theirSizes[path]) + bytes.length;
+  }
+
+  if (wantedFiles && (hereFiles !== wantedFiles || (countBytes && hereBytes !== wantedBytes))) {
     return {
       ok: false,
       wayBack,
@@ -425,6 +446,10 @@ export async function serve({ channel, dir, everything = false }) {
     toSend: work.toSend,
     bytesToSend: work.bytesToSend,
     bytesUnchanged: work.bytesUnchanged,
+    // How big each of these is here. The asking end needs it to work out what
+    // the folder should come to once anything it chose to keep is put back —
+    // two versions of one file are rarely the same size.
+    sizes: Object.fromEntries(work.toSend.map((path) => [path, whole.files[path]?.size ?? 0])),
   })}\n`);
 
   await channel.pour(parcelOf.wrap(dir, { everything, seen: toSend }));

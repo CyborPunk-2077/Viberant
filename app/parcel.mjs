@@ -37,7 +37,7 @@
  */
 
 import { createReadStream, createWriteStream, existsSync } from 'node:fs';
-import { mkdir, readdir, stat, rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, stat, rm, readFile, writeFile, utimes } from 'node:fs/promises';
 import { join, dirname, relative, sep, resolve } from 'node:path';
 import { createGzip, createGunzip } from 'node:zlib';
 import { PassThrough } from 'node:stream';
@@ -117,8 +117,15 @@ export async function survey(root, { everything = false } = {}) {
       }
 
       let size;
+      let when;
       try {
-        size = (await stat(path)).size;
+        const known = await stat(path);
+        size = known.size;
+        // The moment it was last written, carried from here to the far end and
+        // put back there. Without it, a file that arrived is a file with
+        // today's date, every comparison afterwards says it differs from the
+        // one it was copied from, and a sync can never end in "up to date".
+        when = Math.round(known.mtimeMs);
       } catch (e) {
         unreadable.push({ path: named, why: e.code ?? 'unreadable' });
         continue;
@@ -133,7 +140,7 @@ export async function survey(root, { everything = false } = {}) {
       // computer's absolute paths. `from` is where to read it here. Carrying
       // only the first one is how the sender ends up opening files relative to
       // wherever it happens to be running.
-      files.push({ path: named, from: path, size });
+      files.push({ path: named, from: path, size, when });
       bytes += size;
     }
   };
@@ -245,7 +252,7 @@ export function wrap(root, { everything = false, seen = null } = {}) {
       // has given up and walked off.
       if (out.destroyed) return;
 
-      await put(`${JSON.stringify({ path: one.path, size: one.size })}\n`);
+      await put(`${JSON.stringify({ path: one.path, size: one.size, when: one.when ?? null })}\n`);
 
       // Read by hand rather than with `pipeline(…, { end: false })`.
       //
@@ -487,11 +494,25 @@ export async function unwrap(stream, into, {
     });
   };
 
-  const openFor = async (named, size) => {
+  /**
+   * Give a file back the moment it was last written where it came from.
+   *
+   * Quietly, and never fatally: a folder that arrived is worth having even on a
+   * disk that will not take a timestamp. What it buys is that the copy and the
+   * original are recognisably the same file afterwards, which is what lets a
+   * sync say "up to date" instead of offering to bring everything again.
+   */
+  const putTheMomentBack = async (at, when) => {
+    if (!at || !when) return;
+    const secs = when / 1000;
+    await utimes(at, secs, secs).catch(() => {});
+  };
+
+  const openFor = async (named, size, when = null) => {
     const path = safely(half, named);
     if (!path) throw new Error('a file tried to land outside the folder');
     await mkdir(dirname(path), { recursive: true });
-    landing = { path: named, size };
+    landing = { path: named, size, when, at: path };
     writing = createWriteStream(path);
     // A disk that fills up, or a name this computer will not accept, used to be
     // nobody's business: the stream was written to and never listened to, so
@@ -504,6 +525,7 @@ export async function unwrap(stream, into, {
       files += 1;
       forgetOldCopyOf(named);
       carried.set(named, 0);
+      await putTheMomentBack(path, when);
       landing = null;
     }
   };
@@ -525,6 +547,7 @@ export async function unwrap(stream, into, {
           if (landing) {
             forgetOldCopyOf(landing.path);
             carried.set(landing.path, landing.size);
+            await putTheMomentBack(landing.at, landing.when);
           }
           landing = null;
         }
@@ -553,7 +576,7 @@ export async function unwrap(stream, into, {
         continue;
       }
 
-      await openFor(said.path, Number(said.size) || 0);
+      await openFor(said.path, Number(said.size) || 0, Number(said.when) || null);
     }
   };
 

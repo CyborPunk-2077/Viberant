@@ -2109,6 +2109,75 @@ So the rule is about the shape of the hand-over rather than about stream state: 
 
 **Why.** Somebody is in the middle of something. A computer in another room changing a file is not a reason to move anything under their hands, and it is certainly not a reason to redraw a page.
 
+**Amended by D-195.** Inside the workspace, a change to the project on screen is said *on the project*, not in the corner. The corner is for somewhere else; this is here.
+
+---
+
+### D-191 `[DECIDED]` — A workspace is a place you go into, and projects are what is in it
+
+**Decision.** The Workspace page lists the workspaces this computer is in and gets out of the way. **Enter workspace** opens a screen of its own: people down the left with their computers indented under them and the shared projects below, the selected project in the middle with its copies and what can be done about them, and the inspector on the right showing whichever of person, computer or project was last pressed.
+
+**Why.** It was a list of computers, and a list of computers answers the least interesting of the three questions somebody has. What they want to know is what we are working on, who else has a copy, and whether mine is behind. Computers are how a project comes to have more than one copy; they are not the point, and putting them first made everything else look like configuration.
+
+**What was rejected.** Panes that can be dragged, tabs, and anything resembling an editor. The constraint was explicit and it is the right one: this is not Slack, Jira, Dropbox or an editor. Two columns and the inspector the app already has.
+
+**Nothing new was built underneath it.** Presence, transfer, comparison, conflicts, ways back and the stream all existed. This is a screen over them.
+
+---
+
+### D-192 `[DECIDED]` — A project is in a workspace because somebody offered it
+
+**Decision.** `GET /team/projects` folds this computer's own offers together with those of each member who is online, by name, and answers with each project's copies, which of them is yours, and whether it is shared, only here, or only theirs. A folder that has not been offered is not in the answer, whoever it belongs to and whatever else is on the disk beside it.
+
+**Why.** The alternative — showing what is on each computer — is a window into somebody's machine that they did not open. Held by a test that offers one folder, leaves another beside it, and fails if the second one is ever named.
+
+---
+
+### D-193 `[DECIDED]` — A file carries the moment it was written, and a sync can therefore end
+
+**Decision.** A parcel carries each file's moment and puts it back on the far side. `survey` reads it once, which also removes a second pass over the whole project that `manifest` was making to ask the same question again.
+
+**Why, and this is a fault rather than an improvement.** Comparison is by size and moment. Nothing carried the moment, so every file that arrived got today's date, and from then on it differed from the file it had just been copied from — for good. **A sync could never say "up to date".** Pressing it again offered to bring the same files over again, and again. Every part of this worked on its own; only the whole errand, run twice, could show it.
+
+---
+
+### D-194 `[DECIDED]` — What somebody chose to keep is counted as theirs, not as a shortfall
+
+**Decision.** The closing check still holds the folder against what the far end said the project comes to. The expected size now has their version of each kept file taken off and this computer's version added on. A far end too old to say how big its files are says nothing, and then only the count of files is checked, which is what was checked before any of this existed.
+
+**Why.** Two versions of a file are rarely the same size. Keeping one line of your own made the totals disagree and a sync that had done exactly what it was asked reported that it had failed — the inversion of the rule this project cares about most. The errand a person runs ends "settle the disagreement, then up to date", and it could not.
+
+---
+
+### D-195 `[DECIDED]` — Inside the workspace, a change to the project on screen is said on the project
+
+**Decision.** When the stream carries a change naming the project being looked at, one line appears above its copies with what happened and the way to see it. One element is written; nothing else on the page moves. Everywhere else, D-190 stands and it is a line in the corner.
+
+**Why.** The corner is right for "something happened somewhere else". It is wrong for "the thing in front of you just changed", which is not elsewhere at all.
+
+**And the screen is looked at again every ten seconds, almost always for nothing.** What is said arrives on the stream; who is here does not, because going quiet is the absence of a thing rather than a thing. The page is compared against what it last produced and each box against what it is showing, so a workspace where nothing moved is checked and never touched — measured in a browser across a full cycle: same elements, same choice, nothing redrawn.
+
+---
+
+### D-196 `[DECIDED]` — Ask the computer for the name it uses, with the function that exists
+
+**Decision.** `realpathSync.native` from `node:fs`, wrapped once as `asWindowsKnowsIt`, used by both watchers.
+
+**Why this is worth a decision of its own.** D-77's fix for the uncatchable watcher crash used `realpath.native` from `node:fs/promises` — **and the promised version has no `native` at all.** It is `undefined`, calling it threw on the first line, and the `try` that was there for a folder that had gone away swallowed it. So the fix was written, checked by reading, and never once ran: **watching a project has been off entirely, on every machine, since the day it was added.** Nothing threw where anybody could see it, and the only symptom was that something nobody was watching for did not happen.
+
+Meanwhile the other watcher — the one for offered folders — deliberately did not resolve paths at all, on a measurement that resolving them stopped anything arriving. That left the original crash live: a folder under a shortened name (`C:\Users\ADMINI~1\...`, which plenty of ordinary things hand out) fails a check inside the watcher underneath Node and takes the whole manager down with it, uncatchably, the moment anything in it moves. Offering such a folder ended the app. The measurement is kept — the offered path is used wherever it is already the name Windows uses — and only where it is not does the resolved name win, because there the alternative is not a worse option, it is the end of the process.
+
+**Found by starting the app for real, twice, and asking it to share a folder.** Neither half could have been found by testing a part.
+
+---
+
+### D-197 `[DECIDED]` — The whole errand is tested against two copies that are actually running
+
+**Decision.** `app/test/workspace-flow.test.mjs` starts two real `server.mjs` processes with their own homes and their own doors, forms a workspace through the same routes the buttons use, and drives the whole thing over HTTP: both appear to each other, an uninvited third does not, nothing is shared until it is offered, a change made on one is seen from the other, looking writes nothing, bringing it over ends up to date, a file changed in both places is a question and keeping yours keeps yours, and the workspace is still there after the app is stopped and started.
+
+**Why.** Every piece of this had tests and all of them passed. Three faults — D-193, D-194 and both halves of D-196 — were sitting underneath them, and each one broke the errand rather than a part. Two are the kind that only appear the second time you press something.
+
+**The cost is honest and worth saying:** about eleven seconds, and it needs the doors free. `VIBERANT_PORT_SHIFT` already existed for exactly this.
 
 ---
 

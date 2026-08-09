@@ -3242,3 +3242,110 @@ select { cursor: pointer; }
 @media (max-width: 58rem) {
   .compare-cols { grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, auto); }
 }
+
+/* ------------------------------------------------------------------------- */
+/* Inside a workspace                                                         */
+/*                                                                            */
+/* Two columns here and the inspector on the right of the shell makes three,  */
+/* which is the order the questions get asked in: who is here, what are we    */
+/* working on, and what about the thing I just pressed. The left column is    */
+/* narrow on purpose — it is a list of names, and giving it more room would   */
+/* take room from the only column where anything happens.                     */
+/* ------------------------------------------------------------------------- */
+
+.wsenv {
+  display: grid;
+  grid-template-columns: minmax(0, 17rem) minmax(0, 1fr);
+  gap: var(--s6);
+  align-items: start;
+}
+.wsenv .side {
+  position: sticky;
+  top: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  min-width: 0;
+}
+.wsenv .middle { min-width: 0; }
+
+.wsperson {
+  padding: var(--s2) 0 var(--s3);
+  border-radius: var(--r-input);
+  cursor: pointer;
+}
+.wsperson > .who {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  font-size: var(--t-sub);
+}
+.wsperson.on > .who { color: var(--vibe-b); }
+
+/*
+ * A computer, indented under the person who sits at it.
+ *
+ * The indent is the whole point: it is what says these are not two people. A
+ * flat list of names read a laptop and a desktop as two colleagues, which is
+ * the one thing this screen must never do.
+ */
+.wsdevice {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  margin-left: var(--s4);
+  padding: var(--s2) var(--s3);
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0 var(--r-input) var(--r-input) 0;
+  background: none;
+  color: var(--quiet);
+  font-family: inherit;
+  font-size: var(--t-meta);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--m-hover) var(--ease), color var(--m-hover) var(--ease);
+}
+.wsdevice:hover { background: var(--hover); color: var(--ink); }
+.wsdevice.away { opacity: .62; }
+.wsdevice .how {
+  flex: none;
+  max-width: 7rem;
+  overflow: hidden;
+  color: var(--faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wsproject {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s3);
+  border: 1px solid transparent;
+  border-radius: var(--r-input);
+  background: none;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--t-sub);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--m-hover) var(--ease), border-color var(--m-hover) var(--ease);
+}
+.wsproject:hover { background: var(--hover); }
+.wsproject.on { background: var(--raised); border-color: var(--line-strong); }
+.wsproject .grow { display: grid; min-width: 0; }
+.wsproject b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsproject .where { color: var(--faint); font-size: var(--t-meta); }
+
+/* Notes belong beside the work, so they get a fraction of the height they had
+   when they were a page of their own. */
+.talk.short { max-height: 14rem; }
+
+@media (max-width: 62rem) {
+  .wsenv { grid-template-columns: minmax(0, 1fr); }
+  .wsenv .side { position: static; }
+}

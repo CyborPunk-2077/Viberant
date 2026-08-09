@@ -87,8 +87,24 @@ describe('a way back exists before a byte lands', () => {
 describe('what came over is checked against what was there', () => {
   test('the count and the size both have to agree', () => {
     const mine = bringing();
-    assert.match(mine, /hereFiles !== wantedFiles \|\| hereBytes !== wantedBytes/,
-      'a sync can report success without the tree matching');
+    assert.match(mine, /hereFiles !== wantedFiles/,
+      'a sync can report success with files missing from the tree');
+    assert.match(mine, /hereBytes !== wantedBytes/,
+      'a sync can report success with the tree the wrong size');
+  });
+
+  /*
+   * The size is held against what the folder *should* come to, which is not
+   * what the far end has whenever somebody kept a version of their own. Before
+   * this, keeping one line of your own made the totals disagree and a sync that
+   * had done exactly what it was asked reported that it had failed.
+   */
+  test('and what somebody chose to keep is counted as theirs, not as a shortfall', () => {
+    const mine = bringing();
+    assert.match(mine, /wantedBytes = wantedBytes - Number\(theirSizes\[path\]\) \+ bytes\.length/,
+      'keeping your own version of a file is read as the sync having gone wrong');
+    assert.match(mine, /countBytes/,
+      'a far end that cannot say how big its files are makes the whole check fail');
   });
 
   test('and a failure says nothing was lost, when nothing was', () => {

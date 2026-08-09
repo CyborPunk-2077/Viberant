@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "viberant",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["app/server.mjs"],
+      "port": 7777
+    }
+  ]
+}

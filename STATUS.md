@@ -2,11 +2,11 @@
 
 *What is done and what is left, in plain language. Updated every session.*
 
-**Last updated:** 8 August 2026
-**Tests:** 579 in the app and 107 in core — 686 in all — passing on Windows. The ones added last hold the two decisions
-that would be most expensive to lose: nothing that decides where work goes can
-read a Google account, and there is no code anywhere that could download an
-update and run it.
+**Last updated:** 9 August 2026
+**Tests:** 592 in the app and 107 in core — 699 in all — passing on Windows. The
+twelve added last are the whole workspace errand driven against two copies of the
+app that are actually running, which found three faults that every existing test
+had passed straight over.
 **What it is now:** a manager for one project across every AI app, every terminal, GitHub, the world, and every computer you own.
 
 ## Viberant 2.0, so far
@@ -833,6 +833,72 @@ colour that means something it does not mean.
 
 ---
 
+## The workspace is a place you go into
+
+It was a list of computers, which answers the least interesting of the three
+questions somebody has about a workspace. **Enter workspace** now opens a screen
+of its own: people down the left with their computers indented under them, the
+shared projects below that, the chosen project in the middle with every copy of
+it and what can be done about each, and the panel on the right filling with
+whichever of person, computer or project was last pressed. Notes and what has
+happened lately sit under the project rather than instead of it. D-191.
+
+**A project is in a workspace because somebody offered it**, never because it is
+on a computer. One route folds your own offers together with those of everybody
+online, by name, and says which copies exist and which one is yours. A folder
+sitting next to an offered one is not in the answer. D-192.
+
+**A change somewhere else is said on the project, not in the corner.** The corner
+is right for "something happened elsewhere" and wrong for "the thing in front of
+you just changed". One element is written and nothing else moves. The screen also
+looks again every ten seconds, almost always for nothing: it is compared against
+what it last produced, so a workspace where nothing moved is checked and never
+touched — measured in a browser across a full cycle, with the same elements, the
+same choice and nothing redrawn. D-195.
+
+---
+
+## Three faults that only two running copies could find
+
+The whole errand is now a test: two real `server.mjs` processes with their own
+homes and their own doors, forming a workspace through the same routes the
+buttons use, and driving it over HTTP. Every piece of this already had tests and
+every one of them passed. D-197.
+
+**A sync could never say "up to date".** Files are compared by size and moment,
+and nothing carried the moment — so every file that arrived got today's date and
+differed from the file it had just been copied from, for good. Press it again and
+it offered to bring the same files over again. A parcel now carries each file's
+moment and puts it back, which also removed a second pass over the whole project
+that was asking the disk a question it had already been asked. D-193.
+
+**Keeping your own version of a file reported the sync as failed.** The closing
+check held the folder against what the far end has, and two versions of a file
+are rarely the same size — so keeping one line of your own made the totals
+disagree and a sync that did exactly what it was asked said it had not. The
+inversion of the rule this project cares about most, on the last step of the
+errand a person actually runs. D-194.
+
+**Watching a project has been off entirely since the day it was added, and
+offering a folder under a shortened name ended the app.** Both halves of one
+mistake. The fix for the uncatchable watcher crash called `realpath.native` on
+the promised file interface — which has no `native` at all. It is `undefined`,
+calling it threw on the first line, and the `try` that was there for a missing
+folder swallowed it. So the fix never ran once, and nothing anywhere said so. The
+other watcher deliberately did not resolve paths, on a measurement that is still
+right, which left the original crash live: `C:\Users\ADMINI~1\...` is a name
+plenty of ordinary things hand out, and the watcher underneath Node ends the
+whole process the moment anything in such a folder moves. D-196.
+
+**What the test holds, beyond those:** a computer on the same network that was
+never invited is not a member and does not believe it is one; a person and a
+computer stay separate things; nothing is shared until it is offered; looking at
+what is different writes nothing, checked on disk; a file changed in both places
+is a question and whatever you keep is left exactly as it was; and the workspace
+is still there after the app is stopped and started.
+
+---
+
 ## What was found by pressing the buttons, this time
 
 Six faults, found by driving the real app rather than by reading it. Four of them
@@ -963,6 +1029,17 @@ live with, which means finding out the hard way at least once.
 **Six runs of the tests say things one run does not.** Two of six reported a
 folder as having failed to arrive when every byte of it was there. One run looks
 like a pass; six looks like a bug that would have reached somebody.
+
+**And the second press says things the first one does not.** Two of the three
+faults above are invisible on a first run and certain on a second: a sync that
+cannot recognise what it just wrote looks perfect once. Nothing that tested a
+part could have found either, because each part was right.
+
+**A `try` that swallows one kind of failure swallows every kind.** The one around
+the watcher was there for a folder that had gone away. What it actually caught,
+every time, was the fix above it calling a function that does not exist — for
+months, silently, on every machine. A guard placed to make something survive can
+just as easily make it never happen.
 
 **Four sentences named a place that had not existed for several decisions.**
 Nothing checks that an action is pointing at something real, and nothing can,

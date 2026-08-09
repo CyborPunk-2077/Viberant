@@ -12,8 +12,8 @@
 
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
-import { existsSync, statSync, watch } from 'node:fs';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
+import { existsSync, statSync, watch, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve, basename, extname, normalize } from 'node:path';
 import { hostname } from 'node:os';
@@ -183,12 +183,36 @@ let watcher = null;
  * keeps the name the person chose it by everywhere else, because that name is
  * how a project is recognised again next time.
  */
+/**
+ * The name Windows itself uses for a folder, or nothing.
+ *
+ * `realpathSync.native` and not `realpath.native`: **the promised version of
+ * this function has no `native` at all.** Reaching for it does not fail
+ * loudly, it is `undefined`, and calling `undefined(dir)` threw a `TypeError`
+ * from inside the `try` that was there for a folder that had gone away. So the
+ * fix above was written, checked by reading, and never once ran: every call
+ * threw on its first line and every watcher was quietly skipped. Watching a
+ * project has therefore been off entirely, for every folder on every machine,
+ * since the day it was added.
+ *
+ * Found by starting the app for real and asking it to share a folder, which is
+ * the only thing that could have found it — nothing here throws where anybody
+ * can see, and the only symptom is that something nobody was watching for did
+ * not happen.
+ */
+const asWindowsKnowsIt = (dir) => {
+  try { return realpathSync.native(dir); } catch { return null; }
+};
+
 async function watchProject(dir) {
   watcher?.close();
   watcher = null;
   if (!dir || !(await settings.get('watchFolder'))) return;
+  const real = asWindowsKnowsIt(dir);
+  // No name that Windows itself agrees to means no watching. Handing it the
+  // other name is not a lesser option, it is the end of the process.
+  if (!real) return;
   try {
-    const real = await realpath.native(dir).catch(() => dir);
     watcher = watch(real, { recursive: true }, (_kind, name) => {
       const path = String(name ?? '');
       if (path.includes('node_modules') || path.includes('.git\\objects') || path.includes('.git/objects')) return;
@@ -241,16 +265,31 @@ async function watchWhatIsOffered() {
     const held = { watcher: null, settling: null };
     try {
       /*
-       * Watched at the path it was offered at.
+       * Watched at the path it was offered at — unless Windows knows it by
+       * another name, in which case that one, because the alternative is the
+       * app ending.
        *
-       * Resolving it first looks tidier and is how this was written, and on
-       * Windows it can hand back a form of the path that `watch` accepts and
-       * then never reports anything from — no error, no events, and an entry
-       * left in the list so it is never tried again. Measured: the same folder
-       * watched at its own path fired twice and at its resolved path fired
-       * never.
+       * Resolving every path first looks tidier and is how this was written,
+       * and on Windows it can hand back a form of the path that `watch` accepts
+       * and then never reports anything from — no error, no events, and an
+       * entry left in the list so it is never tried again. Measured: the same
+       * folder watched at its own path fired twice and at its resolved path
+       * fired never. So the offered path is kept wherever it is already the
+       * name Windows uses, which is almost everywhere.
+       *
+       * Where it is not, there is nothing to weigh up. A folder under a
+       * shortened name — `C:\Users\ADMINI~1\...`, which plenty of ordinary
+       * things hand out — fails an assertion inside the watcher and takes the
+       * whole manager down with it, uncatchably, the moment anything in it
+       * moves. Offering such a folder crashed the app. It is the same fault
+       * `watchProject` above was fixed for, and this was the half that was
+       * missed.
        */
-      held.watcher = watch(one.path, { recursive: true }, (_kind, name) => {
+      const known = asWindowsKnowsIt(one.path);
+      if (!known) continue;
+      const sameName = known.toLowerCase() === one.path.toLowerCase();
+
+      held.watcher = watch(sameName ? one.path : known, { recursive: true }, (_kind, name) => {
         const path = String(name ?? '');
         // The noisy folders nobody shares on purpose.
         if (path.includes('node_modules') || path.includes('.git')) return;
@@ -953,6 +992,77 @@ const routes = {
       // page can offer them rather than offering and then refusing.
       mayManage: !!ws && membersOf.may(ws, me.deviceId, 'manageMembers'),
     };
+  },
+
+  /**
+   * The projects this workspace shares, and who has a copy of each.
+   *
+   * A project is in a workspace because somebody offered it, never because it
+   * exists on a computer. So this is built from what each member is actually
+   * offering — asked of them, not assumed — and folded together by name,
+   * which is what makes "your copy and Rahul's copy" one row rather than two
+   * unrelated folders that happen to share a name.
+   */
+  async 'GET /team/projects'() {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: true, projects: [] };
+
+    const me = await device.card();
+    const around = await anywhere.around({ workspace: ws }).catch(() => null);
+    const everybody = [...(around?.mine ?? []), ...(around?.team ?? [])];
+
+    const byName = new Map();
+    const note = (name, who) => {
+      const key = String(name).toLowerCase();
+      if (!byName.has(key)) byName.set(key, { name, copies: [] });
+      byName.get(key).copies.push(who);
+    };
+
+    for (const one of await lan.offers()) {
+      if (one.kind === 'file') continue;
+      note(one.name, {
+        deviceId: me.deviceId,
+        device: me.displayName,
+        person: ws.devices?.[me.deviceId]?.person ?? me.displayName,
+        you: true,
+        online: true,
+        offer: one.id,
+        path: one.path,
+        files: one.files ?? null,
+        bytes: one.bytes ?? null,
+      });
+    }
+
+    // Asked of each computer that is actually here. One that is not simply has
+    // no copy listed, which is true rather than a guess.
+    await Promise.all(everybody.filter((who) => !who.you && who.online).map(async (who) => {
+      const theirs = await lan.offeredBy(who.deviceId).catch(() => null);
+      for (const one of theirs?.offers ?? []) {
+        if (one.kind === 'file') continue;
+        note(one.name, {
+          deviceId: who.deviceId,
+          device: who.displayName,
+          person: who.person ?? who.displayName,
+          you: false,
+          online: true,
+          offer: one.id,
+          files: one.files ?? null,
+          bytes: one.bytes ?? null,
+        });
+      }
+    }));
+
+    const projects = [...byName.values()].map((one) => ({
+      ...one,
+      mine: one.copies.find((c) => c.you) ?? null,
+      others: one.copies.filter((c) => !c.you),
+      // Whether anybody else has one at all is the only thing knowable without
+      // asking what is inside, and asking that is a separate press.
+      state: one.copies.some((c) => c.you) && one.copies.length > 1 ? 'SHARED'
+        : one.copies.some((c) => c.you) ? 'ONLY_HERE' : 'ONLY_THEIRS',
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    return { ok: true, projects, workspace: { id: ws.id, name: ws.name } };
   },
 
   /**

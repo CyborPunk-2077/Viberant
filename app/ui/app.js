@@ -813,6 +813,44 @@ function mention({ what, bad = false, goTo = null }) {
 }
 
 /**
+ * Something happened to the project being looked at, said on the project.
+ *
+ * Returns whether it was dealt with here. One line appears above the copies,
+ * naming who changed it and offering the two things there are to do about it.
+ * No redraw: a change arriving is not a reason to rebuild a screen somebody is
+ * reading, and rebuilding it is how a selection and a scroll position are lost.
+ */
+function saidAboutThisProject(one) {
+  const named = one.project ?? null;
+  if (!named || !lookingAtProject) return false;
+  if (String(named).toLowerCase() !== String(lookingAtProject).toLowerCase()) return false;
+
+  const middle = document.querySelector('.wsenv .middle');
+  if (!middle || !middle.isConnected) return false;
+
+  const already = $('#ws-news');
+  const line = already ?? document.createElement('div');
+  line.id = 'ws-news';
+  line.className = `said ${one.kind === 'sync.failed' ? 'bad' : ''}`;
+
+  const what = one.kind === 'project.changed'
+    ? `${one.fromName ?? 'Another computer'} changed ${named}.`
+    : one.text ?? 'A sync finished.';
+
+  line.innerHTML = `<b>${esc(what)}</b>
+    <span class="acts">
+      <button class="small" id="ws-news-look">See what is different…</button>
+    </span>`;
+  if (!already) middle.prepend(line);
+
+  $('#ws-news-look').onclick = () => {
+    const look = $('#ws-look');
+    if (look) look.click(); else draw({ quietly: true });
+  };
+  return true;
+}
+
+/**
  * One thing happened. Change the smallest part of the page that says so.
  *
  * Never a redraw. The whole reason this exists is that a sentence arriving
@@ -828,6 +866,11 @@ function somethingHappened(one) {
    * place where something can be done about it; ignoring it costs nothing.
    */
   if (one.kind === 'project.changed' || one.kind === 'sync.completed' || one.kind === 'sync.failed') {
+    // Inside the workspace, a change to the project on screen belongs on the
+    // project rather than in the corner. Written into the one element that says
+    // it, so nothing else on the page moves and nobody loses their place.
+    if (inWorkspace && saidAboutThisProject(one)) return;
+
     mention({
       bad: one.kind === 'sync.failed',
       what: one.kind === 'project.changed'
@@ -1507,9 +1550,12 @@ function inspectMachine(m, near, w) {
  * it would be the worst thing in this product — so this asks, compares, and
  * says. What to do about it is a separate press.
  */
-async function whatIsDifferent(m, w) {
+async function whatIsDifferent(m, w, about = null) {
+  const named = about?.project?.name ?? me.currentName;
+  const mineAt = about ? about.mineAt : me.current;
+
   sheet({
-    title: `${me.currentName} · here and on ${m.name}`,
+    title: `${named} · here and on ${m.name}`,
     narrow: true,
     body: '<div class="ai-state"><span class="spin"></span> Asking what that computer has…</div>',
     foot: '<button class="quiet" id="diff-no">Close</button>',
@@ -1518,13 +1564,20 @@ async function whatIsDifferent(m, w) {
 
   // Whichever of their offerings is this project, by name. Nothing is compared
   // against a folder that merely happens to be next in a list.
-  const mine = (me.currentName ?? '').toLowerCase();
-  const theirs = (w.projects ?? []).find((one) => one.from === m.id
-    && String(one.name).toLowerCase() === mine);
+  const mine = (named ?? '').toLowerCase();
+  const theirs = about?.offer
+    ? { offer: about.offer }
+    : (w.projects ?? []).find((one) => one.from === m.id
+      && String(one.name).toLowerCase() === mine);
 
-  const out = theirs
-    ? await post('/workspace/changes', { device: m.id, offer: theirs.offer ?? theirs.id })
-    : { ok: false, sentence: `${m.name} is not offering ${me.currentName}.`, action: 'Ask for it to be offered there first.' };
+  const nowhereHere = !mineAt
+    ? { ok: false, sentence: `There is no copy of ${named} on this computer yet.`,
+      action: `Ask ${m.name} to send one, or open the folder here first.` }
+    : null;
+
+  const out = nowhereHere ?? (theirs
+    ? await post('/workspace/changes', { device: m.id, offer: theirs.offer ?? theirs.id, dir: mineAt })
+    : { ok: false, sentence: `${m.name} is not offering ${named}.`, action: 'Ask for it to be offered there first.' });
 
   const body = $('#sheet-body');
   if (!body || !body.isConnected) return;
@@ -1604,7 +1657,7 @@ async function whatIsDifferent(m, w) {
     const started = await post('/sync/bring', {
       device: m.id,
       offer: theirs?.offer ?? theirs?.id,
-      path: me.current,
+      path: mineAt,
       keepMine: [...keeping],
     });
 
@@ -5146,6 +5199,7 @@ async function drawTeam() {
     <div class="sect"><h2>${esc(t.workspace.name)}</h2>
       <span class="count">${t.mine.length + t.team.length}</span>
       <span class="grow"></span>
+      <button class="go small" id="team-enter">Enter workspace →</button>
       <button class="small" id="team-invite">Invite somebody</button>
       <button class="quiet small" id="team-manage">Manage…</button>
     </div>
@@ -5156,6 +5210,7 @@ async function drawTeam() {
 
     <div id="lately"></div>`;
 
+  $('#team-enter').onclick = () => { inWorkspace = true; draw(); };
   $('#team-invite').onclick = inviteSomebody;
   $('#team-manage').onclick = () => manageWorkspace(t);
 
@@ -5202,13 +5257,27 @@ async function drawLately() {
   const said = await get('/team/activity');
   if (!box.isConnected || !said.activity?.length) return;
 
-  box.innerHTML = `
-    <div class="sect"><h2>Lately</h2></div>
+  fill(box, `
+    ${box.dataset.titled ? '' : '<div class="sect"><h2>Lately</h2></div>'}
     <ul class="steps">
       ${said.activity.slice(0, 12).map((one) => `
         <li><span>${esc(one.sentence)}</span>
           <span style="color:var(--faint)">${esc(ago(one.at))}</span></li>`).join('')}
-    </ul>`;
+    </ul>`);
+}
+
+/**
+ * Write into a box, unless it is already showing exactly that.
+ *
+ * The same guard the whole page has, for the boxes filled in afterwards. What
+ * it buys is that something looked at on a timer can be looked at on a timer:
+ * a list that has not changed costs nothing, keeps its scroll, and does not
+ * blink. Without it, every check is a rebuild of something identical.
+ */
+function fill(box, html) {
+  if (!box || box.dataset.showing === html) return;
+  box.dataset.showing = html;
+  box.innerHTML = html;
 }
 
 /** What is known about one computer in the workspace. */
@@ -5696,7 +5765,77 @@ async function openRemoteTerminal(deviceId, who) {
   };
 }
 
-SCREENS.workspace = async () => {
+/**
+ * The workspaces this computer is in, before going into one.
+ *
+ * The question this answers is "which one", and after that it gets out of the
+ * way. Everything about actually working together is behind Enter.
+ */
+/**
+ * Saying something, wired wherever the box happens to be.
+ *
+ * The same three elements appear on the overview and inside the workspace, so
+ * the handling of them is one function rather than two that drift.
+ */
+function wireSaying() {
+  if (!$('#w-say')) return;
+  $('#w-say').onkeydown = (e) => { if (e.key === 'Enter') $('#w-send').click(); };
+
+  /**
+   * A note appears when you press the button, not when a service agrees.
+   *
+   * It used to wait for the whole errand — which reaches GitHub and takes
+   * seconds — and then redraw the page. So pressing Send did nothing visible
+   * for several seconds, and then the page rebuilt underneath you and put you
+   * back at the top. What you typed was gone from the box the whole time, with
+   * nothing anywhere to show it had been said.
+   *
+   * It is on the screen immediately, marked as on its way, and the mark
+   * changes when it lands. Nothing is redrawn: this appends one element to a
+   * list, which is what actually happened.
+   */
+  $('#w-send').onclick = async () => {
+    const box = $('#w-say');
+    const text = box.value.trim();
+    if (!text) return;
+    box.value = '';
+
+    const talkBox = $('#talk');
+    const mine = document.createElement('div');
+    mine.className = 'bubble mine going';
+    mine.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">You · <span>sending</span></div>${esc(text)}`;
+    talkBox?.append(mine);
+    if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
+
+    const r = await post('/workspace/say', { text });
+    if (!mine.isConnected) return;
+
+    mine.classList.remove('going');
+    const when = mine.querySelector('span');
+    if (r.ok) {
+      // Marked with the identifier the manager gave it, so the same note
+      // arriving back down the stream is recognised rather than added twice.
+      if (r.event?.id) {
+        mine.dataset.note = r.event.id;
+        heardAlready.add(r.event.id);
+      }
+      if (when) {
+        when.textContent = r.reached
+          ? `sent to ${r.reached} ${r.reached === 1 ? 'computer' : 'computers'}`
+          : 'saved here';
+      }
+      return;
+    }
+
+    // It did not go. Said on the note itself rather than as a sentence at the
+    // top of a page it would have been redrawn away from.
+    mine.classList.add('nope');
+    if (when) when.textContent = 'not sent';
+    mine.title = [r.sentence, r.action].filter(Boolean).join(' ');
+  };
+}
+
+async function drawWorkspaceOverview() {
   clearTimeout(workspaceTimer);
   const w = await get('/workspace');
 
@@ -5910,60 +6049,7 @@ SCREENS.workspace = async () => {
   const talk = $('#talk');
   if (talk) talk.scrollTop = talk.scrollHeight;
 
-  $('#w-say').onkeydown = (e) => { if (e.key === 'Enter') $('#w-send').click(); };
-
-  /**
-   * A note appears when you press the button, not when a service agrees.
-   *
-   * It used to wait for the whole errand — which reaches GitHub and takes
-   * seconds — and then redraw the page. So pressing Send did nothing visible
-   * for several seconds, and then the page rebuilt underneath you and put you
-   * back at the top. What you typed was gone from the box the whole time, with
-   * nothing anywhere to show it had been said.
-   *
-   * It is on the screen immediately, marked as on its way, and the mark
-   * changes when it lands. Nothing is redrawn: this appends one element to a
-   * list, which is what actually happened.
-   */
-  $('#w-send').onclick = async () => {
-    const box = $('#w-say');
-    const text = box.value.trim();
-    if (!text) return;
-    box.value = '';
-
-    const talkBox = $('#talk');
-    const mine = document.createElement('div');
-    mine.className = 'bubble mine going';
-    mine.innerHTML = `<div style="font-size:.74rem;color:var(--faint)">You · <span>sending</span></div>${esc(text)}`;
-    talkBox?.append(mine);
-    if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
-
-    const r = await post('/workspace/say', { text });
-    if (!mine.isConnected) return;
-
-    mine.classList.remove('going');
-    const when = mine.querySelector('span');
-    if (r.ok) {
-      // Marked with the identifier the manager gave it, so the same note
-      // arriving back down the stream is recognised rather than added twice.
-      if (r.event?.id) {
-        mine.dataset.note = r.event.id;
-        heardAlready.add(r.event.id);
-      }
-      if (when) {
-        when.textContent = r.reached
-          ? `sent to ${r.reached} ${r.reached === 1 ? 'computer' : 'computers'}`
-          : 'saved here';
-      }
-      return;
-    }
-
-    // It did not go. Said on the note itself rather than as a sentence at the
-    // top of a page it would have been redrawn away from.
-    mine.classList.add('nope');
-    if (when) when.textContent = 'not sent';
-    mine.title = [r.sentence, r.action].filter(Boolean).join(' ');
-  };
+  wireSaying();
   // Acknowledged before anything is asked of the manager, per D-62 — this
   // reaches GitHub and takes seconds, and it used to look untouched for all of
   // them. What came back used to be thrown away too, so a computer that could
@@ -6774,6 +6860,302 @@ const kindCalled = (id) => JOB_KINDS.find((k) => k.id === id)?.name ?? id ?? 'Ot
 
 /** Which part of Settings is being looked at. Kept between redraws. */
 let settingsPlace = 'accounts';
+
+/**
+ * Which project is being looked at inside the workspace, and which person.
+ *
+ * Kept between redraws so a change arriving from another computer does not
+ * throw away what somebody had selected. That is the whole reason it lives out
+ * here rather than inside the screen.
+ */
+let inWorkspace = false;
+let lookingAtProject = null;
+let lookingAtPerson = null;
+
+/**
+ * The workspace, as the place work actually happens.
+ *
+ * Three columns, because there are three questions and they are asked in this
+ * order: who is here, what are we working on, and what about the thing I just
+ * pressed. The list of computers used to be the whole page, which answered the
+ * first question three times and the other two never.
+ *
+ * Projects come first among equals. Computers are how a project has more than
+ * one copy; they are not the point.
+ */
+SCREENS.workspace = async () => {
+  if (!inWorkspace) return drawWorkspaceOverview();
+
+  const [t, shared] = await Promise.all([get('/team'), get('/team/projects')]);
+  if (!t.workspace) { inWorkspace = false; return drawWorkspaceOverview(); }
+
+  const everybody = [...(t.mine ?? []), ...(t.team ?? [])];
+  const people = new Map();
+  for (const one of everybody) {
+    const who = one.person || one.displayName;
+    if (!people.has(who)) people.set(who, { person: who, devices: [], you: false });
+    people.get(who).devices.push(one);
+    people.get(who).you ||= one.you;
+  }
+
+  const projects = shared.projects ?? [];
+  const here = projects.find((p) => p.name === lookingAtProject) ?? projects[0] ?? null;
+  lookingAtProject = here?.name ?? null;
+
+  view.innerHTML = `
+    <div class="pagehead">
+      <div class="grow">
+        <h1>${esc(t.workspace.name)}</h1>
+        <p class="sub">Everybody in this workspace, the projects you share, and what has
+          changed between your copies.</p>
+      </div>
+      <div class="acts">
+        <button class="quiet" id="ws-leave-env">\u2190 All workspaces</button>
+        <button class="small" id="ws-invite2">Invite somebody</button>
+      </div>
+    </div>
+    ${saidHtml()}
+
+    <div class="wsenv">
+      <div class="side">
+        <div class="label-tiny">People</div>
+        ${[...people.values()].sort((a, b) => Number(b.you) - Number(a.you)).map((who) => {
+    const on = who.devices.filter((d) => d.online).length;
+    return `
+          <div class="wsperson ${who.person === lookingAtPerson ? 'on' : ''}" data-person="${esc(who.person)}">
+            <div class="who">
+              <span class="dot ${on ? 'live' : 'off'}"></span>
+              <b>${esc(who.person)}</b>
+              ${who.you ? '<span class="chip vibe">you</span>' : ''}
+            </div>
+            ${who.devices.map((d) => `
+              <button class="wsdevice ${d.online ? '' : 'away'}" data-wsdevice="${esc(d.deviceId)}">
+                <span class="dot ${d.online ? 'live' : 'off'}"></span>
+                <span class="grow">${esc(d.displayName)}</span>
+                <span class="how">${esc(d.online ? d.how : ago(d.lastHere))}</span>
+              </button>`).join('')}
+          </div>`;
+  }).join('')}
+
+        <div class="label-tiny" style="margin-top:var(--s5)">Shared projects
+          <span class="count">${projects.length}</span></div>
+        ${projects.length ? projects.map((p) => `
+          <button class="wsproject ${p.name === lookingAtProject ? 'on' : ''}" data-wsproject="${esc(p.name)}">
+            <span class="grow">
+              <b>${esc(p.name)}</b>
+              <span class="where">${p.copies.length} cop${p.copies.length === 1 ? 'y' : 'ies'}${
+  p.mine ? '' : ' \u00b7 not here'}</span>
+            </span>
+          </button>`).join('')
+    : `<div class="empty small"><b>Nothing shared yet.</b>
+        A project is in a workspace because somebody offered it. Offer one and it
+        appears here for everybody.
+        <span class="acts"><button class="go small" id="ws-offer2">Offer a folder\u2026</button></span></div>`}
+      </div>
+
+      <div class="middle">
+        ${here ? projectInWorkspace(here) : `
+          <div class="empty"><b>No shared project selected.</b>
+            Offer a folder and it becomes something everybody here can have a copy of.</div>`}
+        <div class="label-tiny" style="margin-top:var(--s6)">Lately</div>
+        <div id="lately" data-titled="yes"></div>
+        <div class="label-tiny" style="margin-top:var(--s5)">Notes
+          <span class="count">${(t.said ?? []).length}</span></div>
+        <div id="wsnotes"></div>
+      </div>
+    </div>`;
+  said = null;
+
+  $('#ws-leave-env').onclick = () => { inWorkspace = false; draw(); };
+  $('#ws-invite2').onclick = inviteSomebody;
+  $('#ws-offer2')?.addEventListener('click', () => { inWorkspace = false; draw(); });
+
+  for (const b of document.querySelectorAll('[data-wsproject]')) {
+    b.onclick = async () => {
+      lookingAtProject = b.dataset.wsproject;
+      await draw({ quietly: true });
+      inspectSharedProject(projects.find((one) => one.name === lookingAtProject));
+    };
+  }
+  for (const b of document.querySelectorAll('[data-person]')) {
+    b.onclick = (e) => {
+      if (e.target.closest('[data-wsdevice]')) return;
+      lookingAtPerson = b.dataset.person;
+      const who = people.get(b.dataset.person);
+      inspectPerson(who, projects);
+    };
+  }
+  for (const b of document.querySelectorAll('[data-wsdevice]')) {
+    b.onclick = (e) => {
+      e.stopPropagation();
+      const one = everybody.find((d) => d.deviceId === b.dataset.wsdevice);
+      inspectTeamDevice(one, t);
+    };
+  }
+
+  wireProjectInWorkspace(here, t);
+  drawLately();
+  drawWorkspaceNotes();
+
+  /*
+   * Looked at again every so often, and almost always for nothing.
+   *
+   * What is said out loud arrives on the stream; who is here does not, because
+   * a computer going quiet is the absence of a thing rather than a thing. So
+   * this is the only part that needs asking for, and asking is free: the page
+   * is compared against what it last produced and the boxes against what they
+   * are showing, so a workspace where nothing moved is checked and not touched.
+   */
+  clearTimeout(workspaceTimer);
+  workspaceTimer = setTimeout(() => { if (inWorkspace) draw({ quietly: true }); }, 10000);
+};
+
+/** The middle column: one project, and what is true about it right now. */
+function projectInWorkspace(p) {
+  const word = {
+    SHARED: 'Shared',
+    ONLY_HERE: 'Only on this computer',
+    ONLY_THEIRS: 'Not on this computer',
+  }[p.state];
+
+  return `
+    <div class="sect"><h2>${esc(p.name)}</h2>
+      <span class="count">${esc(word)}</span>
+      <span class="rest"></span>
+      <div class="acts">
+        ${p.mine && p.others.length
+    ? '<button class="small" id="ws-look">See what is different\u2026</button>' : ''}
+        ${p.mine ? '<button class="quiet small" id="ws-open">Open it here</button>' : ''}
+      </div>
+    </div>
+    <div class="sheetlist">
+      ${p.copies.map((c) => `
+        <div class="trow">
+          <span class="dot ${c.online ? 'live' : 'off'}"></span>
+          <span class="tname">
+            <b>${esc(c.person)}${c.you ? ' \u00b7 you' : ''}</b>
+            <span class="where">${esc(c.device)}${c.files ? ` \u00b7 ${c.files} files` : ''}</span>
+          </span>
+          <span class="tacts">
+            ${c.you
+    ? '<span class="chip">your copy</span>'
+    : `<button class="small" data-diff="${esc(c.deviceId)}" data-offer="${esc(c.offer ?? '')}">What is different</button>`}
+          </span>
+        </div>`).join('')}
+    </div>
+    ${p.mine ? '' : `<p class="sub">Nobody on this computer has a copy of this one.
+      Press the computer that does to bring one over.</p>`}
+    <div id="job"></div>`;
+}
+
+function wireProjectInWorkspace(p, t) {
+  if (!p) return;
+
+  $('#ws-open')?.addEventListener('click', async () => {
+    say(await post('/open', { path: p.mine.path }));
+    await refreshMe();
+    draw();
+  });
+
+  const look = (deviceId, offer) => {
+    const one = [...(t.mine ?? []), ...(t.team ?? [])].find((d) => d.deviceId === deviceId);
+    whatIsDifferent(
+      { id: deviceId, name: one?.displayName ?? 'that computer' },
+      t,
+      { project: p, offer, mineAt: p.mine?.path },
+    );
+  };
+
+  $('#ws-look')?.addEventListener('click', () => {
+    const first = p.others[0];
+    if (first) look(first.deviceId, first.offer);
+  });
+
+  for (const b of document.querySelectorAll('[data-diff]')) {
+    b.onclick = () => look(b.dataset.diff, b.dataset.offer);
+  }
+}
+
+/** Notes, kept small and put where they belong: beside the work, not above it. */
+async function drawWorkspaceNotes() {
+  const box = $('#wsnotes');
+  if (!box) return;
+
+  const w = await get('/workspace');
+  if (!box.isConnected) return;
+
+  fill(box, `
+    <div class="card">
+      <div class="talk short" id="talk">
+        ${(w.said ?? []).map((one) => `
+          <div class="bubble ${one.you ? 'mine' : ''}">
+            <div style="font-size:.74rem;color:var(--faint)">${esc(one.fromName)} \u00b7 ${esc(ago(one.at))}</div>
+            ${esc(one.text)}
+          </div>`).join('') || '<p style="color:var(--quiet);margin:0">Nothing said yet.</p>'}
+      </div>
+      <div class="bar" style="margin:.7rem 0 0">
+        <input id="w-say" placeholder="Say something to the workspace" style="flex:1">
+        <button class="go" id="w-send">Say it</button>
+      </div>
+    </div>`);
+
+  const talk = $('#talk');
+  if (talk) talk.scrollTop = talk.scrollHeight;
+  wireSaying();
+}
+
+/** A shared project, in the inspector: where its copies are and what to do. */
+function inspectSharedProject(p) {
+  if (!p) return inspect(null);
+
+  const here = p.copies.filter((c) => c.online).length;
+
+  inspect({
+    name: p.name,
+    kind: {
+      SHARED: 'Shared in this workspace',
+      ONLY_HERE: 'Only on this computer',
+      ONLY_THEIRS: 'Not on this computer',
+    }[p.state],
+    mark: KIND_MARK.project,
+    facts: [
+      { label: 'On this computer', value: p.mine ? p.mine.path : 'no copy here', mono: !!p.mine },
+      { label: 'Also on', value: p.others.map((c) => `${c.person} · ${c.device}`).join(', ') || 'nobody else' },
+      { label: 'Size here', value: p.mine?.files ? `${p.mine.files} files` : null },
+    ],
+    countsAre: 'Copies',
+    counts: [
+      { many: p.copies.length, what: p.copies.length === 1 ? 'copy' : 'copies' },
+      { many: here, what: 'reachable' },
+      { many: p.others.length, what: 'elsewhere' },
+    ],
+  });
+}
+
+/** A person, in the inspector: who they are and what they have. */
+function inspectPerson(who, projects) {
+  if (!who) return inspect(null);
+
+  const theirs = projects.filter((p) => p.copies.some((c) => c.person === who.person));
+  const on = who.devices.filter((d) => d.online).length;
+
+  inspect({
+    name: who.person,
+    kind: who.you ? 'You' : 'In this workspace',
+    mark: on ? '\u25c9' : '\u25cb',
+    facts: [
+      { label: 'Right now', value: on ? `Here, on ${on} of ${who.devices.length}` : 'Not here' },
+      { label: 'Computers', value: who.devices.map((d) => d.displayName).join(', ') },
+      { label: 'Sharing', value: theirs.length ? theirs.map((p) => p.name).join(', ') : 'nothing yet' },
+    ],
+    countsAre: 'What they bring',
+    counts: [
+      { many: who.devices.length, what: who.devices.length === 1 ? 'computer' : 'computers' },
+      { many: on, what: 'here now' },
+      { many: theirs.length, what: 'projects' },
+    ],
+  });
+}
 
 SCREENS.settings = async () => {
   const [{ settings, parts, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
