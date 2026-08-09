@@ -483,6 +483,19 @@ exist is a dead end with a helpful tone.
 
 ---
 
+## Terminals and AI apps say what they are for
+
+Terminals used to be a list of six names and most of a window of nothing. It
+opens with where every one of them will start, how many there are, and how many
+are running here for somebody else — then the list, then anything another
+computer is running on this one, then what a terminal here can actually reach.
+
+AI apps opens with how many are ready, how many have an account chosen (which is
+the fact that page exists to make true, and was never said out loud), and the
+folder they open into.
+
+---
+
 ## Nobody's account is in this app
 
 There was exactly one account name in the source — Viberant's own issue list

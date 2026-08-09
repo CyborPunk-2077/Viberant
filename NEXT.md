@@ -3,36 +3,24 @@
 *Written at the end of a pass, for whoever picks it up. Exact state, exact
 continuation point. Everything below is unstarted unless it says otherwise.*
 
-**Where it is:** working tree clean, 658 tests passing (551 app, 107 core),
+**Where it is:** working tree clean, 665 tests passing (558 app, 107 core),
 three consecutive clean runs.
 
-**Joining works now.** The thing this file used to be about is done — see
-`app/joining.mjs` and D-178. Two independent instances, separate profiles,
-separate ports: A creates, A invites, B joins, both sides agree, membership
-survives a restart, revoking B keeps B out.
+**Joining works** (`app/joining.mjs`, D-178) and **members recognise each other
+without GitHub** (`members.beaconKey`, D-183). Two independent instances: A
+creates, A invites, B joins, both agree, membership survives a restart, revoking
+B keeps B out, and the recognition value works out identical on both sides.
+
+**Two copies on one machine cannot both be findable** — the beacon uses fixed
+ports 47777/47778. That is a limit of testing two profiles on one box, not of
+the code; on two machines each holds its own. If you want it testable locally,
+those two would have to become configurable.
 
 ---
 
-## 1. Presence inside a members workspace
+## 1. Notes between computers, and the event channel
 
-**The nearest thing to finished, and the most worth doing.**
-
-Two computers that have joined the same workspace list each other correctly and
-both say *offline*, because presence still comes from the older discovery: the
-beacon in `lan.mjs` is keyed on the **GitHub** workspace secret
-(`app/server.mjs`, `localSharing()`, around line 221), so computers that joined
-by code have no key to recognise each other with.
-
-**What to do.** Give the beacon a second identity: the members workspace's own
-id plus a key both sides now hold — every device's public card is in
-`ws.devices`, so a shared value can be derived without inventing anything. Do
-not weaken the existing GitHub-keyed beacon; add alongside it.
-
-Once that lands, `anywhere.around()` already computes `online` and `how`
-correctly — it reads `lan.around()` and the introducing service — so presence
-lights up with no page changes at all.
-
-## 2. Notes between computers, and the event channel
+**The nearest thing to finished.**
 
 A note appears on the screen the moment it is pressed and never redraws the page
 (D-181). It still travels through GitHub, so the other computer sees it on the
@@ -46,7 +34,7 @@ subscription in the page — rather than the per-screen timers — is the event 
 **Do not add a second transport.** The one that exists is authenticated,
 membership-checked and already used by four message kinds.
 
-## 3. Shared projects and sync
+## 2. Shared projects and sync
 
 `syncing.manifest` and the `manifest` peer message exist; the transfer engine
 with resume and verification exists; snapshots before anything is written over
@@ -57,19 +45,22 @@ state (up to date, so many changes, syncing, conflict, offline), and a way in
 from the member's inspector. Sharing must stay explicit — a project is not
 shared because it is open.
 
-## 4. Signing in at first run
+## 3. Signing in at first run
 
 There is no first-run sign-in, and account-dependent parts of the page say so
 in each place rather than once.
 
-## 5. Pages still on the old layout
+## 4. Pages still short of the reference
 
-Projects, Project Detail, AI Apps and Terminals use the shared row system and
-the summary cards, so they are consistent, but they are not the reference
-composition: no inspector, and Terminals leaves most of the window empty.
+Terminals and AI Apps now open with their own summary, and Terminals shows what
+is running on it for somebody else and what a terminal here can reach — it no
+longer leaves most of the window empty.
 
-The pieces exist: `summary()`, `inspect()` with counts / action list / topology
-map, `.sheetlist` with per-table `-cols`, and `wireInspect`.
+What is still missing on both, and on Projects and Project Detail, is the right
+inspector: selecting a row should describe it beside the list rather than doing
+nothing. `inspect()` already takes facts, counts, an action list and a topology
+map, and `wireInspect` already makes a row select without a press on a control
+inside it selecting it. It is composition, not new machinery.
 
 ---
 

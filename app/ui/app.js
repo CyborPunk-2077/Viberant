@@ -186,6 +186,11 @@ const SIGNAL = `
     <path d="M0 78 C 52 78, 66 46, 108 46 S 158 72, 200 64" stroke-width="1.4" opacity=".8"/>
   </svg>`;
 
+/** A terminal, in the shape the summary cards use. */
+const TERM_SUM_MARK = '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" '
+  + 'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">'
+  + '<rect x="1.6" y="2.6" width="12.8" height="10.8" rx="1.6"/><path d="M4.6 6.4 6.9 8.4 4.6 10.4M8.8 10.6h2.8"/></svg>';
+
 /** The marks the summary cards use. Two strokes each, no more. */
 const SUM_MARK = {
   computers: '<svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.4" y="2.6" width="9" height="6.4" rx="1.2"/><rect x="7.6" y="7" width="7" height="6.4" rx="1.2"/></svg>',
@@ -3504,6 +3509,9 @@ SCREENS.apps = async () => {
   const [t, p] = await Promise.all([get('/tools'), get('/project')]);
   const here = t.tools.filter((x) => x.here);
   const away = t.tools.filter((x) => !x.here);
+  // How many of the installed ones have an account chosen for them, which is
+  // the fact this page exists to make true and never said out loud.
+  const signedInto = here.filter((x) => (chosen.account[x.id] ?? x.active)).length;
 
   view.innerHTML = `
     <div class="pagehead">
@@ -3515,6 +3523,26 @@ SCREENS.apps = async () => {
       <div class="acts">${whereBar(p)}</div>
     </div>
     ${saidHtml()}
+
+    ${summary([
+    {
+      mark: SUM_MARK.project,
+      big: here.length,
+      what: here.length === 1 ? 'app ready on this computer' : 'apps ready on this computer',
+      tone: here.length ? 'live' : 'warn',
+    },
+    {
+      mark: SUM_MARK.computers,
+      big: signedInto,
+      what: signedInto === 1 ? 'has an account set here' : 'have an account set here',
+    },
+    {
+      mark: SUM_MARK.folder,
+      big: whereFor(null, p) ? tail(whereFor(null, p)) : 'Nowhere yet',
+      what: whereFor(null, p) ? 'is where they open' : 'nothing opens until a folder is picked',
+      tone: whereFor(null, p) ? '' : 'warn',
+    },
+  ])}
 
     ${here.length ? `
       <div class="sect">
@@ -3944,7 +3972,9 @@ function whichTerminal(toolId, dir, terminals) {
 // ---------------------------------------------------------------------------
 
 SCREENS.terminals = async () => {
-  const [{ terminals }, p] = await Promise.all([get('/terminals'), get('/project')]);
+  const [{ terminals }, p, sessions] = await Promise.all([
+    get('/terminals'), get('/project'), get('/remote/sessions'),
+  ]);
   const dir = whereFor(null, p);
 
   view.innerHTML = `
@@ -3962,6 +3992,28 @@ SCREENS.terminals = async () => {
       A terminal has to open somewhere. Pick the folder above, or open a project.
       <span class="acts"><button class="go" id="t-pick">Choose a folder…</button></span></div>`}
 
+    ${summary([
+    {
+      mark: SUM_MARK.folder,
+      big: dir ? tail(dir) : 'Nowhere yet',
+      what: dir ? 'is where every one of these opens' : 'nothing will open until a folder is picked',
+      tone: dir ? '' : 'warn',
+    },
+    {
+      mark: TERM_SUM_MARK,
+      big: terminals.length,
+      what: terminals.length === 1 ? 'terminal on this computer' : 'terminals on this computer',
+    },
+    {
+      mark: SUM_MARK.running,
+      big: sessions.sessions?.filter((one) => one.running).length ?? 0,
+      what: 'running here for another computer',
+      tone: (sessions.sessions ?? []).some((one) => one.running) ? 'live' : '',
+      pip: (sessions.sessions ?? []).some((one) => one.running),
+      signal: (sessions.sessions ?? []).some((one) => one.running),
+    },
+  ])}
+
     <div class="sect"><h2>On this computer</h2><span class="count">${terminals.length}</span></div>
     <div class="sheetlist term-cols">
       ${terminals.map((t) => `
@@ -3977,10 +4029,48 @@ SCREENS.terminals = async () => {
             </span>
           </span>
         </div>`).join('')}
+    </div>
+
+    ${(sessions.sessions ?? []).length ? `
+      <div class="sect"><h2>Running here for another computer</h2>
+        <span class="count">${sessions.sessions.length}</span></div>
+      <div class="sheetlist">
+        ${sessions.sessions.map((one) => `
+          <div class="trow">
+            <span class="dot ${one.running ? 'live' : 'off'}"></span>
+            <span class="tname">
+              <b>${esc(one.what ?? one.kind)}</b>
+              <span class="where">Asked for by ${esc(one.who ?? 'another computer')}
+                · ${esc(ago(one.began))}</span>
+            </span>
+            <span class="tacts">
+              ${one.running ? `<button class="small danger" data-stop-here="${esc(one.id)}">Stop it</button>` : ''}
+            </span>
+          </div>`).join('')}
+      </div>` : ''}
+
+    <div class="sect"><h2>What a terminal here can reach</h2></div>
+    <div class="card">
+      <ul class="steps">
+        <li><span>It opens already inside
+          <b class="mono">${esc(dir ?? 'no folder yet')}</b>, so the first thing you type is the
+          thing you meant to type.</span></li>
+        <li><span>Nothing is typed for you. Signing an app in, installing something, running a
+          build — those are yours, in your own terminal.</span></li>
+        <li><span>Another computer in your workspace can be allowed to open one here, one
+          capability at a time. It is off for everybody until you say otherwise.</span></li>
+      </ul>
     </div>`;
   said = null;
 
   $('#t-pick')?.addEventListener('click', () => $('#where')?.click());
+
+  for (const b of document.querySelectorAll('[data-stop-here]')) {
+    b.onclick = async () => {
+      say(await post('/remote/stop', { session: b.dataset.stopHere }));
+      draw();
+    };
+  }
 
   wireWhereBar();
 
