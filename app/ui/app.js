@@ -876,7 +876,7 @@ function somethingHappened(one) {
     // Inside the workspace, a change to the project on screen belongs on the
     // project rather than in the corner. Written into the one element that says
     // it, so nothing else on the page moves and nobody loses their place.
-    if (inWorkspace && saidAboutThisProject(one)) return;
+    if (at.tab === 'workspace' && saidAboutThisProject(one)) return;
 
     mention({
       bad: one.kind === 'sync.failed',
@@ -1519,11 +1519,42 @@ async function whatTheyShare({ deviceId, name, online }) {
       const out = await post('/local/take', {
         machine: deviceId, offer: b.dataset.bringShare, name: b.dataset.shareName,
       });
-      if (out.job) return watchJob(out.job);
-      say(out);
-      draw();
+
+      /*
+       * What became of it, said on the button that started it.
+       *
+       * A long errand goes to the list of errands, which is right. A short one
+       * finishes before anybody has looked away, and sending them to another
+       * screen to find out means pressing this looks like it did nothing.
+       */
+      if (!out.job) {
+        b.disabled = false;
+        b.textContent = 'Bring here';
+        return say(out);
+      }
+
+      const done = await waitForJob(out.job);
+      b.textContent = done?.ok ? 'Brought here' : 'Did not come';
+      b.classList.toggle('nope', !done?.ok);
+      b.disabled = !!done?.ok;
+      if (!done?.ok) {
+        b.disabled = false;
+        say(done ?? { ok: false, sentence: 'That did not come across.', action: 'Try again.' });
+      }
       return undefined;
     };
+  }
+}
+
+/** Wait for one errand to finish, and hand back what it said. */
+async function waitForJob(id, within = 120000) {
+  const stop = Date.now() + within;
+  for (;;) {
+    const all = await get('/jobs');
+    const one = (all.jobs ?? []).find((x) => x.id === id);
+    if (one?.finished) return one;
+    if (Date.now() > stop) return null;
+    await new Promise((go) => { setTimeout(go, 700); });
   }
 }
 
@@ -5306,7 +5337,7 @@ async function drawTeam() {
         <span class="sub" id="team-standing">${people.size} ${people.size === 1 ? 'person' : 'people'}
           \u00b7 ${here} of ${t.mine.length + t.team.length} computers here</span>
       </div>
-      <button class="go" id="team-enter">Enter workspace \u2192</button>
+      <button class="go" id="team-enter">\u2190 Back to the workspace</button>
     </div>
 
     ${t.stillWorks ? `<div class="said"><b>${esc(t.stillWorks.sentence)}</b></div>` : ''}
@@ -5339,7 +5370,7 @@ async function drawTeam() {
     }
   });
 
-  $('#team-enter').onclick = () => { inWorkspace = true; draw(); };
+  $('#team-enter').onclick = () => { showingPlumbing = false; draw(); };
   $('#team-invite').onclick = inviteSomebody;
   $('#team-manage').onclick = () => manageWorkspace(t);
 
@@ -5960,6 +5991,7 @@ async function sendOneNote(text, into = null) {
     if (r.event?.id) {
       mine.dataset.note = r.event.id;
       heardAlready.add(r.event.id);
+      howFarItGot.set(r.event.id, r.reached ?? 0);
     }
     if (when) {
       when.textContent = r.reached
@@ -7014,7 +7046,12 @@ let settingsPlace = 'accounts';
  * throw away what somebody had selected. That is the whole reason it lives out
  * here rather than inside the screen.
  */
-let inWorkspace = false;
+/**
+ * The older GitHub-backed page, which is now somewhere you go rather than where
+ * you land. It is about your own computers and about an account; the workspace
+ * is about people and projects, and that is what the tab shows.
+ */
+let showingPlumbing = false;
 let lookingAtProject = null;
 let lookingAtPerson = null;
 
@@ -7065,11 +7102,26 @@ function changeInWords(c) {
  * that listed computers answered the least interesting of the three questions
  * three times over and the other two never.
  */
+/**
+ * The workspace, which is the screen rather than something behind a button on it.
+ *
+ * **This was a door, and that was the mistake.** The page somebody landed on
+ * was a long column about the plumbing \u2014 which GitHub account the older
+ * workspace was made on, which computers are signed in to it, what this one is
+ * offering, a note box — with the room itself behind an *Enter workspace*
+ * button most people never pressed. Everything worth having was one press away
+ * and looked like it did not exist.
+ *
+ * So the room is the screen. Three columns, and they are three questions asked
+ * in this order: who is here, what are we working on, and what about the thing
+ * I just pressed. The plumbing is still reachable and is now folded away at the
+ * bottom of the left column, where infrastructure belongs.
+ */
 SCREENS.workspace = async () => {
-  if (!inWorkspace) return drawWorkspaceOverview();
+  const t = await get('/team');
+  if (!t.workspace || showingPlumbing) return drawWorkspaceOverview();
 
-  const [t, shared] = await Promise.all([get('/team'), get('/team/projects')]);
-  if (!t.workspace) { inWorkspace = false; return drawWorkspaceOverview(); }
+  const [shared, offers] = await Promise.all([get('/team/projects'), get('/local/offers')]);
 
   const everybody = [...(t.mine ?? []), ...(t.team ?? [])];
   const people = new Map();
@@ -7081,16 +7133,16 @@ SCREENS.workspace = async () => {
   }
 
   const projects = shared.projects ?? [];
-  const here = projects.find((p) => p.name === lookingAtProject) ?? projects[0] ?? null;
+  const here = projects.find((one) => one.name === lookingAtProject) ?? projects[0] ?? null;
   lookingAtProject = here?.name ?? null;
 
   const hereNow = everybody.filter((one) => one.online).length;
   const waiting = shared.needsAttention ?? 0;
+  const mineToShare = offers?.offers ?? [];
 
   view.innerHTML = `
     <div class="wshead">
       <div class="grow">
-        <button class="quiet small icon" id="ws-leave-env" title="All workspaces">\u2190</button>
         <h1>${esc(t.workspace.name)}</h1>
         <span class="chip ${waiting ? 'attention' : ''}">${waiting
     ? `${waiting} ${waiting === 1 ? 'project needs' : 'projects need'} attention`
@@ -7101,8 +7153,8 @@ SCREENS.workspace = async () => {
         <span><b>${projects.length}</b> shared</span>
       </div>
       <div class="acts">
-        ${t.mayManage ? '<button class="small" id="ws-invite2">Invite\u2026</button>' : ''}
-        <button class="quiet small" id="ws-offer2">Offer a folder\u2026</button>
+        ${t.mayManage ? '<button class="small" id="ws-invite">Invite\u2026</button>' : ''}
+        <button class="go small" id="ws-offer">Offer\u2026</button>
       </div>
     </div>
     ${saidHtml()}
@@ -7136,35 +7188,71 @@ SCREENS.workspace = async () => {
   }).join('')}
 
         <div class="label-tiny stacked">Shared projects <span class="count">${projects.length}</span></div>
-        ${projects.length ? projects.map((p) => {
-    const state = PROJECT_STATE[p.state] ?? PROJECT_STATE.ONLY_HERE;
+        ${projects.length ? projects.map((one) => {
+    const state = PROJECT_STATE[one.state] ?? PROJECT_STATE.ONLY_HERE;
     return `
-          <button class="wsproject ${p.name === lookingAtProject ? 'on' : ''}" data-wsproject="${esc(p.name)}">
+          <button class="wsproject ${one.name === lookingAtProject ? 'on' : ''}" data-wsproject="${esc(one.name)}">
             <span class="dot ${state.tone === 'attention' ? 'attention' : state.tone === 'good' ? 'live' : 'off'}"></span>
             <span class="grow">
-              <b>${esc(p.name)}</b>
-              <span class="where">${esc(state.says)} \u00b7 ${p.copies.length} cop${p.copies.length === 1 ? 'y' : 'ies'}</span>
+              <b>${esc(one.name)}</b>
+              <span class="where">${esc(state.says)} \u00b7 ${one.copies.length} cop${one.copies.length === 1 ? 'y' : 'ies'}</span>
             </span>
           </button>`;
   }).join('')
     : `<div class="empty small"><b>Nothing shared yet.</b>
-        A project is in a workspace because somebody offered it. Offer one and it
-        appears here for everybody.</div>`}
+        A project is here because somebody offered it.</div>`}
+
+        <!--
+          What this computer is putting up, where somebody can see it and take
+          it down again. It used to be a section of its own halfway down a page
+          about the network; it belongs beside the people it is being offered to.
+        -->
+        <div class="label-tiny stacked">You are sharing
+          <span class="count">${mineToShare.length}</span></div>
+        ${mineToShare.length ? mineToShare.map((one) => `
+          <div class="wsmine">
+            <span class="kindmark" aria-hidden="true">${KIND_MARK[one.kind === 'file' ? 'file' : 'project']}</span>
+            <span class="grow">
+              <b>${esc(one.name)}</b>
+              <span class="where">${one.kind === 'file' ? 'File' : 'Project'}${
+  one.files > 1 ? ` \u00b7 ${one.files} files` : ''}${one.bytes ? ` \u00b7 ${esc(size(one.bytes))}` : ''}</span>
+            </span>
+            <button class="quiet small icon" data-stop-offer="${esc(one.id)}"
+              data-tip="Stop offering ${esc(one.name)}" aria-label="Stop offering ${esc(one.name)}">\u00d7</button>
+          </div>`).join('')
+    : `<div class="empty small"><b>You are not offering anything.</b>
+        Offer a file or a folder and everybody here can ask for a copy.</div>`}
+
+        <details class="wsmore plumbing">
+          <summary>Your own computers, through GitHub</summary>
+          <div class="acts" style="padding-bottom:var(--s3)">
+            <button class="quiet small" id="ws-github">Open that page</button>
+          </div>
+        </details>
       </div>
 
       <div class="middle">
         ${here ? projectInWorkspace(here) : `
           <div class="empty"><b>No shared project yet.</b>
             Offer a folder and it becomes something everybody here can have a copy of.
-            <span class="acts"><button class="go" id="ws-offer3">Offer a folder\u2026</button></span></div>`}
+            <span class="acts"><button class="go" id="ws-offer-empty">Offer a folder\u2026</button></span></div>`}
+
+        <div class="label-tiny stacked">General <span class="count" id="general-count"></span></div>
+        <div class="wsgeneral" id="wsnotes"></div>
       </div>
     </div>`;
   said = null;
 
-  $('#ws-leave-env').onclick = () => { inWorkspace = false; draw(); };
-  $('#ws-invite2')?.addEventListener('click', inviteSomebody);
-  for (const b of [$('#ws-offer2'), $('#ws-offer3')]) {
-    b?.addEventListener('click', () => { inWorkspace = false; draw(); });
+  $('#ws-invite')?.addEventListener('click', inviteSomebody);
+  for (const b of [$('#ws-offer'), $('#ws-offer-empty')]) b?.addEventListener('click', offerSomething);
+  $('#ws-github')?.addEventListener('click', () => { showingPlumbing = true; draw(); });
+
+  for (const b of document.querySelectorAll('[data-stop-offer]')) {
+    b.onclick = async () => {
+      b.disabled = true;
+      say(await post('/local/withdraw', { id: b.dataset.stopOffer }));
+      draw();
+    };
   }
 
   for (const b of document.querySelectorAll('[data-wsproject]')) {
@@ -7191,32 +7279,56 @@ SCREENS.workspace = async () => {
   wireProjectInWorkspace(here, t);
   drawWorkspaceNotes();
 
-  // Opened, so whatever arrived while it was shut is read.
-  document.querySelector('.wsmore.notes')?.addEventListener('toggle', (e) => {
-    if (e.target.open) drawWorkspaceNotes();
-  });
-
   /*
-   * The inspector, filled rather than waiting to be.
-   *
-   * A panel that is empty until somebody guesses to press something is a panel
-   * most people never see. Whatever the middle column is about is what it is
-   * about, until somebody presses a person or a computer.
+   * The inspector, filled rather than waiting to be. A panel that is empty
+   * until somebody guesses to press something is a panel most people never see.
    */
   if (here && !inspecting) inspectSharedProject(here);
 
   /*
-   * Looked at again every so often, and almost always for nothing.
-   *
-   * What is said arrives on the stream; who is here does not, because a
-   * computer going quiet is the absence of a thing rather than a thing. So this
-   * is the only part that needs asking for, and asking is free: the page is
-   * compared against what it last produced and each box against what it is
-   * showing, so a workspace where nothing moved is checked and never touched.
+   * Looked at again every so often, and almost always for nothing. What is said
+   * arrives on the stream; who is here does not, because going quiet is the
+   * absence of a thing. The page is compared against what it last produced and
+   * each box against what it is showing, so a workspace where nothing moved is
+   * checked and never touched.
    */
   clearTimeout(workspaceTimer);
-  workspaceTimer = setTimeout(() => { if (inWorkspace) draw({ quietly: true }); }, 10000);
+  workspaceTimer = setTimeout(() => { if (at.tab === 'workspace') draw({ quietly: true }); }, 10000);
 };
+
+/** Offer one file, or a whole folder — the two things there are to offer. */
+function offerSomething() {
+  sheet({
+    title: 'Offer something to this workspace',
+    narrow: true,
+    body: `
+      <p class="sub">Everybody in this workspace will see it and can ask for a copy.
+        Nothing moves until one of them does, and it goes straight from this computer
+        to theirs.</p>
+      <div class="menu">
+        <button class="pick" data-offer-kind="folder">
+          <b>A folder</b>
+          <span>A project, or anything else with files in it. Changes to it are noticed
+            and said out loud.</span>
+          <span class="go">\u2192</span>
+        </button>
+        <button class="pick" data-offer-kind="file">
+          <b>One file</b>
+          <span>Exactly the one you choose, and nothing around it.</span>
+          <span class="go">\u2192</span>
+        </button>
+      </div>`,
+    foot: '<button class="quiet" id="offer-no">Close</button>',
+  });
+  $('#offer-no').onclick = closeLayer;
+
+  for (const b of layer.querySelectorAll('[data-offer-kind]')) {
+    b.onclick = () => {
+      closeLayer();
+      return b.dataset.offerKind === 'file' ? offerFile() : offerFolder();
+    };
+  }
+}
 
 /**
  * The middle column: one project, and everything there is to do about it.
@@ -7321,10 +7433,6 @@ function projectInWorkspace(p) {
         </ul>`
     : '<p class="sub quiet">Nothing has happened to this one yet.</p>'}
 
-      <details class="wsmore notes">
-        <summary>Notes to the workspace <span class="count" hidden></span></summary>
-        <div id="wsnotes"></div>
-      </details>
     </div>`;
 }
 
@@ -7332,7 +7440,7 @@ function wireProjectInWorkspace(p, t) {
   if (!p) return;
 
   $('#ws-alone-invite')?.addEventListener('click', inviteSomebody);
-  $('#ws-alone-offer')?.addEventListener('click', () => { inWorkspace = false; draw(); });
+  $('#ws-alone-offer')?.addEventListener('click', offerSomething);
 
   $('#ws-open')?.addEventListener('click', async () => {
     say(await post('/open', { path: p.mine.path }));
@@ -7368,18 +7476,18 @@ async function drawWorkspaceNotes() {
   const said = await get('/workspace/notes');
   if (!box.isConnected) return;
 
-  notesOnScreen = (said.notes ?? []).length;
   for (const one of said.notes ?? []) heardAlready.add(one.id);
-  markUnreadNotes(0);
+  const many = $('#general-count');
+  if (many) many.textContent = String((said.notes ?? []).length);
 
   fill(box, `
-    <div class="talk short" id="talk">
+    <div class="talk" id="talk">
       ${(said.notes ?? []).map(noteHtml).join('')
-    || '<p class="quiet" style="margin:0">Nothing said yet. Anybody in this workspace will see it.</p>'}
+    || '<p class="quiet" style="margin:0">Nothing said yet. Everybody in this workspace sees what is said here.</p>'}
     </div>
-    <div class="bar" style="margin:.7rem 0 0">
-      <input id="w-say" placeholder="Say something to the workspace" style="flex:1">
-      <button class="go" id="w-send">Say it</button>
+    <div class="bar">
+      <input id="w-say" placeholder="Say something to everybody here" style="flex:1">
+      <button class="go" id="w-send">Send</button>
     </div>`);
 
   const talk = $('#talk');
@@ -7387,11 +7495,26 @@ async function drawWorkspaceNotes() {
   wireSaying();
 }
 
+/**
+ * How far each of this computer's own notes actually got.
+ *
+ * Kept so the answer survives the box being drawn again. Without it, the mark
+ * saying a note reached somebody lasted until the next look and was replaced by
+ * the time of day — so the one thing somebody wanted to know disappeared a few
+ * seconds after they were told it.
+ */
+const howFarItGot = new Map();
+
 /** One note, in the shape both the first draw and an arriving one use. */
 function noteHtml(one) {
+  const got = howFarItGot.get(one.id);
+  const said = got === undefined ? esc(ago(one.at))
+    : got ? `Sent to ${got} ${got === 1 ? 'computer' : 'computers'}`
+      : 'Here only \u2014 nobody else has it';
+
   return `
-    <div class="bubble ${one.you ? 'mine' : ''}" data-note="${esc(one.id)}">
-      <div class="who">${esc(one.you ? 'You' : one.fromName)} \u00b7 <span>${esc(ago(one.at))}</span></div>
+    <div class="bubble ${one.you ? 'mine' : ''} ${got === 0 ? 'alone' : ''}" data-note="${esc(one.id)}">
+      <div class="who">${esc(one.you ? 'You' : one.fromName)} \u00b7 <span>${said}</span></div>
       ${esc(one.text)}
     </div>`;
 }
@@ -7402,16 +7525,10 @@ function noteHtml(one) {
  * Notes are secondary and stay folded away, which would make one arriving
  * invisible — so the fold says how many. Pressed open, it is nought again.
  */
-let notesOnScreen = 0;
 let unreadNotes = 0;
 
 function markUnreadNotes(many) {
   unreadNotes = many;
-  const at = document.querySelector('.wsmore.notes > summary .count');
-  if (at) {
-    at.textContent = many ? String(many) : '';
-    at.hidden = !many;
-  }
 }
 
 /**
@@ -7424,7 +7541,7 @@ function markUnreadNotes(many) {
 function noteArrived(one) {
   const box = $('#talk');
   if (!box || !box.isConnected) {
-    if (inWorkspace) markUnreadNotes(unreadNotes + 1);
+    if (at.tab === 'workspace') markUnreadNotes(unreadNotes + 1);
     return;
   }
   if (box.querySelector(`[data-note="${CSS.escape(one.id)}"]`)) return;
@@ -7436,7 +7553,6 @@ function noteArrived(one) {
   box.insertAdjacentHTML('beforeend', noteHtml({
     id: one.id, at: one.at, text: one.text, fromName: one.fromName, you: false,
   }));
-  notesOnScreen += 1;
   if (wasAtBottom) box.scrollTop = box.scrollHeight;
 }
 

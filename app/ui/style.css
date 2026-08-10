@@ -1614,8 +1614,17 @@ h2:first-of-type { margin-top: 0; }
  * Giving the track room rather than chasing the padding is the version that
  * cannot come back the next time a row's spacing changes.
  */
+/*
+ * A name and a line about it, in a width somebody can read.
+ *
+ * These were `1fr`, which hands the name column everything left over — so on a
+ * wide window two words and a short sentence were stretched across eight
+ * hundred pixels with the button that acts on them marooned at the far right.
+ * Nothing overlapped and nothing was clipped; it simply read as though the row
+ * had come apart. A measure, and then the controls, and the slack after both.
+ */
 .apps-cols {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(0, 10rem) minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 26rem) minmax(0, 10rem) minmax(0, auto);
 }
 /*
  * The controls at the end of a row start where the row above them started.
@@ -1633,8 +1642,15 @@ h2:first-of-type { margin-top: 0; }
   min-width: 16.5rem;
 }
 .term-cols {
-  grid-template-columns: 40px minmax(0, 1fr) minmax(0, auto);
+  grid-template-columns: 40px minmax(0, 30rem) minmax(0, auto);
 }
+/*
+ * One control per row here, so it stands beside what it acts on rather than at
+ * the far edge of the window. The apps list above is laid out from the right
+ * for the opposite reason: every row there carries a different set, and only a
+ * shared right edge makes a column of them.
+ */
+.term-cols .tacts { justify-content: flex-start; }
 .offer-cols {
   grid-template-columns: 40px minmax(0, 1fr) auto minmax(0, 6rem) auto minmax(0, auto);
 }
@@ -3684,3 +3700,59 @@ select { cursor: pointer; }
 .talk .bubble.alone .who span { color: var(--attention); }
 .talk .bubble .again { margin-top: var(--s2); }
 .wsmore.notes > summary .count { margin-left: var(--s2); color: var(--attention); }
+
+/* --- what this computer is putting up ------------------------------------ */
+
+.wsmine {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  padding: var(--s3);
+  border-radius: var(--r-input);
+  min-width: 0;
+}
+.wsmine:hover { background: var(--hover); }
+.wsmine .kindmark { flex: none; color: var(--faint); }
+.wsmine .grow { display: grid; gap: 1px; min-width: 0; }
+.wsmine b {
+  overflow: hidden;
+  font-size: var(--t-meta);
+  font-weight: var(--w-semi);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wsmine .where { color: var(--faint); font-size: var(--t-tiny); }
+.wsmine button { flex: none; opacity: 0; transition: opacity var(--m-hover) var(--ease); }
+.wsmine:hover button, .wsmine button:focus-visible { opacity: 1; }
+
+/*
+ * The way back to the older page about your own computers and a GitHub account.
+ * It is plumbing, so it sits at the foot of the column of names rather than
+ * above the work.
+ */
+.wsmore.plumbing { margin-top: var(--s5); }
+
+/* --- what everybody here says to each other ------------------------------ */
+
+/*
+ * One conversation for the whole workspace, under the project rather than
+ * beside it. It is secondary and it is not a chat product: a short column, a
+ * box, and what became of each thing said.
+ */
+.wsgeneral {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--card);
+}
+.wsgeneral .talk {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  max-height: 15rem;
+  overflow-y: auto;
+}
+.wsgeneral .bar { display: flex; gap: var(--s2); margin: 0; }
+.wsgeneral .quiet { color: var(--faint); font-size: var(--t-meta); }

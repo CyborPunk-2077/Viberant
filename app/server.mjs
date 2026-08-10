@@ -2805,8 +2805,18 @@ data: ${JSON.stringify(one)}
     return out;
   },
 
+  /**
+   * What one computer is offering — another one, or this one.
+   *
+   * Naming a computer asks it. Naming none asks this one, which is what the
+   * workspace needs to show somebody what they are putting up and let them take
+   * it down again. It used to answer *that computer is not on this network*
+   * when asked about no computer at all, which is true and useless.
+   */
   async 'GET /local/offers'({ url }) {
-    return lan.offeredBy(url.searchParams.get('machine'));
+    const which = url.searchParams.get('machine');
+    if (!which) return { ok: true, offers: await lan.offers(), you: true };
+    return lan.offeredBy(which);
   },
 
   // -- the same project, on two computers at once -------------------------
