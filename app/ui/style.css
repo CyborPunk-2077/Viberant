@@ -4192,6 +4192,80 @@ main { padding: 1.35rem 1.6rem 3.5rem; }
 .assistant-spark { color: var(--vibe-b); padding-left: var(--s2); }
 .assistant-result { padding: 0 var(--s5) var(--s4); }
 .assistant-result:empty { display: none; }
+.assistant-panel.expanded {
+  display: flex;
+  flex-direction: column;
+  min-height: clamp(430px, calc(100vh - 285px), 590px);
+}
+.assistant-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 280px;
+  overflow: auto;
+}
+.assistant-stage .assistant-result {
+  width: 100%;
+  padding: var(--s5);
+}
+.assistant-welcome {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  max-width: 680px;
+  margin: auto;
+  padding: var(--s6) var(--s5);
+  text-align: center;
+}
+.assistant-orbit {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  margin-bottom: var(--s4);
+  place-items: center;
+  border: 1px solid var(--vibe-edge);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--vibe-a) 22%, transparent), transparent 68%);
+  color: var(--vibe-b);
+  box-shadow: 0 0 42px color-mix(in srgb, var(--vibe-a) 18%, transparent);
+}
+.assistant-welcome h3 {
+  margin: var(--s2) 0;
+  color: var(--ink);
+  font-size: clamp(1.25rem, 2vw, 1.65rem);
+  letter-spacing: -.025em;
+}
+.assistant-welcome > p { max-width: 34rem; margin: 0; color: var(--quiet); }
+.assistant-welcome .assistant-suggestions {
+  justify-content: center;
+  margin-top: var(--s5);
+  padding: 0;
+}
+.assistant-scope-line {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--s2) var(--s5);
+  margin-top: var(--s5);
+  color: var(--faint);
+  font-size: var(--t-tiny);
+}
+.assistant-scope-line span { position: relative; }
+.assistant-scope-line span + span::before {
+  position: absolute;
+  left: calc(-1 * var(--s3));
+  color: var(--line-strong);
+  content: '·';
+}
+.assistant-scope-line b { color: var(--ink); }
+.assistant-panel.expanded .assistant-composer {
+  flex: 0 0 auto;
+  margin-top: 0;
+  border-color: var(--line-strong);
+}
+.assistant-panel.has-output .assistant-welcome { display: none; }
 .assistant-context {
   display: flex;
   align-items: center;

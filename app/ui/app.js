@@ -1101,6 +1101,7 @@ async function setUpAi(andThen = null) {
 async function askAssistant(kind, where, body = {}) {
   const box = $('#ai-out');
   if (!box) return;
+  box.closest('.assistant-panel')?.classList.add('has-output');
 
   asking = kind;
   const steps = AI_STEPS[kind] ?? ['Working'];
@@ -3287,31 +3288,50 @@ async function fromGitHub() {
  * these are the same four questions either way and having two of them would
  * mean two that drift apart. What differs is only how much room it has.
  */
-function askPanel(p, { heading = 'Ask about this project' } = {}) {
+function askPanel(p, { heading = 'Ask about this project', expanded = false } = {}) {
+  const suggestions = `
+    <div class="assistant-suggestions" aria-label="Suggested questions">
+      <button data-ai-prompt="Give me a concise overview of this project">Project overview</button>
+      <button data-ai-prompt="What should I work on next in this project?">What next?</button>
+      <button data-ai-prompt="Where are the highest-risk parts of this project?">Find risks</button>
+    </div>`;
+  const composer = `
+    <div class="assistant-composer">
+      <span class="assistant-spark" aria-hidden="true">✦</span>
+      <input id="ai-q" placeholder="Ask anything about ${esc(p?.name ?? 'this project')}…"
+        aria-label="Ask about this project">
+      <button class="quiet small" id="ai-diagnose">Check project</button>
+      <button class="quiet small" id="ai-review" ${p?.situation?.unsaved ? '' : 'disabled'}
+        data-tip="${p?.situation?.unsaved ? 'Look over what you have changed but not saved'
+    : 'Nothing unsaved to look at'}">Review changes</button>
+      <button class="small" id="ai-change"
+        data-tip="Shows every file it would write before anything changes">Plan a change</button>
+      <button class="go small" id="ai-ask">Ask</button>
+    </div>`;
+
   return `
-    <div class="assistant-panel">
+    <div class="assistant-panel ${expanded ? 'expanded' : ''}">
       <header class="assistant-head">
         <div><span class="eyebrow">Project intelligence</span><h2>${esc(heading)}</h2></div>
         <button class="provider-pill" id="ai-who">Reading provider…</button>
       </header>
-      <div class="assistant-suggestions" aria-label="Suggested questions">
-        <button data-ai-prompt="Give me a concise overview of this project">Project overview</button>
-        <button data-ai-prompt="What should I work on next in this project?">What next?</button>
-        <button data-ai-prompt="Where are the highest-risk parts of this project?">Find risks</button>
-      </div>
-      <div class="assistant-composer">
-        <span class="assistant-spark" aria-hidden="true">✦</span>
-        <input id="ai-q" placeholder="Ask anything about ${esc(p?.name ?? 'this project')}…"
-          aria-label="Ask about this project">
-        <button class="quiet small" id="ai-diagnose">Check project</button>
-        <button class="quiet small" id="ai-review" ${p?.situation?.unsaved ? '' : 'disabled'}
-          data-tip="${p?.situation?.unsaved ? 'Look over what you have changed but not saved'
-    : 'Nothing unsaved to look at'}">Review changes</button>
-        <button class="small" id="ai-change"
-          data-tip="Shows every file it would write before anything changes">Plan a change</button>
-        <button class="go small" id="ai-ask">Ask</button>
-      </div>
-      <div class="assistant-result" id="ai-out"></div>
+      ${expanded ? `
+        <div class="assistant-stage">
+          <div class="assistant-welcome">
+            <span class="assistant-orbit" aria-hidden="true">✦</span>
+            <span class="eyebrow">Ready with ${esc(p?.name ?? 'this project')}</span>
+            <h3>What do you want to understand?</h3>
+            <p>Ask how it fits together, where risk is concentrated, or how to approach a change.</p>
+            ${suggestions}
+            <div class="assistant-scope-line">
+              <span><b>${p?.situation?.unsaved ?? 0}</b> unsaved</span>
+              <span>Answers stay scoped to this project</span>
+              <span>Changes wait for your approval</span>
+            </div>
+          </div>
+          <div class="assistant-result" id="ai-out"></div>
+        </div>
+        ${composer}` : `${suggestions}${composer}<div class="assistant-result" id="ai-out"></div>`}
     </div>`;
 }
 
@@ -3390,7 +3410,7 @@ SCREENS.ask = async () => {
         <span class="context-fact"><b>${p.situation?.unsaved ?? 0}</b> unsaved</span>
       </div>
       <div class="assistant-workspace">
-        <div class="assistant-main">${askPanel(p, { heading: `Ask about ${p.name}` })}</div>
+        <div class="assistant-main">${askPanel(p, { heading: `Ask about ${p.name}`, expanded: true })}</div>
         <aside>
           <div class="panel-block context-panel">
             <div class="panel-title"><b>Context in use</b><span>Scoped</span></div>
