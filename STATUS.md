@@ -866,6 +866,38 @@ two places, and what the door allows may not be a workspace it was handed.
 
 ---
 
+## The room was built and nobody could find it
+
+**Three passes of workspace work sat one press away and read as though it did
+not exist.** What the Workspace tab actually showed was a column about the
+plumbing — which GitHub account the older workspace was made on, which
+computers are signed in to it, what this one is offering, and a note box wired
+to a store nothing writes to any more — with an *Enter workspace* button in the
+middle of it. Everything reported back said the screen was unchanged, and it
+was: the screen somebody lands on had never been touched.
+
+The tab lands in the room now. The older page is folded away at the foot of the
+left column, where infrastructure belongs. **A thing is not shipped because it
+exists and is reachable; it is shipped when it is what the screen does.** D-216.
+
+With it: what this computer is putting up sits beside the people it is being
+put up for, with a way to take each one down, and **Offer…** asks which — a
+folder, or one file. D-217. Asking this computer what it offers used to answer
+*that computer is not on this network*, which is true of no computer at all.
+D-218. And two lists that stretched a two-word name across eight hundred pixels
+now give it a measure. D-219.
+
+**Verified against two copies of the packaged build**, driving the real screen:
+lands in the room; General both ways, live, right sender, no duplicates, "Sent
+to 1 computer" only after the far end said it had kept it; a file offered from
+the menu appearing at once and brought by the other side with matching hash,
+both ways; another computer's shares under that computer with Bring reporting
+its own outcome; withdraw removing it from both; a change arriving on its own,
+View Changes writing nothing, Sync reaching Up to date; both edits of one file
+raising a conflict with the kept version intact and a way back recorded.
+
+---
+
 ## Two more that had never once run
 
 **Offer a file said *something went wrong here*, and the chooser never opened.**

@@ -2351,6 +2351,40 @@ Only what was explicitly offered, and a computer that is not here says that rath
 
 ---
 
+### D-216 `[LOCKED]` — The workspace is the screen, not something behind a button on it
+
+**Decision.** The Workspace tab lands in the room: people and their computers and the shared projects down the left, the chosen project in the middle, the inspector on the right. The older GitHub-backed page — which account, which computers are signed in to it — is folded away at the foot of the left column.
+
+**Why, and this is the lesson rather than the layout.** The room was built, tested against two running copies, and proved to work — **and nobody could find it.** What the tab actually showed was a column about the plumbing with an *Enter workspace* button in the middle of it. Three passes of work sat one press away and read as though it did not exist, and every report back said the screen was unchanged.
+
+A thing is not shipped because it exists and is reachable. It is shipped when it is what the screen does.
+
+---
+
+### D-217 `[DECIDED]` — What you are putting up sits beside the people you are putting it up for
+
+**Decision.** The left column carries what this computer is offering, with a way to take each one down. **Offer…** asks which: a folder, or one file. What somebody *else* is offering stays on that person's computer in the inspector (D-215).
+
+**Why.** Offering was a section halfway down a page about the network, and taking something down again meant finding a menu on a row. Both are about the people in the workspace, so they belong where the people are.
+
+---
+
+### D-218 `[DECIDED]` — Asking this computer what it offers is a fair question
+
+**Decision.** `GET /local/offers` with no computer named answers about this one.
+
+**Why.** It answered *that computer is not on this network at the moment* — true of no computer at all, and useless. The room needs its own offers to show somebody what they are sharing.
+
+---
+
+### D-219 `[DECIDED]` — A name and a line about it get a measure, not the whole window
+
+**Decision.** The rows of apps and of terminals cap their name column. A terminal's single control sits beside its row; the apps' varied controls keep a shared right edge.
+
+**Why.** They were `1fr`, which hands the name everything left over — so on a wide window two words and a short sentence stretched across eight hundred pixels with the button marooned at the far right. Nothing overlapped and nothing was clipped; the row simply read as though it had come apart.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.
