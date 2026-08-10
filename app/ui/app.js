@@ -2315,8 +2315,37 @@ const skeleton = () => `
     </div>
   </div>`;
 
-async function draw({ quietly = false } = {}) {
+let drawingPage = false;
+let redrawAfter = false;
+
+/**
+ * Draw one screen at a time.
+ *
+ * Several screens wait on the manager before mounting. Without this small
+ * queue, a slow page can answer after somebody has already pressed another
+ * place and put the old page under the new place's selected rail item. The
+ * latest requested place always gets the final pass.
+ */
+async function draw(options = {}) {
+  if (drawingPage) { redrawAfter = true; return; }
+  drawingPage = true;
+  let next = options;
+  try {
+    do {
+      redrawAfter = false;
+      const beganAt = at.tab;
+      await drawOnce(next);
+      next = {};
+      if (at.tab !== beganAt) redrawAfter = true;
+    } while (redrawAfter);
+  } finally {
+    drawingPage = false;
+  }
+}
+
+async function drawOnce({ quietly = false } = {}) {
   if (!quietly) {
+    const drawingTab = at.tab;
     // Only if it is actually slow. Cleared the moment the real page is ready,
     // whether that is before or after this fires.
     // Compared against what was there when the wait began, so a screen that
@@ -2328,7 +2357,7 @@ async function draw({ quietly = false } = {}) {
     }, HOLD_BACK);
 
     try {
-      await SCREENS[at.tab]?.();
+      await SCREENS[drawingTab]?.();
     } finally {
       drawn = true;
       clearTimeout(waiting);
@@ -2657,6 +2686,7 @@ const MARK_LOOK = {
 };
 
 let projectListFilter = 'all';
+let projectFocusPath = null;
 
 const stateChip = (mark) => {
   const which = MARK_LOOK[mark] ? mark : 'notStarted';
@@ -2673,6 +2703,7 @@ SCREENS.projects = async () => {
   const onGitHub = d.projects.filter((p) => /copy on GitHub/.test(p.reach ?? '')).length;
   const waiting = d.projects.filter((p) => (p.toSend ?? 0) > 0).length;
   const notStarted = d.projects.filter((p) => !p.mark || p.mark === 'notStarted').length;
+  const focused = d.projects.find((p) => p.path === projectFocusPath) ?? d.projects[0] ?? null;
 
   view.innerHTML = `
     <div class="pagehead command-head">
@@ -2688,51 +2719,41 @@ SCREENS.projects = async () => {
     </div>
     ${saidHtml()}
 
-    ${d.projects.length ? summary([
-    { mark: SUM_MARK.project, big: d.projects.length, what: 'on this computer' },
-    {
-      mark: SUM_MARK.pulse,
-      big: busy,
-      what: busy === 1 ? 'has work not saved yet' : 'have work not saved yet',
-      tone: busy ? 'warn' : '',
-    },
-    {
-      mark: SUM_MARK.world,
-      big: onGitHub,
-      what: waiting ? `have a copy on GitHub, ${waiting} behind it` : 'have a copy on GitHub',
-    },
-    {
-      mark: SUM_MARK.running,
-      big: notStarted,
-      what: notStarted === 1 ? 'project not started' : 'projects not started',
-    },
-  ]) : ''}
-
     ${d.projects.length ? `
-      <div class="commandbar" aria-label="Project controls">
-        <div class="segmented" id="p-filters">
-          ${[
-    ['all', 'All projects', d.projects.length],
-    ['here', 'On this computer', d.projects.length],
-    ['attention', 'Needs attention', busy],
-    ['github', 'Has GitHub copy', onGitHub],
+      <section class="project-command-center">
+        <div class="project-signal-ribbon" aria-label="Project summary">
+          <div class="signal-primary"><span class="signal-mark">${SUM_MARK.project}</span>
+            <span><b>${d.projects.length}</b><small>projects ready here</small></span></div>
+          <div class="signal-line ${busy ? 'warn' : ''}"><b>${busy}</b><span>need attention</span></div>
+          <div class="signal-line"><b>${onGitHub}</b><span>connected to GitHub${waiting ? ` · ${waiting} behind` : ''}</span></div>
+          <div class="signal-line"><b>${notStarted}</b><span>not started</span></div>
+        </div>
+
+        <div class="project-command-grid">
+          <div class="project-library">
+            <div class="project-library-tools" aria-label="Project controls">
+              <div class="segmented" id="p-filters">
+                ${[
+    ['all', 'All', d.projects.length],
+    ['here', 'On computer', d.projects.length],
+    ['attention', 'Attention', busy],
+    ['github', 'GitHub', onGitHub],
   ].map(([id, name, count]) => `<button class="${projectListFilter === id ? 'on' : ''}"
-            data-project-filter="${id}">${name}<span>${count}</span></button>`).join('')}
+                  data-project-filter="${id}">${name}<span>${count}</span></button>`).join('')}
+              </div>
+              <label class="find command-find">
+                <span class="mark" aria-hidden="true">⌕</span>
+                <input id="p-find" placeholder="Find a project…" aria-label="Search projects">
+                <span class="kbd">Ctrl K</span>
+              </label>
+            </div>
+            <div class="project-tile-grid" id="p-list">
+              ${d.projects.map(projectRow).join('')}
+            </div>
+          </div>
+          <aside class="project-focus" id="p-focus">${projectFocus(focused)}</aside>
         </div>
-        <div class="rest"></div>
-        <label class="find command-find">
-          <span class="mark" aria-hidden="true">⌕</span>
-          <input id="p-find" placeholder="Search projects…" aria-label="Search projects">
-          <span class="kbd">Ctrl K</span>
-        </label>
-      </div>
-      <div class="sheetlist projects-cols" id="p-list">
-        <div class="thead">
-          <span></span><span>Project</span><span>State</span>
-          <span>Last saved</span><span>Source</span><span></span>
-        </div>
-        ${d.projects.map(projectRow).join('')}
-      </div>`
+      </section>`
     : `<div class="empty">
          <b>No projects yet.</b>
          A project is just a folder. Add one and every app here opens straight into it.
@@ -2763,7 +2784,7 @@ SCREENS.projects = async () => {
   const filterProjects = () => {
     const want = find?.value.trim().toLowerCase() ?? '';
       let showing = 0;
-      for (const row of document.querySelectorAll('#p-list .trow[data-name]')) {
+      for (const row of document.querySelectorAll('#p-list [data-name]')) {
         const inText = !want || row.dataset.name.includes(want);
         const inGroup = projectListFilter === 'all' || projectListFilter === 'here'
           || (projectListFilter === 'attention' && row.dataset.attention === '1')
@@ -2789,15 +2810,30 @@ SCREENS.projects = async () => {
 
   lastMarks = d.marks;
 
+  const wireProjectFocus = (p) => {
+    $('#focus-open')?.addEventListener('click', () => openProject(p.path));
+    $('#focus-inspect')?.addEventListener('click', () => inspectProject(p));
+    $('#focus-reveal')?.addEventListener('click', () => post('/reveal', { path: p.path }));
+    $('#focus-more')?.addEventListener('click', (e) => {
+      const room = e.currentTarget.getBoundingClientRect();
+      menuAt({ x: room.right - 200, y: room.bottom + 6 }, moreForProject(p.path, !!p.private));
+    });
+  };
+  if (focused) wireProjectFocus(focused);
+
   for (const el of document.querySelectorAll('[data-open]')) {
     // One press selects and shows what is known about it; two opens it. A row
     // that opened a project on a single press meant you could not look at one
     // without leaving the list you were looking at it from.
     el.onclick = (e) => {
       if (e.target.closest('button')) return;
-      for (const other of document.querySelectorAll('.trow.on')) other.classList.remove('on');
+      for (const other of document.querySelectorAll('#p-list .on')) other.classList.remove('on');
       el.classList.add('on');
-      inspectProject(d.projects.find((p) => p.path === el.dataset.open));
+      const chosen = d.projects.find((p) => p.path === el.dataset.open);
+      if (!chosen) return;
+      projectFocusPath = chosen.path;
+      $('#p-focus').innerHTML = projectFocus(chosen);
+      wireProjectFocus(chosen);
     };
     el.ondblclick = (e) => { if (e.target.closest('button')) return; openProject(el.dataset.open); };
     // The same items the overflow button opens. Never the only way to reach them.
@@ -2825,10 +2861,7 @@ SCREENS.projects = async () => {
         moreForProject(b.dataset.more, b.dataset.now === '1'));
     };
   }
-  if (!inspecting && d.projects[0]) {
-    document.querySelector(`[data-open="${CSS.escape(d.projects[0].path)}"]`)?.classList.add('on');
-    inspectProject(d.projects[0]);
-  }
+  if (focused) document.querySelector(`[data-open="${CSS.escape(focused.path)}"]`)?.classList.add('on');
 };
 
 /**
@@ -2913,6 +2946,35 @@ async function inspectProject(p) {
  */
 let lastMarks = [];
 
+/** The selected project as a workbench, not a second copy of the library row. */
+function projectFocus(p) {
+  if (!p) return '<div class="empty compact"><b>Nothing selected.</b>Choose a project to see its working context.</div>';
+  const hasGitHub = /copy on GitHub/.test(p.reach ?? '');
+  const mark = MARK_LOOK[p.mark] ? p.mark : 'notStarted';
+  return `
+    <div class="focus-kicker"><span>In focus</span>${stateChip(mark)}</div>
+    <div class="focus-identity">
+      <span class="project-badge" aria-hidden="true">${KIND_MARK.project}</span>
+      <div><h2>${esc(p.name)}</h2><span class="mono">${esc(shortPath(p.path))}</span></div>
+    </div>
+    <p class="focus-sentence">${p.unsaved
+    ? `${p.unsaved} unsaved change${p.unsaved === 1 ? '' : 's'} need your attention.`
+    : `Everything here is saved. ${esc(p.saved ?? '')}`}</p>
+    <div class="focus-facts">
+      <div><span>Source</span><b>${hasGitHub ? 'GitHub' : p.private ? 'This computer' : 'Offered'}</b></div>
+      <div><span>Kind</span><b>${esc(p.kind || 'Project')}</b></div>
+      <div><span>Last saved</span><b>${esc(p.saved || 'Not yet')}</b></div>
+    </div>
+    <div class="focus-primary-actions">
+      <button class="go" id="focus-open">Open project</button>
+      <button id="focus-inspect">Project details</button>
+    </div>
+    <div class="focus-secondary-actions">
+      <button class="quiet" id="focus-reveal">Show in Explorer</button>
+      <button class="quiet icon" id="focus-more" aria-label="More project actions">⋯</button>
+    </div>`;
+}
+
 /**
  * One project, with the four things worth knowing at a glance: what state it is
  * in, when you last stopped, what you were doing when you did, and where it is.
@@ -2921,25 +2983,25 @@ function projectRow(p) {
   const mark = MARK_LOOK[p.mark] ? p.mark : 'notStarted';
   const hasGitHub = /copy on GitHub/.test(p.reach ?? '');
   return `
-    <div class="trow tap" data-open="${esc(p.path)}"
+    <article class="project-tile" data-open="${esc(p.path)}"
       data-name="${esc(p.name.toLowerCase())} ${esc(String(p.path).toLowerCase())}"
       data-attention="${p.unsaved ? '1' : '0'}" data-github="${hasGitHub ? '1' : '0'}">
-      <span class="dot ${p.unsaved ? 'attention' : 'off'}"
-        data-tip="${p.unsaved ? `${p.unsaved} unsaved` : 'Everything saved'}"></span>
-      <span class="tname">
-        <b>${esc(p.name)}</b>
-        <span class="where">${esc(shortPath(p.path))}</span>
-      </span>
-      ${stateChip(mark)}
-      <span class="tcell dim">${esc(p.saved ?? '')}</span>
-      <span class="tcell project-source"><span class="dot ${hasGitHub ? 'live' : p.private ? 'off' : 'cool'}"></span>${
-  hasGitHub ? 'GitHub' : p.private ? 'This computer' : 'Offered'}</span>
-      <span class="tacts">
-        <span class="onhover"><button class="small" data-open-now="${esc(p.path)}">Open</button></span>
+      <div class="project-tile-top">
+        <span class="project-mini-mark ${p.unsaved ? 'attention' : ''}" aria-hidden="true">${KIND_MARK.project}</span>
+        <span class="grow"><b>${esc(p.name)}</b><small class="mono">${esc(shortPath(p.path))}</small></span>
         <button class="quiet small icon" data-more="${esc(p.path)}" data-now="${p.private ? '1' : '0'}"
           data-tip="More for ${esc(p.name)}" aria-label="More for ${esc(p.name)}">⋯</button>
-      </span>
-    </div>`;
+      </div>
+      <div class="project-tile-status">
+        ${stateChip(mark)}
+        <span class="project-source"><span class="dot ${hasGitHub ? 'live' : p.private ? 'off' : 'cool'}"></span>${
+  hasGitHub ? 'GitHub' : p.private ? 'This computer' : 'Offered'}</span>
+      </div>
+      <div class="project-tile-foot">
+        <span class="${p.unsaved ? 'warn' : 'dim'}">${p.unsaved ? `${p.unsaved} unsaved` : esc(p.saved ?? 'Not saved yet')}</span>
+        <button class="small" data-open-now="${esc(p.path)}">Open</button>
+      </div>
+    </article>`;
 }
 
 /**
@@ -3403,26 +3465,25 @@ SCREENS.ask = async () => {
     ${saidHtml()}
 
     ${p?.name ? `
-      <div class="assistant-context">
-        <span class="project-badge">${KIND_MARK.project}</span>
-        <span class="grow"><b>${esc(p.name)}</b><span>${esc(p.dir)}</span></span>
-        ${stateChip(p.mark)}
-        <span class="context-fact"><b>${p.situation?.unsaved ?? 0}</b> unsaved</span>
-      </div>
-      <div class="assistant-workspace">
-        <div class="assistant-main">${askPanel(p, { heading: `Ask about ${p.name}`, expanded: true })}</div>
-        <aside>
-          <div class="panel-block context-panel">
+      <div class="intelligence-shell-v2">
+        <aside class="intelligence-rail-v2">
+          <div class="intelligence-project-v2">
+            <span class="project-badge">${KIND_MARK.project}</span>
+            <span class="grow"><small>Thinking with</small><b>${esc(p.name)}</b><span>${esc(p.dir)}</span></span>
+            ${stateChip(p.mark)}
+          </div>
+          <div class="context-panel-v2">
             <div class="panel-title"><b>Context in use</b><span>Scoped</span></div>
             <div class="context-item"><span>Project</span><b>${esc(p.name)}</b></div>
             <div class="context-item"><span>Files</span><b>Only what the question needs</b></div>
             <div class="context-item"><span>Sensitive values</span><b>Removed before sending</b></div>
           </div>
-          <div class="panel-block context-panel">
+          <div class="context-panel-v2">
             <div class="panel-title"><b>Before files change</b></div>
             <p>Every proposed file is shown for review. Nothing is written until you approve it.</p>
           </div>
         </aside>
+        <div class="intelligence-main-v2">${askPanel(p, { heading: `Ask about ${p.name}`, expanded: true })}</div>
       </div>`
     : `<div class="empty"><b>Nothing is open yet.</b>
         These questions are about a project, so there has to be one.
@@ -3441,20 +3502,28 @@ async function drawOpenProject() {
   const open = whatIsOpen(p, t.tools);
 
   view.innerHTML = `
-    <button class="backlink" id="back">← Projects</button>
-    <header class="project-identity">
-      <div class="project-badge" aria-hidden="true">${KIND_MARK.project}</div>
-      <div class="grow">
-        <div class="identity-line"><h1>${esc(p.name)}</h1>${stateChip(p.mark)}</div>
-        <p>${esc(p.says)} <span>·</span> ${esc(p.saved)} <span>·</span>
-          ${p.situation?.shared ? 'GitHub copy connected' : 'Only on this computer'}</p>
-        <div class="path">${esc(p.dir)}</div>
+    <header class="project-hero-v2">
+      <button class="backlink" id="back">← Project library</button>
+      <div class="project-hero-line">
+        <div class="project-badge" aria-hidden="true">${KIND_MARK.project}</div>
+        <div class="grow">
+          <span class="eyebrow">Project hub</span>
+          <div class="identity-line"><h1>${esc(p.name)}</h1>${stateChip(p.mark)}</div>
+          <div class="path">${esc(p.dir)}</div>
+        </div>
+        <div class="acts">
+          <button id="pd-reveal">Explorer</button>
+          <button id="to-terms">Terminal</button>
+          <button class="go" id="to-apps">Open in AI app</button>
+          <button class="quiet icon" id="more" aria-label="More project actions">⋯</button>
+        </div>
       </div>
-      <div class="acts">
-        <button id="pd-reveal">Explorer</button>
-        <button id="to-terms">Terminal</button>
-        <button class="go" id="to-apps">Open in AI app</button>
-        <button class="quiet icon" id="more" aria-label="More project actions">⋯</button>
+      <div class="project-pulse-v2">
+        <div class="project-pulse-story"><span class="dot ${p.situation?.unsaved ? 'attention' : 'live'}"></span>
+          <span><b>${p.situation?.unsaved ? `${p.situation.unsaved} unsaved` : 'Ready to work'}</b><small>${esc(p.says)}</small></span></div>
+        <div><span>Last saved</span><b>${esc(p.saved || 'Not yet')}</b></div>
+        <div><span>Source</span><b>${p.situation?.shared ? 'GitHub' : 'This computer'}</b></div>
+        <div><span>Open sessions</span><b>${open.length}</b></div>
       </div>
     </header>
 
@@ -3469,32 +3538,29 @@ async function drawOpenProject() {
     </nav>
 
     ${saidHtml()}
-    <div class="project-cockpit">
-      <div class="cockpit-main">
-        <section class="cockpit-overview">
-          <div class="panel-block">
-            <div class="panel-title"><b>Status</b><span>${p.situation?.unsaved ? 'Needs attention' : 'Ready'}</span></div>
-            <dl class="status-list">
-              <div><dt>Last saved</dt><dd>${esc(p.saved || 'Not saved yet')}</dd></div>
-              <div><dt>Location</dt><dd>${p.situation?.shared ? 'GitHub' : 'This computer'}</dd></div>
-              <div><dt>Unsaved work</dt><dd class="${p.situation?.unsaved ? 'warn' : ''}">${esc(String(p.situation?.unsaved ?? 0))}</dd></div>
-              <div><dt>Open sessions</dt><dd>${open.length}</dd></div>
-            </dl>
-          </div>
-          <div class="panel-block project-description">
-            <div class="panel-title"><b>Project context</b><button class="quiet small" data-project-jump="ask">Ask AI</button></div>
+    <div class="project-hub-v2">
+      <div class="project-hub-main">
+        <section class="project-now-v2">
+          <div class="now-copy">
+            <span class="eyebrow">Right now</span>
+            <h2>${p.situation?.unsaved ? 'Work is waiting to be saved' : 'This project is ready'}</h2>
             <p>${esc(p.says || 'No project description is available yet.')}</p>
-            <div class="context-actions">
-              <button id="to-ship">Deploy</button>
-              <button data-project-look="1">Inspect files</button>
-            </div>
+          </div>
+          <div class="now-actions">
+            <button data-project-look="1">Inspect files</button>
+            <button id="to-ship">Prepare a release</button>
+            <button class="quiet" data-project-jump="activity">View activity</button>
           </div>
         </section>
 
-        <section class="cockpit-ai">${askPanel(p, { heading: 'AI Assistant' })}</section>
+        <section class="project-intelligence-v2">
+          <div class="section-rubric"><span><b>Project intelligence</b><small>Ask with this project already in context</small></span>
+            <button class="quiet small" data-project-jump="ask">Open full assistant →</button></div>
+          ${askPanel(p, { heading: 'AI Assistant' })}
+        </section>
 
-        <section>
-          <div class="panel-title section-title"><b>Recent sessions</b>
+        <section class="project-sessions-v2">
+          <div class="section-rubric"><span><b>Recent sessions</b><small>Return to the tools you used here</small></span>
             ${open.length ? '<button class="quiet small" id="tidy">Clear list</button>' : ''}</div>
           ${open.length ? `<div class="lane session-lane">
             ${open.map((g) => `
@@ -3517,16 +3583,17 @@ async function drawOpenProject() {
         </section>
       </div>
 
-      <aside class="cockpit-side">
-        <div class="panel-block save-panel">
-          <div class="panel-title"><b>Save your work</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div>
+      <aside class="project-control-tower">
+        <div class="save-console-v2">
+          <div class="panel-title"><b>Save and send</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div>
+          <p>Describe this stretch of work before it is saved.</p>
           <label class="field" for="msg">What did you do?</label>
           <textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea>
           <button class="go wide" id="pub">Save and send</button>
           <div id="going" class="going"></div>
         </div>
-        <div class="panel-block quick-panel">
-          <div class="panel-title"><b>Quick actions</b></div>
+        <div class="project-shortcuts-v2">
+          <div class="panel-title"><b>Continue working</b></div>
           <button id="side-apps">Open in an AI app <span>→</span></button>
           <button id="side-term">Open a terminal <span>→</span></button>
           <button id="side-ship">Deploy this project <span>→</span></button>
@@ -4112,57 +4179,41 @@ SCREENS.apps = async () => {
     </div>
     ${saidHtml()}
 
-    ${summary([
-    {
-      mark: SUM_MARK.project,
-      big: here.length,
-      what: here.length === 1 ? 'app ready on this computer' : 'apps ready on this computer',
-      tone: here.length ? 'live' : 'warn',
-    },
-    {
-      mark: SUM_MARK.computers,
-      big: signedInto,
-      what: signedInto === 1 ? 'has an account set here' : 'have an account set here',
-    },
-    {
-      mark: SUM_MARK.folder,
-      big: whereFor(null, p) ? tail(whereFor(null, p)) : 'Nowhere yet',
-      what: whereFor(null, p) ? 'is where they open' : 'nothing opens until a folder is picked',
-      tone: whereFor(null, p) ? '' : 'warn',
-    },
-  ])}
+    <section class="launch-stage-v2">
+      <div class="launch-stage-mark">${APP_MARK}</div>
+      <div class="grow"><span class="eyebrow">Launch context</span>
+        <h2>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'Choose a folder')}</h2>
+        <p>${esc(whereFor(null, p) ?? 'Nothing opens until a working folder is chosen.')}</p></div>
+      <div class="launch-readouts"><span><b>${here.length}</b> ready</span><span><b>${signedInto}</b> accounts selected</span></div>
+    </section>
 
-    <div class="resource-layout">
-      <div class="resource-main">
+    <div class="tool-orchestrator-v2">
+      <div class="tool-orchestrator-main">
     ${here.length ? `
-      <div class="sect">
-        <h2>Ready on this computer</h2><span class="count">${here.length}</span>
+      <div class="section-rubric">
+        <span><b>Ready to launch</b><small>Apps found on this computer</small></span><span class="count">${here.length}</span>
       </div>
-      <div class="sheetlist apps-cols">
+      <div class="tool-launch-grid">
         ${here.map((x) => appRow(x, p, t)).join('')}
       </div>` : `
       <div class="empty"><b>None of the AI apps were found here.</b>
         Any of the ones below installs from this page.</div>`}
 
     ${away.length ? `
-      <div class="sect">
-        <h2>Not installed</h2><span class="count">${away.length}</span>
+      <div class="section-rubric tool-catalog-head">
+        <span><b>Available to add</b><small>More coding tools for this workstation</small></span><span class="count">${away.length}</span>
       </div>
-      <div class="sheetlist apps-cols">
+      <div class="tool-catalog-v2">
         ${away.map((x) => appRow(x, p, t)).join('')}
       </div>` : ''}
       </div>
-      <aside class="resource-side">
-        <div class="panel-block">
-          <div class="panel-title"><b>Launch context</b><span>${whereFor(null, p) ? 'Ready' : 'Choose a folder'}</span></div>
-          <div class="context-item"><span>Project folder</span><b>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'None chosen')}</b></div>
-          <div class="context-item"><span>Apps available</span><b>${here.length}</b></div>
-          <div class="context-item"><span>Accounts selected</span><b>${signedInto}</b></div>
-        </div>
-        <div class="panel-block context-panel">
-          <div class="panel-title"><b>How launch works</b></div>
-          <p>The app opens directly in the selected folder. Account selection stays per app on this computer.</p>
-        </div>
+      <aside class="tool-orchestrator-rail">
+        <span class="eyebrow">Orchestration</span>
+        <h3>One press, correct context.</h3>
+        <p>The app opens directly in the selected folder. Account choice stays with each app on this computer.</p>
+        <div class="context-item"><span>Working folder</span><b>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'None chosen')}</b></div>
+        <div class="context-item"><span>Apps online</span><b>${here.length}</b></div>
+        <div class="context-item"><span>Accounts ready</span><b>${signedInto}</b></div>
       </aside>
     </div>
 
@@ -4224,14 +4275,14 @@ function appRow(x, p, t) {
 
   if (!x.here) {
     return `
-      <div class="trow">
+      <div class="tool-missing-row">
         <span class="kindmark quiet" aria-hidden="true">${APP_MARK}</span>
-        <span class="tname">
+        <span class="grow">
           <b>${esc(x.name)}</b>
-          ${x.installs ? `<span class="where">${esc(x.installs)}</span>` : ''}
+          ${x.installs ? `<small>${esc(x.installs)}</small>` : ''}
         </span>
-        <span class="tcell dim">${x.made ? esc(x.made) : ''}</span>
-        <span class="tacts">
+        <span class="tool-maker">${x.made ? esc(x.made) : ''}</span>
+        <span class="acts">
           <button class="quiet small" data-getpage="${esc(x.install ?? '')}"
             data-tip="Its own installation page">Instructions ↗</button>
           ${x.installs ? `<button class="small" data-install="${esc(x.id)}">Install</button>` : ''}
@@ -4249,15 +4300,15 @@ function appRow(x, p, t) {
       : x.config ? 'no account chosen' : 'signs you in itself';
 
   return `
-    <div class="trow">
-      <span class="kindmark" aria-hidden="true">${APP_MARK}</span>
-      <span class="tname">
-        <b>${esc(x.name)}</b>
-        <span class="where">${esc(says)}${x.opensInBrowser ? ' · opens in your browser' : ''}${
-  windowElsewhere ? ' · window not here yet' : ''}</span>
-      </span>
-      <span class="tcell dim">${x.made ? esc(x.made) : ''}</span>
-      <span class="tacts">
+    <article class="tool-launch-card">
+      <div class="tool-launch-identity"><span class="kindmark" aria-hidden="true">${APP_MARK}</span>
+        <span class="grow"><b>${esc(x.name)}</b><small>${x.made ? esc(x.made) : 'Coding assistant'}</small></span>
+        <span class="dot ${account || x.signedIn ? 'live' : 'off'}"></span>
+      </div>
+      <p>${esc(says)}${x.opensInBrowser ? ' · opens in your browser' : ''}${
+  windowElsewhere ? ' · window not here yet' : ''}
+      </p>
+      <div class="tool-launch-actions">
         <span class="drop">
           <button class="quiet small" data-account="${esc(x.id)}"
             data-tip="Which account ${esc(x.name)} opens as">
@@ -4275,8 +4326,8 @@ function appRow(x, p, t) {
       ? `<button class="small" data-getwindow="${esc(x.windowElsewhere)}" data-name="${esc(x.name)}"
            data-tip="${esc(x.terminalOnlyBecause ?? 'Its own window is a separate download')}">Get window ↗</button>`
       : ''}
-      </span>
-    </div>`;
+      </div>
+    </article>`;
 }
 
 /** One mark for an AI app, so a row says what kind of thing it is at a glance. */
@@ -4592,55 +4643,31 @@ SCREENS.terminals = async () => {
     </div>
     ${saidHtml()}
 
-    ${dir ? '' : `<div class="empty"><b>No folder chosen yet.</b>
-      A terminal has to open somewhere. Pick the folder above, or open a project.
-      <span class="acts"><button class="go" id="t-pick">Choose a folder…</button></span></div>`}
+    <section class="terminal-stage-v2">
+      <div class="terminal-prompt-v2"><span>›_</span></div>
+      <div class="grow"><span class="eyebrow">Starts in</span><h2>${esc(dir ? tail(dir) : 'No folder chosen')}</h2>
+        <p class="mono">${esc(dir ?? 'Choose a project or folder before opening a shell.')}</p></div>
+      ${dir ? '' : '<button class="go" id="t-pick">Choose a folder…</button>'}
+      <div class="terminal-stage-facts"><span><b>${terminals.length}</b> shells</span>
+        <span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b> remote</span></div>
+    </section>
 
-    ${summary([
-    {
-      mark: SUM_MARK.folder,
-      big: dir ? tail(dir) : 'Nowhere yet',
-      what: dir ? 'is where every one of these opens' : 'nothing will open until a folder is picked',
-      tone: dir ? '' : 'warn',
-    },
-    {
-      mark: TERM_SUM_MARK,
-      big: terminals.length,
-      what: terminals.length === 1 ? 'terminal on this computer' : 'terminals on this computer',
-    },
-    {
-      mark: SUM_MARK.running,
-      big: sessions.sessions?.filter((one) => one.running).length ?? 0,
-      what: 'running here for another computer',
-      tone: (sessions.sessions ?? []).some((one) => one.running) ? 'live' : '',
-      pip: (sessions.sessions ?? []).some((one) => one.running),
-      signal: (sessions.sessions ?? []).some((one) => one.running),
-    },
-  ])}
-
-    <div class="resource-layout terminals-layout">
-      <div class="resource-main">
-      <div class="sect"><h2>Available shells</h2><span class="count">${terminals.length}</span></div>
-      <div class="sheetlist term-cols">
+    <div class="terminal-console-v2">
+      <div class="terminal-console-main">
+      <div class="section-rubric"><span><b>Choose a shell</b><small>Each opens directly in the context above</small></span><span class="count">${terminals.length}</span></div>
+      <div class="terminal-choice-grid">
       ${terminals.map((t) => `
-        <div class="trow ${dir ? 'tap' : ''}" ${dir ? `data-open-term="${esc(t.id)}"` : ''}>
+        <article class="terminal-choice ${dir ? 'tap' : ''}" ${dir ? `data-open-term="${esc(t.id)}"` : ''}>
           <span class="kindmark" aria-hidden="true">${TERM_MARK}</span>
-          <span class="tname">
-            <b>${esc(t.name)}</b>
-            <span class="where">${esc(t.blurb)}</span>
-          </span>
-          <span class="tacts">
-            <span class="onhover">
-              <button class="small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Open here</button>
-            </span>
-          </span>
-        </div>`).join('')}
+          <span class="grow"><b>${esc(t.name)}</b><small>${esc(t.blurb)}</small></span>
+          <button class="small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Start →</button>
+        </article>`).join('')}
       </div>
 
     ${(sessions.sessions ?? []).length ? `
       <div class="sect"><h2>Running here for another computer</h2>
         <span class="count">${sessions.sessions.length}</span></div>
-      <div class="sheetlist">
+      <div class="remote-session-dock">
         ${sessions.sessions.map((one) => `
           <div class="trow">
             <span class="dot ${one.running ? 'live' : 'off'}"></span>
@@ -4655,17 +4682,12 @@ SCREENS.terminals = async () => {
           </div>`).join('')}
       </div>` : ''}
       </div>
-      <aside class="resource-side">
-        <div class="panel-block">
-          <div class="panel-title"><b>Launch context</b><span>${dir ? 'Ready' : 'Missing folder'}</span></div>
-          <div class="context-item"><span>Starts in</span><b class="mono">${esc(dir ?? 'No folder chosen')}</b></div>
-          <div class="context-item"><span>Shells found</span><b>${terminals.length}</b></div>
-          <div class="context-item"><span>Remote sessions</span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b></div>
-        </div>
-        <div class="panel-block context-panel">
-          <div class="panel-title"><b>Session behavior</b></div>
-          <p>Nothing is typed for you. A terminal opens in the selected folder and stays under your control.</p>
-        </div>
+      <aside class="terminal-rail-v2">
+        <span class="eyebrow">Session behavior</span>
+        <h3>You stay in control.</h3>
+        <p>Nothing is typed for you. A shell starts in the selected folder and remains yours.</p>
+        <div class="context-item"><span>Folder</span><b class="mono">${esc(dir ?? 'Not chosen')}</b></div>
+        <div class="context-item"><span>Remote sessions</span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b></div>
       </aside>
     </div>`;
   said = null;
@@ -4878,40 +4900,17 @@ SCREENS.ship = async () => {
     </div>
     ${saidHtml()}
 
-    ${summary([
-    {
-      mark: SUM_MARK.world,
-      big: d.deployedTo?.url ? 'Online' : 'Not online yet',
-      what: d.deployedTo?.url ? String(d.deployedTo.url).replace(/^https?:\/\//, '') : 'nothing has been put up from here',
-      tone: d.deployedTo?.url ? 'live' : '',
-      pip: !!d.deployedTo?.url,
-      signal: !!d.deployedTo?.url,
-    },
-    {
-      // What it actually is, and when that is nothing in particular, said as
-      // nothing in particular rather than as a guess with a name on it.
-      mark: SUM_MARK.project,
-      big: d.look?.framework ?? (d.look?.hasPackage ? 'No framework' : 'Plain files'),
-      what: d.look?.build ? `builds with ${d.look.build}` : 'this project does not say how to build itself',
-    },
-    {
-      mark: SUM_MARK.pulse,
-      big: d.project?.unsaved ?? 0,
-      what: (d.project?.unsaved ?? 0) === 1 ? 'change not saved yet' : 'changes not saved yet',
-      tone: (d.project?.unsaved ?? 0) ? 'warn' : '',
-    },
-  ])}
-
-    <div class="factbar">
-      <span><b>Project</b>${esc(d.name ?? '')}</span>
-      <span><b>On GitHub</b>${bind.bound
-    ? `<span class="mono">${esc(bind.owner)}/${esc(bind.repo)}</span>`
-    : '<span class="dim">not on GitHub yet</span>'}</span>
-      ${bind.branch ? `<span><b>Line</b><span class="mono">${esc(bind.branch)}</span></span>` : ''}
-      ${d.look?.framework ? `<span><b>Built with</b>${esc(d.look.framework)}</span>` : ''}
-      <span><b>Unsaved</b>${d.project?.unsaved
-    ? `<span class="warn">${d.project.unsaved}</span>` : 'none'}</span>
-    </div>
+    <section class="release-readiness-v2">
+      <div class="release-orbit ${d.deployedTo?.url ? 'live' : ''}">${SUM_MARK.world}</div>
+      <div class="release-identity"><span class="eyebrow">Release readiness</span>
+        <h2>${esc(d.name ?? '')}</h2>
+        <p>${d.deployedTo?.url ? `Online at ${esc(String(d.deployedTo.url).replace(/^https?:\/\//, ''))}` : 'Nothing from this project is online yet.'}</p></div>
+      <div class="release-signals">
+        <div><span>Build system</span><b>${esc(d.look?.framework ?? (d.look?.hasPackage ? 'No framework' : 'Plain files'))}</b></div>
+        <div><span>GitHub</span><b>${bind.bound ? `${esc(bind.owner)}/${esc(bind.repo)}` : 'Not connected'}</b></div>
+        <div><span>Unsaved</span><b class="${d.project?.unsaved ? 'warn' : ''}">${d.project?.unsaved ?? 'None'}</b></div>
+      </div>
+    </section>
 
     ${d.deployedTo?.url ? `
       <div class="said good">
@@ -4930,9 +4929,9 @@ SCREENS.ship = async () => {
         <span class="acts"><button class="go small" id="dep-publish">Put it on GitHub…</button></span>
       </div>`}
 
-    <div class="deploy-grid">
+    <div class="release-workflows-v2 deploy-grid">
       <section class="deploy-lane">
-        <div class="deploy-lane-head"><span class="kindmark">${SITE_MARK}</span><span class="grow"><b>Website</b><span>Replaced whole on each deploy</span></span></div>
+        <div class="deploy-lane-head"><span class="release-step">01</span><span class="kindmark">${SITE_MARK}</span><span class="grow"><b>Website release</b><span>Put the current website online</span></span></div>
         <div class="sheetlist term-cols">
       ${vercelRow(d)}
       ${site.places.filter((pl) => pl.id !== 'vercel').map((pl) => `
@@ -4952,7 +4951,7 @@ SCREENS.ship = async () => {
       </section>
 
       <section class="deploy-lane">
-        <div class="deploy-lane-head"><span class="kindmark">${KIND_MARK.file}</span><span class="grow"><b>Application</b><span>${app.packStep
+        <div class="deploy-lane-head"><span class="release-step">02</span><span class="kindmark">${KIND_MARK.file}</span><span class="grow"><b>Application build</b><span>${app.packStep
     ? `builds with this project’s own “${esc(app.packStep)}” step`
     : app.manager === 'cargo' ? 'builds with cargo' : 'No build step yet'}</span></span></div>
     ${app.installers.length ? `
@@ -7002,7 +7001,7 @@ SCREENS.activity = async () => {
   const filters = JOB_KINDS.filter((k) => k.id === 'all' || had.has(k.id) || k.id === activityFilter);
 
   const jobLine = (j) => `
-    <div class="trow ${j.id === watching ? 'on' : ''}" data-job-open="${esc(j.id)}">
+    <div class="trow activity-event ${j.id === watching ? 'on' : ''}" data-job-open="${esc(j.id)}">
       <span class="dot ${j.finished ? (j.ok ? 'off' : 'attention') : 'live'}"></span>
       <span class="tname">
         <b>${esc(j.what)}</b>
@@ -7027,27 +7026,14 @@ SCREENS.activity = async () => {
     </div>
     ${saidHtml()}
 
-    ${summary([
-    {
-      mark: SUM_MARK.running,
-      big: running.length,
-      what: running.length === 1 ? 'errand running' : 'errands running',
-      tone: running.length ? 'live' : '',
-      pip: running.length > 0,
-      signal: running.length > 0,
-    },
-    {
-      mark: SUM_MARK.computers,
-      big: (sessions.sessions ?? []).filter((one) => one.running).length,
-      what: 'being run here by another computer',
-    },
-    {
-      mark: SUM_MARK.done,
-      big: over.filter((j) => j.ok).length,
-      what: `finished well, of ${over.length} lately`,
-      tone: over.some((j) => j.ok === false) ? 'warn' : '',
-    },
-  ])}
+    <section class="activity-now-v2">
+      <div class="activity-radar ${running.length ? 'live' : ''}"><span>${running.length}</span></div>
+      <div class="grow"><span class="eyebrow">Happening now</span>
+        <h2>${running.length ? `${running.length} active ${running.length === 1 ? 'errand' : 'errands'}` : 'The workstation is quiet'}</h2>
+        <p>${running.length ? 'Live output stays here while you move through the app.' : `${over.length} recent ${over.length === 1 ? 'result is' : 'results are'} available below.`}</p></div>
+      <div class="activity-now-facts"><span><b>${(sessions.sessions ?? []).filter((one) => one.running).length}</b> remote</span>
+        <span><b>${over.filter((j) => j.ok).length}</b> finished well</span></div>
+    </section>
 
     <div class="activity-layout">
       <div class="activity-main">
@@ -7059,17 +7045,22 @@ SCREENS.activity = async () => {
           <button class="chip ${k.id === activityFilter ? 'on' : ''}" data-filter="${esc(k.id)}">${esc(k.name)}</button>`).join('')}
       </div>` : ''}
 
-    <div class="sect"><h2>Happening now</h2><span class="count">${running.length}</span></div>
+    <div class="section-rubric"><span><b>Live work</b><small>Output from anything still running</small></span><span class="count">${running.length}</span></div>
     ${running.length
-    ? `<div class="sheetlist act-cols">
-        <div class="thead"><span></span><span>Errand</span><span>Project</span><span>Kind</span><span>Started</span><span></span></div>
+    ? `<div class="activity-stream-v2 act-cols">
         ${running.map(jobLine).join('')}</div>`
-    : '<div class="card" style="color:var(--quiet)">Nothing is running.</div>'}
+    : '<div class="activity-empty-v2"><span>○</span><div><b>Nothing is running.</b><small>Builds, transfers, AI work and releases appear here the moment they start.</small></div></div>'}
+
+    ${!running.length && !over.length ? `
+      <div class="activity-guide-v2">
+        <div><span>${SUM_MARK.running}</span><b>Live output</b><small>Follow long work without staying on the screen that started it.</small></div>
+        <div><span>${SUM_MARK.done}</span><b>Finished results</b><small>Return to builds, transfers, releases, and answers after they finish.</small></div>
+        <div><span>${SUM_MARK.computers}</span><b>Remote work</b><small>See when another computer is using this one, and stop it here.</small></div>
+      </div>` : ''}
 
     ${over.length ? `
-      <div class="sect"><h2>Finished</h2><span class="count">${over.length}</span></div>
-      <div class="sheetlist act-cols">
-        <div class="thead"><span></span><span>Errand</span><span>Project</span><span>Kind</span><span>Ended</span><span></span></div>
+      <div class="section-rubric activity-finished-head"><span><b>Recently finished</b><small>Completed output and anything needing attention</small></span><span class="count">${over.length}</span></div>
+      <div class="activity-stream-v2 act-cols">
         ${over.map(jobLine).join('')}
       </div>` : ''}
       </div>
@@ -8086,15 +8077,15 @@ SCREENS.settings = async () => {
     </div>
     ${saidHtml()}
 
-    <div class="settingsplaces">
-      <nav aria-label="Parts of settings">
+    <div class="preferences-shell-v2 settingsplaces">
+      <nav class="preferences-nav-v2" aria-label="Parts of settings">
         ${places.map((one) => `
           <button class="${one.id === settingsPlace ? 'on' : ''}" data-place="${esc(one.id)}">${esc(one.name)}</button>`).join('')}
       </nav>
-      <div class="part">
-        <div class="sect"><h2>${esc(here.name)}</h2></div>
-        ${here.why ? `<p class="sub" style="margin:-.4rem 0 .7rem">${esc(here.why)}</p>` : ''}
-        ${body}
+      <div class="preferences-canvas-v2 part">
+        <header class="preferences-heading-v2"><span class="eyebrow">${esc(here.name)}</span><h2>${esc(here.name)}</h2>
+          ${here.why ? `<p>${esc(here.why)}</p>` : ''}</header>
+        <div class="preferences-body-v2">${body}</div>
       </div>
     </div>`;
   said = null;
@@ -8363,20 +8354,20 @@ SCREENS.feedback = async () => {
     </div>
     ${saidHtml()}
 
-    <div class="feedback-layout">
-      <section class="feedback-compose panel-block">
-        <div class="panel-title"><b>New report</b><span>Kept locally first</span></div>
-        <label class="field">What happened?</label>
-        <textarea id="fb-what" rows="7" placeholder="I pressed Open on Antigravity and nothing appeared."></textarea>
-
-        <label class="field">What kind of feedback is this?</label>
-        <div class="feedback-kinds">
+    <div class="feedback-studio-v2 feedback-layout">
+      <nav class="feedback-mode-rail-v2 feedback-kinds" aria-label="Feedback kind">
+        <span class="eyebrow">Kind of report</span>
           ${d.kinds.map((k, i) => `
             <button class="${i === 0 ? 'on' : ''}" data-kind="${esc(k.id)}">
               <span class="glyph">${['×', '?', '＋', '✓'][i] ?? '·'}</span>
               <span><b>${esc(k.name)}</b><small>${esc(k.blurb)}</small></span>
             </button>`).join('')}
-        </div>
+      </nav>
+
+      <section class="feedback-paper-v2 feedback-compose">
+        <div class="panel-title"><b>New report</b><span>Kept locally first</span></div>
+        <label class="field">What happened?</label>
+        <textarea id="fb-what" rows="10" placeholder="I pressed Open on Antigravity and nothing appeared."></textarea>
 
         <div class="feedback-send">
           <button class="go" id="fb-send">Send feedback</button>
@@ -8386,8 +8377,8 @@ SCREENS.feedback = async () => {
         </div>
       </section>
 
-      <aside class="feedback-side">
-        <div class="panel-block context-panel">
+      <aside class="feedback-delivery-v2 feedback-side">
+        <div class="feedback-context-v2 context-panel">
           <div class="panel-title"><b>What leaves this computer</b></div>
           <div class="context-item"><span>Your words</span><b>Included</b></div>
           <div class="context-item"><span>Computer and version</span><b>Included</b></div>
@@ -8398,7 +8389,7 @@ SCREENS.feedback = async () => {
         </div>
 
         ${d.said.length ? `
-          <div class="panel-block feedback-history">
+          <div class="feedback-context-v2 feedback-history">
             <div class="panel-title"><b>Recent feedback</b><span>${d.said.length}</span></div>
             ${d.said.slice(0, 6).map((s) => `
               <div class="history-line">
