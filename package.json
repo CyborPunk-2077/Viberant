@@ -19,6 +19,7 @@
     "files": [
       "desktop/**",
       "app/**",
+      "runtime/git/**",
       "build/icon.png",
       "core/reference/src/**",
       "package.json",

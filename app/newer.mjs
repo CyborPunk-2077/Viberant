@@ -32,13 +32,9 @@
  * exist is written down in `signing()` below rather than left as a shrug.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-
 import * as thisapp from './thisapp.mjs';
+import * as signin from './signin.mjs';
 
-const run = promisify(execFile);
-const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
 /**
  * Where releases of this app are published, if anywhere.
@@ -125,11 +121,11 @@ export async function check(here, { force = false } = {}) {
     };
   }
 
-  let refused = null;
-  const asked = await run('gh', [
-    'release', 'view', '--repo', where,
-    '--json', 'tagName,name,body,url,publishedAt',
-  ], { maxBuffer: 4 * 1024 * 1024 }).catch((e) => { refused = e; return null; });
+  const target = String(where).replace(/^https?:\/\/github\.com\//, '').replace(/\/releases.*$/, '').replace(/\.git$/, '');
+  const [owner, project] = target.split('/').filter(Boolean);
+  const asked = owner && project
+    ? await signin.request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(project)}/releases/latest`)
+    : { ok: false, status: 0 };
 
   /**
    * Nothing released yet is not the same as could not ask, and telling somebody
@@ -137,9 +133,8 @@ export async function check(here, { force = false } = {}) {
    * kind of wrong advice this product is supposed to be better than. Both come
    * back as a refusal, so the two are told apart by what was said.
    */
-  if (!asked) {
-    const why = String(refused?.stderr ?? refused?.message ?? '');
-    const nothingYet = /release not found|no releases/i.test(why);
+  if (!asked.ok) {
+    const nothingYet = asked.status === 404;
     const answer = nothingYet
       ? {
         ok: true, known: true, newer: false, here,
@@ -155,8 +150,8 @@ export async function check(here, { force = false } = {}) {
     return answer;
   }
 
-  const out = (() => { try { return JSON.parse(asked.stdout); } catch { return null; } })();
-  if (!out?.tagName) {
+  const out = asked.data;
+  if (!out?.tag_name) {
     const answer = {
       ok: true, known: false, here,
       sentence: 'What has been released could not be read.',
@@ -166,7 +161,7 @@ export async function check(here, { force = false } = {}) {
     return answer;
   }
 
-  const there = String(out.tagName).replace(/^v/, '');
+  const there = String(out.tag_name).replace(/^v/, '');
   const answer = newerThan(there, here)
     ? {
       ok: true,
@@ -176,8 +171,8 @@ export async function check(here, { force = false } = {}) {
       there,
       name: out.name || `Viberant ${there}`,
       whatsNew: whatChanged(out.body),
-      at: out.url ?? null,
-      when: out.publishedAt ?? null,
+      at: out.html_url ?? null,
+      when: out.published_at ?? null,
       sentence: `Viberant ${there} is out. You have ${here}.`,
       action: 'Getting it opens the page in your browser. You download it and run it, and this computer checks the file on the way.',
     }

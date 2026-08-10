@@ -233,6 +233,7 @@ const mark = (d) => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
   stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 
 const TABS = [
+  { id: 'home', name: 'Home', glyph: mark('<path d="M2 7.2 8 2l6 5.2v6.3H9.8V9.7H6.2v3.8H2Z"/>') },
   { id: 'projects', name: 'Projects', glyph: mark('<rect x="2" y="2.5" width="12" height="11" rx="1.8"/><path d="M2 6.2h12"/>') },
   { id: 'ask', name: 'AI Assistant', glyph: mark('<path d="M13.5 9.5A2.5 2.5 0 0 1 11 12H6l-3 2.2V4.5A2.5 2.5 0 0 1 5.5 2h5.5A2.5 2.5 0 0 1 13.5 4.5Z"/>') },
   { id: 'apps', name: 'AI apps', glyph: mark('<path d="M8 1.8 9.6 6 14 7.6 9.6 9.2 8 13.4 6.4 9.2 2 7.6 6.4 6Z"/>') },
@@ -241,6 +242,7 @@ const TABS = [
   { id: 'activity', name: 'Activity', glyph: mark('<path d="M1.4 8h3l1.8-4.6L9.6 12.6 11.4 8h3.2"/>') },
   { id: 'ship', name: 'Deploy', glyph: mark('<path d="M8 13.6V3.2M8 3.2 4.4 6.8M8 3.2l3.6 3.6"/>') },
   { id: 'settings', name: 'Settings', glyph: mark('<circle cx="8" cy="8" r="2.3"/><path d="M8 1.6v1.8M8 12.6v1.8M14.4 8h-1.8M3.4 8H1.6M12.5 3.5l-1.3 1.3M4.8 11.2l-1.3 1.3M12.5 12.5l-1.3-1.3M4.8 4.8 3.5 3.5"/>') },
+  { id: 'keybinds', name: 'Keybinds', glyph: mark('<rect x="1.6" y="3" width="12.8" height="10" rx="1.7"/><path d="M4 6h1M7.5 6h1M11 6h1M4 9h1M7.5 9h4.5M4 11.2h5"/>') },
 ];
 
 /**
@@ -254,9 +256,9 @@ const TABS = [
  * rather than an icon in a corner, which is D-69 and still right.
  */
 const GROUPS = [
-  { name: 'Work', places: ['projects', 'ask', 'apps', 'terminals'] },
+  { name: 'Work', places: ['home', 'projects', 'ask', 'apps', 'terminals'] },
   { name: 'Workspace', places: ['workspace', 'activity', 'ship'] },
-  { name: 'System', places: ['settings'] },
+  { name: 'System', places: ['settings', 'keybinds'] },
 ];
 
 /** The two behind the icons at the far end, out of the way of the daily five. */
@@ -321,7 +323,7 @@ const GOOGLE_MARK = `
     <path fill="#EA4335" d="M24 10.2c4.1 0 6.9 1.8 8.5 3.3l6.1-6C34.9 4 29.9 2 24 2 15.4 2 8.1 7 4.4 14.1l7.1 5.5C13.3 14.3 18.2 10.2 24 10.2z"/>
   </svg>`;
 
-const at = { tab: 'projects', inside: false };
+const at = { tab: 'home', inside: false };
 let me = { machine: null, machineName: '', github: null, google: null, workspace: {}, settings: {}, current: null };
 
 /**
@@ -527,7 +529,11 @@ function drawNav() {
             <span class="face">${signedInAs() ? esc(signedInAs().slice(0, 1).toUpperCase()) : '?'}</span>
             <span class="grow">
               <span class="name">${esc(signedInAs() ?? 'Not signed in')}</span>
-              <span class="what">${esc(me.machineName || 'this computer')}</span>
+              <span class="what">${esc([
+    me.github ? 'GitHub' : null,
+    me.google ? 'Google' : null,
+    me.machineName || 'this computer',
+  ].filter(Boolean).join(' · '))}</span>
             </span>
           </button>
           <div class="panel" hidden data-floats id="who-panel"></div>
@@ -990,6 +996,19 @@ const modelNamed = (who, id) => {
 async function setUpAi(andThen = null) {
   const who = await get('/ai');
 
+  // Once a key is connected, the account itself is the source of truth for
+  // model availability. The built-in compatible list is only the fallback
+  // when the provider cannot be reached just now.
+  who.models = await Promise.all((who.models ?? []).map(async (provider) => {
+    if (!provider.ready) return { ...provider, availableModels: provider.models, discovery: null };
+    const found = await get(`/ai/models?provider=${encodeURIComponent(provider.id)}`);
+    return {
+      ...provider,
+      availableModels: found.ok && found.models?.length ? found.models : provider.models,
+      discovery: found,
+    };
+  }));
+
   const row = (m) => `
     <div class="card ai-one">
       <div class="line1">
@@ -1001,9 +1020,14 @@ async function setUpAi(andThen = null) {
       </div>
       <label class="field" for="ai-m-${esc(m.id)}">Which model</label>
       <select id="ai-m-${esc(m.id)}" data-model="${esc(m.id)}" style="width:100%">
-        ${m.models.map((one) => `
+        ${(m.availableModels ?? m.models).map((one) => `
           <option value="${esc(one.id)}" ${one.id === m.using ? 'selected' : ''}>${esc(one.name)} \u2014 ${esc(one.why)}</option>`).join('')}
       </select>
+      <div class="model-source">${m.ready
+    ? (m.discovery?.ok
+      ? `${m.discovery.models.length} compatible models exposed to this API account`
+      : 'The live list could not be refreshed; showing the built-in compatible choices')
+    : 'Connect an API key to verify exactly what this account can use'}</div>
       <label class="field" for="ai-k-${esc(m.id)}">${m.ready ? 'Replace the key' : 'Paste the key'}</label>
       <input type="password" id="ai-k-${esc(m.id)}" data-key="${esc(m.id)}" style="width:100%"
         placeholder="${m.ready ? 'leave empty to keep the one that is here' : 'it stays on this computer'}"
@@ -1433,6 +1457,7 @@ function inspect(what) {
       <span class="grow"><b>${esc(what.name)}</b><span class="what">${esc(what.kind ?? '')}</span></span>
       <button class="quiet small icon" id="insp-close" aria-label="Close">✕</button>
     </div>
+    ${what.body ?? ''}
     ${(what.facts ?? []).filter((f) => f.value !== null && f.value !== undefined && f.value !== '')
     .map((f) => `<dl class="insp-fact">
         <dt>${esc(f.label)}</dt>
@@ -1463,6 +1488,7 @@ function inspect(what) {
       ${topology(what.map)}` : ''}`;
 
   if (what.sharesFrom) whatTheyShare(what.sharesFrom);
+  what.onOpen?.(box);
 
   $('#insp-close').onclick = () => inspect(null);
   for (const b of box.querySelectorAll('[data-insp]')) {
@@ -1881,10 +1907,11 @@ const closeInspector = () => { if (inspecting) inspect(null); };
 
 /** The places worth a key of their own, and the key. */
 const SHORTCUTS = {
-  projects: '1', ask: '2', apps: '3', terminals: '4',
-  workspace: '5', activity: '6', ship: '7', settings: ',',
+  home: '0', projects: '1', ask: '2', apps: '3', terminals: '4',
+  workspace: '5', activity: '6', ship: '7', settings: ',', keybinds: '/', palette: 'k',
 };
-const shortcutFor = (id) => (SHORTCUTS[id] ? `Ctrl ${SHORTCUTS[id].toUpperCase()}` : null);
+const shortcutKey = (id) => me.keybinds?.[id] ?? SHORTCUTS[id];
+const shortcutFor = (id) => (shortcutKey(id) ? `Ctrl ${shortcutKey(id).toUpperCase()}` : null);
 
 /**
  * Everything the palette can reach.
@@ -2140,7 +2167,7 @@ const typing = (e) => {
 };
 
 addEventListener('keydown', (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === shortcutKey('palette')) {
     e.preventDefault();
     return openPalette();
   }
@@ -2158,7 +2185,7 @@ addEventListener('keydown', (e) => {
 
   if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || typing(e)) return;
 
-  const place = Object.keys(SHORTCUTS).find((id) => SHORTCUTS[id] === e.key);
+  const place = Object.keys(SHORTCUTS).find((id) => id !== 'palette' && shortcutKey(id) === e.key.toLowerCase());
   if (place) { e.preventDefault(); go(place); }
 });
 
@@ -2672,6 +2699,273 @@ function pickFolder({ title = 'Choose a folder', confirm = 'Use this folder', st
 // Projects
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Home — a command center made from the state the other screens already own
+// ---------------------------------------------------------------------------
+
+SCREENS.home = async () => {
+  const [projectsState, teamState, aiState, jobsState] = await Promise.all([
+    get('/projects'), get('/team'), get('/ai'), get('/jobs'),
+  ]);
+
+  const projects = projectsState.projects ?? [];
+  const recent = projects.slice(0, 5);
+  const attention = projects.filter((one) => one.unsaved || (one.toSend ?? 0) > 0);
+  const activeJobs = (jobsState.jobs ?? []).filter((one) => one.running);
+  const finishedJobs = (jobsState.jobs ?? []).filter((one) => !one.running).slice(0, 5);
+  const devices = [...(teamState.mine ?? []), ...(teamState.team ?? [])];
+  const people = new Set(devices.map((one) => one.person || one.displayName).filter(Boolean));
+  const online = devices.filter((one) => one.online).length;
+  const readyAi = (aiState.models ?? []).filter((one) => one.ready);
+  const continueWith = projects.find((one) => one.path === me.current) ?? recent[0] ?? null;
+
+  const projectLine = (one, primary = false) => `
+    <button class="home-project-line ${primary ? 'primary' : ''}" data-home-open="${esc(one.path)}">
+      <span class="project-mini-mark ${one.unsaved ? 'attention' : ''}">${KIND_MARK.project}</span>
+      <span class="grow"><b>${esc(one.name)}</b><span class="mono">${esc(shortPath(one.path))}</span></span>
+      ${stateChip(one.mark)}
+      <span class="home-project-fact ${one.unsaved ? 'warn' : ''}">${one.unsaved
+    ? `${one.unsaved} unsaved`
+    : esc(one.saved ?? 'Not saved yet')}</span>
+      <span class="home-arrow">→</span>
+    </button>`;
+
+  view.innerHTML = `
+    <div class="home-command">
+      <header class="home-hero">
+        <div class="grow">
+          <span class="eyebrow">Your workstation</span>
+          <h1>${signedInAs() ? `Good to see you, ${esc(signedInAs())}.` : 'Everything you are building, in one place.'}</h1>
+          <p>Continue a project, catch what needs attention, or move directly into the tool you need.</p>
+        </div>
+        <div class="home-hero-actions">
+          <button id="home-search">⌕ Find anything</button>
+          <button class="go" id="home-add">＋ Add project</button>
+        </div>
+      </header>
+      ${saidHtml()}
+
+      <section class="home-continue">
+        <div class="home-section-label"><span class="eyebrow">Continue working</span>
+          <span>${projects.length} project${projects.length === 1 ? '' : 's'} on this computer</span></div>
+        ${continueWith ? `
+          <div class="home-featured-project">
+            <div class="home-featured-copy">
+              <span class="project-badge">${KIND_MARK.project}</span>
+              <div class="grow"><h2>${esc(continueWith.name)}</h2><p class="mono">${esc(shortPath(continueWith.path))}</p></div>
+              ${stateChip(continueWith.mark)}
+            </div>
+            <div class="home-featured-status">
+              <div><span>Last saved</span><b>${esc(continueWith.saved ?? 'Not yet')}</b></div>
+              <div><span>Changes here</span><b class="${continueWith.unsaved ? 'warn' : ''}">${continueWith.unsaved || 'None'}</b></div>
+              <div><span>Source</span><b>${/copy on GitHub/.test(continueWith.reach ?? '') ? 'GitHub' : continueWith.private ? 'This computer' : 'Offered'}</b></div>
+            </div>
+            <div class="home-featured-actions">
+              <button class="go" id="home-continue">Open project</button>
+              <button id="home-ask">Ask AI</button>
+              <button class="quiet" id="home-terminal">Open terminal controls</button>
+            </div>
+          </div>` : `
+          <div class="home-first-project"><span class="project-badge">${KIND_MARK.project}</span>
+            <div class="grow"><h2>Bring your first project in.</h2><p>A project is an existing folder. Nothing is moved or copied.</p></div>
+            <button class="go" id="home-add-empty">Choose a folder…</button></div>`}
+      </section>
+
+      <div class="home-body-grid">
+        <section class="home-workstream">
+          <div class="home-section-title"><div><span class="eyebrow">Workstream</span><h2>Recent projects</h2></div>
+            <button class="quiet small" id="home-all-projects">View all</button></div>
+          <div class="home-project-list">${recent.length
+    ? recent.map((one) => projectLine(one, one === continueWith)).join('')
+    : '<div class="empty compact">Projects you open will appear here.</div>'}</div>
+
+          <div class="home-attention ${attention.length ? 'has-work' : ''}">
+            <div><span class="eyebrow">Needs attention</span><h3>${attention.length
+    ? `${attention.length} project${attention.length === 1 ? '' : 's'} need a decision`
+    : 'Nothing is waiting on you'}</h3></div>
+            <p>${attention.length
+    ? 'Unsaved work and copies waiting to be sent stay visible here until handled.'
+    : 'Everything currently known on this computer is settled.'}</p>
+            ${attention.slice(0, 3).map((one) => `<button data-home-open="${esc(one.path)}">${esc(one.name)}<span>${one.unsaved ? `${one.unsaved} unsaved` : `${one.toSend} waiting`}</span>→</button>`).join('')}
+          </div>
+        </section>
+
+        <aside class="home-operations">
+          <section class="home-operation workspace">
+            <div class="home-operation-head"><span class="operation-mark">${SUM_MARK.computers}</span>
+              <div><span class="eyebrow">Workspace</span><h2>${esc(teamState.workspace?.name ?? 'Not joined')}</h2></div></div>
+            <div class="home-operation-signal"><b>${online}</b><span>of ${devices.length} computers reachable</span></div>
+            <p>${teamState.workspace
+    ? `${people.size} ${people.size === 1 ? 'person' : 'people'} in this workspace. Shared projects and chat are ready from its home.`
+    : 'Create a workspace or join with a code to collaborate across computers.'}</p>
+            <button id="home-workspace">${teamState.workspace ? 'Open Workspace Home' : 'Set up a workspace'} →</button>
+          </section>
+
+          <section class="home-operation ai">
+            <div class="home-operation-head"><span class="operation-mark">◇</span>
+              <div><span class="eyebrow">AI readiness</span><h2>${readyAi.length ? `${readyAi.length} provider${readyAi.length === 1 ? '' : 's'} ready` : 'Not connected'}</h2></div></div>
+            <p>${readyAi.length
+    ? `${readyAi.map((one) => one.name).join(', ')} ${readyAi.length === 1 ? 'is' : 'are'} available for project-aware questions.`
+    : 'Connect Claude, OpenAI, or Gemini before asking about a project.'}</p>
+            <button id="home-ai-setup">${readyAi.length ? 'Open AI Assistant' : 'Choose a provider'} →</button>
+          </section>
+
+          <section class="home-operation activity">
+            <div class="home-operation-head"><span class="operation-mark">${SUM_MARK.pulse}</span>
+              <div><span class="eyebrow">Operations</span><h2>${activeJobs.length ? `${activeJobs.length} happening now` : 'Recent activity'}</h2></div></div>
+            <div class="home-job-list">${(activeJobs.length ? activeJobs : finishedJobs).slice(0, 4).map((job) => `
+              <div><span class="dot ${job.running ? 'live' : 'off'}"></span><span class="grow"><b>${esc(job.what)}</b><small>${esc(job.project ?? kindCalled(job.kind))}</small></span><span>${job.running ? 'Live' : 'Finished'}</span></div>`).join('')
+    || '<p>Builds, transfers, AI work, and deployments will appear here.</p>'}</div>
+            <button id="home-activity">Open Activity →</button>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="home-quickbar" aria-label="Quick actions">
+        <span class="eyebrow">Quick actions</span>
+        <button id="home-github" ${me.github ? '' : 'disabled title="Sign in to GitHub first"'}>${GITHUB_MARK} Explore GitHub</button>
+        <button id="home-apps">✦ Launch an AI app</button>
+        <button id="home-deploy">↗ Deploy</button>
+        <button id="home-keys">⌨ Keybinds</button>
+      </footer>
+    </div>`;
+  said = null;
+
+  const add = async () => {
+    const path = await pickFolder({ title: 'Which folder is the project?', confirm: 'Open this folder' });
+    if (path) await openProject(path);
+  };
+  $('#home-add').onclick = add;
+  $('#home-add-empty')?.addEventListener('click', add);
+  $('#home-search').onclick = openPalette;
+  $('#home-all-projects').onclick = () => go('projects');
+  $('#home-continue')?.addEventListener('click', () => openProject(continueWith.path));
+  $('#home-ask')?.addEventListener('click', () => go('ask'));
+  $('#home-terminal')?.addEventListener('click', () => go('terminals'));
+  $('#home-workspace').onclick = () => go('workspace');
+  $('#home-ai-setup').onclick = () => readyAi.length ? go('ask') : setUpAi();
+  $('#home-activity').onclick = () => go('activity');
+  $('#home-github').onclick = () => fromGitHub();
+  $('#home-apps').onclick = () => go('apps');
+  $('#home-deploy').onclick = () => go('ship');
+  $('#home-keys').onclick = () => go('keybinds');
+  for (const row of document.querySelectorAll('[data-home-open]')) row.onclick = () => openProject(row.dataset.homeOpen);
+};
+
+// ---------------------------------------------------------------------------
+// Keybinds — only actions the app can execute, edited with conflict checks
+// ---------------------------------------------------------------------------
+
+let keybindGroup = 'all';
+
+SCREENS.keybinds = async () => {
+  const state = await get('/keybinds');
+  const actions = (state.groups ?? []).flatMap((group) => group.actions.map((one) => ({ ...one, groupName: group.name })));
+
+  view.innerHTML = `
+    <div class="keybind-page">
+      <header class="pagehead command-head">
+        <div class="grow"><span class="eyebrow">Keyboard control</span><h1>Keybinds</h1>
+          <p class="sub">Move through Viberant without leaving the keyboard. Every binding below runs a real visible action.</p></div>
+        <button class="quiet" id="keys-reset-all">Reset defaults</button>
+      </header>
+      ${saidHtml()}
+      <div class="keybind-toolbar">
+        <label class="find"><span>⌕</span><input id="keys-find" placeholder="Search shortcuts…"></label>
+        <div class="segmented">${[['all', 'All'], ...(state.groups ?? []).map((one) => [one.id, one.name])].map(([id, name]) => `
+          <button data-key-group="${esc(id)}" class="${keybindGroup === id ? 'on' : ''}">${esc(name)}</button>`).join('')}</div>
+      </div>
+      <div class="keybind-groups" id="keybind-groups">
+        ${(state.groups ?? []).map((group) => `
+          <section class="keybind-group" data-group="${esc(group.id)}">
+            <div class="keybind-group-title"><span class="eyebrow">${esc(group.name)}</span><span>${group.actions.length} shortcuts</span></div>
+            ${group.actions.map((one) => `
+              <div class="keybind-row" data-key-row="${esc(`${one.name} ${one.why}`.toLowerCase())}">
+                <span class="keybind-action"><b>${esc(one.name)}</b><small>${esc(one.why)}</small></span>
+                <span class="keycaps"><kbd>Ctrl</kbd><span>+</span><kbd>${esc(one.key.toUpperCase())}</kbd></span>
+                <span class="keybind-default">${one.key === one.default ? 'Default' : `Default: Ctrl ${esc(one.default.toUpperCase())}`}</span>
+                <button class="small" data-edit-key="${esc(one.id)}">Edit</button>
+                <button class="quiet small" data-reset-key="${esc(one.id)}" ${one.key === one.default ? 'disabled' : ''}>Reset</button>
+              </div>`).join('')}
+          </section>`).join('')}
+      </div>
+      <div class="keybind-note"><span>i</span><p><b>Shortcuts pause while you type.</b> Viberant only listens after Ctrl, never takes a bare key, and leaves Windows and browser shortcuts alone.</p></div>
+    </div>`;
+  said = null;
+
+  const filter = () => {
+    const want = $('#keys-find').value.trim().toLowerCase();
+    for (const group of document.querySelectorAll('.keybind-group')) {
+      const inGroup = keybindGroup === 'all' || group.dataset.group === keybindGroup;
+      let shown = 0;
+      for (const row of group.querySelectorAll('[data-key-row]')) {
+        row.hidden = !inGroup || (want && !row.dataset.keyRow.includes(want));
+        if (!row.hidden) shown += 1;
+      }
+      group.hidden = !shown;
+    }
+  };
+  $('#keys-find').oninput = filter;
+  for (const button of document.querySelectorAll('[data-key-group]')) {
+    button.onclick = () => { keybindGroup = button.dataset.keyGroup; draw(); };
+  }
+  for (const button of document.querySelectorAll('[data-edit-key]')) {
+    button.onclick = () => editKeybind(actions.find((one) => one.id === button.dataset.editKey));
+  }
+  for (const button of document.querySelectorAll('[data-reset-key]')) {
+    button.onclick = async () => {
+      say(await post('/keybinds/reset', { id: button.dataset.resetKey }));
+      await refreshMe();
+      draw();
+    };
+  }
+  $('#keys-reset-all').onclick = async () => {
+    const sure = await confirmThat({ title: 'Reset every shortcut?', what: 'Every edited key will return to the default shown on this page.', why: 'Nothing else in Viberant changes.', confirm: 'Reset shortcuts' });
+    if (!sure) return;
+    say(await post('/keybinds/reset', {}));
+    await refreshMe();
+    draw();
+  };
+  filter();
+};
+
+function editKeybind(one) {
+  if (!one) return;
+  let chosenKey = one.key;
+  sheet({
+    title: `Shortcut for ${one.name}`,
+    narrow: true,
+    body: `<div class="keybind-capture" id="keybind-capture" tabindex="0">
+      <span>Press the new key</span><div class="keycaps"><kbd>Ctrl</kbd><span>+</span><kbd id="captured-key">${esc(one.key.toUpperCase())}</kbd></div>
+      <p>One printable key. Ctrl is always included.</p></div><div id="keybind-error"></div>`,
+    foot: '<button class="quiet" id="key-cancel">Never mind</button><button class="go" id="key-save">Save shortcut</button>',
+    onOpen: () => {
+      const capture = $('#keybind-capture');
+      capture.focus();
+      capture.onkeydown = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key.length !== 1 || /\s/.test(event.key)) return;
+        chosenKey = event.key.toLowerCase();
+        $('#captured-key').textContent = chosenKey.toUpperCase();
+        $('#keybind-error').innerHTML = '';
+      };
+      $('#key-cancel').onclick = closeLayer;
+      $('#key-save').onclick = async () => {
+        const out = await post('/keybinds', { id: one.id, key: chosenKey });
+        if (!out.ok) {
+          $('#keybind-error').innerHTML = `<div class="said bad"><b>${esc(out.sentence)}</b><span>${esc(out.action ?? '')}</span></div>`;
+          return;
+        }
+        closeLayer();
+        say(out);
+        await refreshMe();
+        draw();
+      };
+    },
+  });
+}
+
 /**
  * Where a project stands with you, in the order work actually goes.
  *
@@ -2713,7 +3007,8 @@ SCREENS.projects = async () => {
         <p class="sub">Pick one, and every app on this computer opens already inside it.</p>
       </div>
       <div class="acts">
-        ${me.github ? '<button id="p-cloud">From GitHub…</button>' : ''}
+        <button id="p-explore">${GITHUB_MARK} GitHub Explorer</button>
+        ${me.github ? '<button id="p-cloud">Your GitHub projects…</button>' : ''}
         <button class="go" id="p-add">＋ Add project</button>
       </div>
     </div>
@@ -2735,9 +3030,11 @@ SCREENS.projects = async () => {
               <div class="segmented" id="p-filters">
                 ${[
     ['all', 'All', d.projects.length],
-    ['here', 'On computer', d.projects.length],
+    ['working', 'Working', d.projects.filter((p) => p.mark === 'working').length],
+    ['notStarted', 'Not started', notStarted],
+    ['finished', 'Finished', d.projects.filter((p) => p.mark === 'finished').length],
+    ['published', 'Published', d.projects.filter((p) => p.mark === 'published').length],
     ['attention', 'Attention', busy],
-    ['github', 'GitHub', onGitHub],
   ].map(([id, name, count]) => `<button class="${projectListFilter === id ? 'on' : ''}"
                   data-project-filter="${id}">${name}<span>${count}</span></button>`).join('')}
               </div>
@@ -2777,6 +3074,7 @@ SCREENS.projects = async () => {
   $('#p-add')?.addEventListener('click', addFolder);
   $('#p-add-2')?.addEventListener('click', addFolder);
   $('#p-cloud')?.addEventListener('click', fromGitHub);
+  $('#p-explore').onclick = openGitHubExplorer;
 
   // Narrowing a list is a thing you do to the page you are looking at, so it
   // happens here rather than by asking the manager again and redrawing.
@@ -2786,9 +3084,9 @@ SCREENS.projects = async () => {
       let showing = 0;
       for (const row of document.querySelectorAll('#p-list [data-name]')) {
         const inText = !want || row.dataset.name.includes(want);
-        const inGroup = projectListFilter === 'all' || projectListFilter === 'here'
+        const inGroup = projectListFilter === 'all'
           || (projectListFilter === 'attention' && row.dataset.attention === '1')
-          || (projectListFilter === 'github' && row.dataset.github === '1');
+          || row.dataset.mark === projectListFilter;
         const match = inText && inGroup;
         row.hidden = !match;
         if (match) showing += 1;
@@ -2985,7 +3283,8 @@ function projectRow(p) {
   return `
     <article class="project-tile" data-open="${esc(p.path)}"
       data-name="${esc(p.name.toLowerCase())} ${esc(String(p.path).toLowerCase())}"
-      data-attention="${p.unsaved ? '1' : '0'}" data-github="${hasGitHub ? '1' : '0'}">
+      data-attention="${p.unsaved ? '1' : '0'}" data-github="${hasGitHub ? '1' : '0'}"
+      data-mark="${esc(mark)}">
       <div class="project-tile-top">
         <span class="project-mini-mark ${p.unsaved ? 'attention' : ''}" aria-hidden="true">${KIND_MARK.project}</span>
         <span class="grow"><b>${esc(p.name)}</b><small class="mono">${esc(shortPath(p.path))}</small></span>
@@ -3090,6 +3389,120 @@ async function deleteProject(path) {
  * the answer does not change while you are looking at it.
  */
 let cloudHeld = null;
+
+/**
+ * GitHub discovery lives beside Projects rather than in a browser-shaped
+ * detour. Public search works without an account; the account tab is shown
+ * only when one is genuinely connected.
+ */
+function openGitHubExplorer() {
+  let mode = 'explore';
+  let sort = 'updated';
+  let timer = null;
+
+  const shell = () => `
+    <div class="github-explorer">
+      <div class="github-explorer-tabs">
+        <button data-gh-mode="explore" class="${mode === 'explore' ? 'on' : ''}">Explore</button>
+        <button data-gh-mode="mine" class="${mode === 'mine' ? 'on' : ''}" ${me.github ? '' : 'disabled'}>Your projects</button>
+      </div>
+      <label class="find github-find"><span>⌕</span><input id="github-find" placeholder="Search projects, topics, people…"></label>
+      <div class="github-explorer-filters">
+        <select id="github-sort" aria-label="Sort GitHub results">
+          <option value="updated" ${sort === 'updated' ? 'selected' : ''}>Recently updated</option>
+          <option value="stars" ${sort === 'stars' ? 'selected' : ''}>Most starred</option>
+          <option value="forks" ${sort === 'forks' ? 'selected' : ''}>Most copied</option>
+        </select>
+        <span id="github-total"></span>
+      </div>
+      <div class="github-results" id="github-results"><div class="github-loading"><span class="spin"></span> Asking GitHub…</div></div>
+    </div>`;
+
+  inspect({
+    name: 'GitHub Explorer',
+    kind: 'Find and bring projects',
+    mark: GITHUB_MARK,
+    body: shell(),
+    onOpen: wire,
+  });
+
+  function wire(box) {
+    for (const button of box.querySelectorAll('[data-gh-mode]')) {
+      button.onclick = () => {
+        mode = button.dataset.ghMode;
+        box.querySelector('.github-explorer').outerHTML = shell();
+        wire(box);
+      };
+    }
+    $('#github-sort').onchange = (event) => { sort = event.target.value; search(); };
+    $('#github-find').oninput = () => {
+      clearTimeout(timer);
+      timer = setTimeout(search, 280);
+    };
+    search();
+  }
+
+  async function search() {
+    const results = $('#github-results');
+    if (!results) return;
+    results.innerHTML = '<div class="github-loading"><span class="spin"></span> Asking GitHub…</div>';
+    const query = $('#github-find')?.value.trim() ?? '';
+    const out = mode === 'mine'
+      ? await get('/github/mine')
+      : await get(`/github/explore?q=${encodeURIComponent(query)}&sort=${encodeURIComponent(sort)}&limit=30`);
+    if (!results.isConnected) return;
+    $('#github-total').textContent = out.ok && Number.isFinite(out.total) ? `${out.total.toLocaleString()} found` : '';
+    if (!out.ok) {
+      results.innerHTML = `<div class="said bad"><b>${esc(out.sentence)}</b><span>${esc(out.action ?? '')}</span></div>`;
+      return;
+    }
+    const projects = out.projects ?? [];
+    results.innerHTML = projects.length ? projects.map((one, index) => `
+      <article class="github-result">
+        <div class="github-result-head"><span class="github-owner-mark">${esc((one.owner ?? one.fullName ?? one.name).slice(0, 1).toUpperCase())}</span>
+          <div class="grow"><b>${esc(one.fullName ?? `${one.owner ? `${one.owner}/` : ''}${one.name}`)}</b>
+            <span>${esc(one.about ?? 'No description provided.')}</span></div></div>
+        <div class="github-result-facts">
+          ${one.language ? `<span><i class="language-dot"></i>${esc(one.language)}</span>` : ''}
+          <span>${esc(one.visibility ?? 'public')}</span>
+          ${one.stars ? `<span>★ ${one.stars.toLocaleString()}</span>` : ''}
+          ${one.forks ? `<span>⑂ ${one.forks.toLocaleString()}</span>` : ''}
+          ${one.changed ? `<span>${esc(ago(one.changed))}</span>` : ''}
+        </div>
+        <div class="github-result-actions">
+          <button class="quiet small" data-github-page="${esc(one.url)}">Open on GitHub</button>
+          <button class="go small" data-github-bring="${index}">Bring to Viberant</button>
+        </div>
+      </article>`).join('') : '<div class="empty compact"><b>No projects matched.</b>Try another name, owner, or topic.</div>';
+
+    for (const button of results.querySelectorAll('[data-github-page]')) {
+      button.onclick = () => post('/open/page', { at: button.dataset.githubPage });
+    }
+    for (const button of results.querySelectorAll('[data-github-bring]')) {
+      button.onclick = async () => {
+        const one = projects[Number(button.dataset.githubBring)];
+        const into = await pickFolder({
+          title: `Where should ${one.name} live?`, confirm: 'Put the project here',
+          startAt: me.settings?.workFolder,
+        });
+        if (!into) return;
+        button.disabled = true;
+        button.textContent = 'Bringing…';
+        const brought = await post('/github/bring', { url: one.cloneUrl ?? one.url, into });
+        if (!brought.ok) {
+          button.disabled = false;
+          button.textContent = 'Bring to Viberant';
+          say(brought);
+          return draw();
+        }
+        closeInspector();
+        await refreshMe();
+        at.inside = true;
+        draw();
+      };
+    }
+  }
+}
 
 async function drawCloud(here, { again = false } = {}) {
   const box = $('#cloud');
@@ -3472,6 +3885,7 @@ SCREENS.ask = async () => {
             <span class="grow"><small>Thinking with</small><b>${esc(p.name)}</b><span>${esc(p.dir)}</span></span>
             ${stateChip(p.mark)}
           </div>
+          <button class="quiet assistant-change-project" id="ask-change-project">Change project…</button>
           <div class="context-panel-v2">
             <div class="panel-title"><b>Context in use</b><span>Scoped</span></div>
             <div class="context-item"><span>Project</span><b>${esc(p.name)}</b></div>
@@ -3484,19 +3898,108 @@ SCREENS.ask = async () => {
           </div>
         </aside>
         <div class="intelligence-main-v2">${askPanel(p, { heading: `Ask about ${p.name}`, expanded: true })}</div>
+        <aside class="intelligence-facts-v2">
+          <section><div class="panel-title"><b>Project facts</b><span>Live</span></div>
+            <div class="context-item"><span>Name</span><b>${esc(p.name)}</b></div>
+            <div class="context-item"><span>Kind</span><b>${esc(p.kind ?? 'Project')}</b></div>
+            <div class="context-item"><span>Last saved</span><b>${esc(p.saved ?? 'Not yet')}</b></div>
+            <div class="context-item"><span>Changes here</span><b>${p.situation?.unsaved ?? 0}</b></div>
+            <button class="quiet wide small" id="assistant-reindex">Inspect project files</button>
+          </section>
+          <section><div class="panel-title"><b>Suggested tasks</b></div>
+            <button data-ai-prompt="Review the recent changes and identify the most important risk.">Review recent changes <span>→</span></button>
+            <button data-ai-prompt="Explain the architecture and the boundaries between its main parts.">Map the architecture <span>→</span></button>
+            <button data-ai-prompt="What should I do next in this project, and why?">Plan what comes next <span>→</span></button>
+          </section>
+          <section class="assistant-trust"><span class="eyebrow">Before anything changes</span><p>Suggestions remain a review. Files change only after you approve the exact proposal.</p></section>
+        </aside>
       </div>`
     : `<div class="empty"><b>Nothing is open yet.</b>
         These questions are about a project, so there has to be one.
         <span class="acts"><button class="go" id="ask-pick">Choose a project\u2026</button></span></div>`}`;
   said = null;
 
-  $('#ask-pick')?.addEventListener('click', () => go('projects'));
+  $('#ask-pick')?.addEventListener('click', chooseProjectForAssistant);
+  $('#ask-change-project')?.addEventListener('click', chooseProjectForAssistant);
   $('#ai-pick').onclick = () => setUpAi();
-  if (p?.name) wireAskPanel();
+  if (p?.name) {
+    wireAskPanel();
+    $('#assistant-reindex').onclick = () => statusSheet(p.dir);
+  }
 };
 
+/**
+ * Pick the Assistant context from Viberant projects first. Browsing the disk
+ * remains available as a secondary route for a folder not known here yet.
+ */
+async function chooseProjectForAssistant() {
+  const [local, remote] = await Promise.all([
+    get('/projects'),
+    get('/github/mine').catch(() => ({ ok: false, projects: [] })),
+  ]);
+  const localRows = (local.projects ?? []).map((project) => `
+    <button class="assistant-project-choice" data-assistant-local="${esc(project.path)}">
+      <span class="project-badge">${KIND_MARK.project}</span>
+      <span class="grow"><b>${esc(project.name)}</b><span>${esc(project.path)}</span></span>
+      ${stateChip(project.mark)}
+    </button>`).join('');
+  const remoteRows = (remote.projects ?? []).slice(0, 20).map((project, index) => `
+    <div class="assistant-project-choice remote">
+      <span class="project-badge">${MARKS.github()}</span>
+      <span class="grow"><b>${esc(project.fullName ?? project.name)}</b><span>${esc(project.about ?? `${project.visibility} on GitHub`)}</span></span>
+      <button class="small" data-assistant-remote="${index}">Bring here…</button>
+    </div>`).join('');
+
+  sheet({
+    title: 'Choose project context',
+    body: `<div class="assistant-project-picker">
+      <label class="search-line"><span aria-hidden="true">⌕</span><input id="assistant-project-search" type="search" placeholder="Search projects…" autocomplete="off"></label>
+      <span class="eyebrow">On this computer</span>
+      <div>${localRows || '<div class="empty small">No local projects are known yet.</div>'}</div>
+      <span class="eyebrow assistant-remote-title">Your GitHub projects</span>
+      <div>${remoteRows || `<div class="empty small">${remote.ok ? 'No GitHub projects were found.' : 'Connect GitHub to choose a project that is not on this computer yet.'}</div>`}</div>
+    </div>`,
+    foot: '<button class="quiet" id="assistant-browse-folder">Browse for another folder…</button><button id="assistant-project-done">Cancel</button>',
+  });
+
+  $('#assistant-project-search').oninput = () => {
+    const wanted = $('#assistant-project-search').value.trim().toLowerCase();
+    for (const row of layer.querySelectorAll('.assistant-project-choice')) {
+      row.hidden = !!wanted && !row.textContent.toLowerCase().includes(wanted);
+    }
+  };
+  $('#assistant-project-done').onclick = closeLayer;
+  $('#assistant-browse-folder').onclick = async () => {
+    const path = await pickFolder({ title: 'Choose a project folder', confirm: 'Use this project' });
+    if (!path) return;
+    const opened = await post('/open', { path });
+    if (!opened.ok) return say(opened);
+    closeLayer();
+    draw();
+  };
+  for (const row of layer.querySelectorAll('[data-assistant-local]')) {
+    row.onclick = async () => {
+      const opened = await post('/open', { path: row.dataset.assistantLocal });
+      if (!opened.ok) return say(opened);
+      closeLayer();
+      draw();
+    };
+  }
+  for (const button of layer.querySelectorAll('[data-assistant-remote]')) {
+    button.onclick = async () => {
+      const project = remote.projects[Number(button.dataset.assistantRemote)];
+      const into = await pickFolder({ title: `Where should ${project.name} go?`, confirm: 'Bring it here' });
+      if (!into) return;
+      const brought = await post('/github/bring', { url: project.cloneUrl, into });
+      if (!brought.ok) return say(brought);
+      closeLayer();
+      draw();
+    };
+  }
+}
+
 async function drawOpenProject() {
-  const [p, t] = await Promise.all([get('/project'), get('/tools')]);
+  const [p, t, platforms] = await Promise.all([get('/project'), get('/tools'), get('/project/platforms')]);
   if (!p.open) { at.inside = false; return draw(); }
 
   const open = whatIsOpen(p, t.tools);
@@ -3529,6 +4032,7 @@ async function drawOpenProject() {
 
     <nav class="context-tabs" aria-label="Project sections">
       <button class="on">Overview</button>
+      <button data-project-scroll="project-platforms">Platforms</button>
       <button data-project-jump="ask">AI Assistant</button>
       <button data-project-jump="apps">Apps</button>
       <button data-project-jump="terminals">Terminals</button>
@@ -3557,6 +4061,52 @@ async function drawOpenProject() {
           <div class="section-rubric"><span><b>Project intelligence</b><small>Ask with this project already in context</small></span>
             <button class="quiet small" data-project-jump="ask">Open full assistant →</button></div>
           ${askPanel(p, { heading: 'AI Assistant' })}
+        </section>
+
+        <section class="project-platforms-v2" id="project-platforms">
+          <div class="section-rubric">
+            <span><b>Platforms</b><small>Keep the desktop project intact while preparing a truthful web target</small></span>
+            <button class="quiet small" id="platform-analyze">Analyze again</button>
+          </div>
+          <div class="platform-row-v2">
+            <span class="platform-mark desktop" aria-hidden="true">▣</span>
+            <span class="grow"><b>Desktop</b><span>${esc(platforms.desktop?.says ?? 'The project stays on this computer.')}</span></span>
+            <span class="chip live">${esc(platforms.desktop?.status ?? 'READY')}</span>
+          </div>
+          <div class="platform-web-v2 ${String(platforms.web?.status ?? '').toLowerCase()}">
+            <div class="platform-row-v2">
+              <span class="platform-mark web" aria-hidden="true">◎</span>
+              <span class="grow"><b>Web</b><span>${esc(platforms.web?.says ?? 'No web analysis is available.')}</span></span>
+              <span class="chip ${platforms.web?.status === 'LIVE' || platforms.web?.status === 'READY' ? 'live' : 'attention'}">${esc(String(platforms.web?.status ?? 'UNKNOWN').replaceAll('_', ' '))}</span>
+            </div>
+            <div class="platform-analysis-v2">
+              <div>
+                <span class="eyebrow">Architecture</span>
+                <h3>${platforms.recommendation === 'WEB_COMPANION' ? 'Web Companion' : platforms.recommendation === 'STANDALONE_WEB' ? 'Standalone Web' : 'Desktop only'}</h3>
+                <p>${platforms.recommendation === 'WEB_COMPANION'
+    ? 'A browser interface can connect to this desktop agent for the computer-only capabilities below.'
+    : platforms.recommendation === 'STANDALONE_WEB'
+      ? 'The browser target can operate independently from the desktop application.'
+      : 'There is not yet a useful browser interface to separate from the native application.'}</p>
+              </div>
+              <div>
+                <span class="eyebrow">Compatibility</span>
+                <h3>${esc(platforms.web?.category?.replaceAll('_', ' ') ?? 'Not analyzed')}</h3>
+                <p>${platforms.scanned ?? 0} source files inspected${platforms.clipped ? ' within a bounded scan' : ''}.</p>
+              </div>
+              <div class="platform-actions-v2">
+                ${platforms.web?.at ? '<button class="go" id="platform-open-web">Open Web</button>' : ''}
+                ${platforms.web?.root ? '<button id="platform-open-root">Open web target</button>' : '<button class="go" id="platform-create">Create Web Version</button>'}
+                ${platforms.web?.category === 'WEB_SAFE' ? '<button id="platform-deploy">Deploy</button>' : ''}
+              </div>
+            </div>
+            ${(platforms.blockers ?? []).length ? `<div class="platform-blockers-v2">
+              <span class="eyebrow">Adapters or blockers found</span>
+              ${(platforms.blockers ?? []).map((one) => `<button data-platform-blocker="${esc(one.id)}">
+                <span class="dot attention"></span><span class="grow"><b>${esc(one.says)}</b><small>${one.count} source file${one.count === 1 ? '' : 's'}</small></span><span>→</span>
+              </button>`).join('')}
+            </div>` : ''}
+          </div>
         </section>
 
         <section class="project-sessions-v2">
@@ -3629,6 +4179,28 @@ async function drawOpenProject() {
   for (const b of document.querySelectorAll('[data-project-look]')) b.onclick = () => statusSheet(p.dir);
   $('#side-files').onclick = () => statusSheet(p.dir);
   for (const b of document.querySelectorAll('[data-project-jump]')) b.onclick = () => go(b.dataset.projectJump);
+  for (const b of document.querySelectorAll('[data-project-scroll]')) b.onclick = () => {
+    document.getElementById(b.dataset.projectScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  $('#platform-analyze').onclick = () => draw();
+  $('#platform-deploy')?.addEventListener('click', () => go('ship'));
+  $('#platform-open-web')?.addEventListener('click', () => post('/open-outside', { url: platforms.web.at }));
+  $('#platform-open-root')?.addEventListener('click', () => post('/reveal', { path: platforms.web.root }));
+  $('#platform-create')?.addEventListener('click', async () => {
+    const made = await post('/project/platforms/create', {});
+    say(made);
+    if (made.ok) draw(); else {
+      inspect({
+        name: 'Web compatibility', kind: made.report?.web?.category?.replaceAll('_', ' ') ?? 'Needs adaptation',
+        facts: (made.report?.blockers ?? []).map((one) => ({ label: one.says, value: `${one.count} source file${one.count === 1 ? '' : 's'}` })),
+      });
+      draw();
+    }
+  });
+  for (const b of document.querySelectorAll('[data-platform-blocker]')) b.onclick = () => {
+    const blocker = (platforms.blockers ?? []).find((one) => one.id === b.dataset.platformBlocker);
+    inspect({ name: blocker.says, kind: 'Web adaptation detail', facts: blocker.files.map((file) => ({ label: 'Found in', value: file })) });
+  };
   $('#tidy')?.addEventListener('click', async () => {
     const sure = await confirmThat({
       title: 'Clear the list',
@@ -4626,11 +5198,15 @@ function whichTerminal(toolId, dir, terminals) {
 // Terminals
 // ---------------------------------------------------------------------------
 
+let selectedTerminal = null;
+
 SCREENS.terminals = async () => {
   const [{ terminals }, p, sessions] = await Promise.all([
     get('/terminals'), get('/project'), get('/remote/sessions'),
   ]);
   const dir = whereFor(null, p);
+  const selected = terminals.find((one) => one.id === selectedTerminal) ?? terminals[0] ?? null;
+  selectedTerminal = selected?.id ?? null;
 
   view.innerHTML = `
     <div class="pagehead command-head">
@@ -4657,7 +5233,7 @@ SCREENS.terminals = async () => {
       <div class="section-rubric"><span><b>Choose a shell</b><small>Each opens directly in the context above</small></span><span class="count">${terminals.length}</span></div>
       <div class="terminal-choice-grid">
       ${terminals.map((t) => `
-        <article class="terminal-choice ${dir ? 'tap' : ''}" ${dir ? `data-open-term="${esc(t.id)}"` : ''}>
+        <article class="terminal-choice ${t.id === selectedTerminal ? 'on' : ''}" data-terminal-choice="${esc(t.id)}">
           <span class="kindmark" aria-hidden="true">${TERM_MARK}</span>
           <span class="grow"><b>${esc(t.name)}</b><small>${esc(t.blurb)}</small></span>
           <button class="small" data-open-term="${esc(t.id)}" ${dir ? '' : 'disabled'}>Start →</button>
@@ -4683,11 +5259,23 @@ SCREENS.terminals = async () => {
       </div>` : ''}
       </div>
       <aside class="terminal-rail-v2">
-        <span class="eyebrow">Session behavior</span>
-        <h3>You stay in control.</h3>
-        <p>Nothing is typed for you. A shell starts in the selected folder and remains yours.</p>
-        <div class="context-item"><span>Folder</span><b class="mono">${esc(dir ?? 'Not chosen')}</b></div>
-        <div class="context-item"><span>Remote sessions</span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b></div>
+        <div class="terminal-inspector-head"><span class="kindmark">${TERM_MARK}</span><span class="grow"><small>Selected shell</small><h3>${esc(selected?.name ?? 'No shell')}</h3></span><span class="chip live">Available</span></div>
+        <div class="terminal-inspector-tabs"><span class="on">Overview</span><span>Session</span><span>Permissions</span></div>
+        <section><div class="panel-title"><b>Project context</b></div>
+          <div class="context-item"><span>Project</span><b>${esc(p?.name ?? 'Folder')}</b></div>
+          <div class="context-item"><span>Starts in</span><b class="mono">${esc(dir ?? 'Not chosen')}</b></div>
+        </section>
+        <section><div class="panel-title"><b>Shell & runtime</b></div>
+          <div class="context-item"><span>Shell</span><b>${esc(selected?.name ?? 'Not selected')}</b></div>
+          <div class="context-item"><span>Location</span><b>This computer</b></div>
+          <p>${esc(selected?.blurb ?? 'Choose an available shell.')}</p>
+        </section>
+        <section><div class="panel-title"><b>Permissions</b></div>
+          <div class="context-item"><span>Local mode</span><b>Project folder</b></div>
+          <p>Workspace membership never grants remote terminal access. An owner must allow a specific computer from that computer's Workspace details.</p>
+        </section>
+        <button class="go wide" data-open-term="${esc(selected?.id ?? '')}" ${dir && selected ? '' : 'disabled'}>Start in this project</button>
+        <div class="context-item"><span>Remote sessions here</span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b></div>
       </aside>
     </div>`;
   said = null;
@@ -4702,6 +5290,14 @@ SCREENS.terminals = async () => {
   }
 
   wireWhereBar();
+
+  for (const choice of document.querySelectorAll('[data-terminal-choice]')) {
+    choice.onclick = (event) => {
+      if (event.target.closest('button')) return;
+      selectedTerminal = choice.dataset.terminalChoice;
+      draw({ quietly: true });
+    };
+  }
 
   for (const b of document.querySelectorAll('[data-open-term]')) {
     b.onclick = async (e) => {
@@ -4866,7 +5462,7 @@ const TERM_MARK = '<svg width="14" height="14" viewBox="0 0 16 16" fill="none" s
 let watching = null;
 
 SCREENS.ship = async () => {
-  const d = await get('/ship');
+  const [d, platforms] = await Promise.all([get('/ship'), get('/project/platforms')]);
   if (!d.open) {
     view.innerHTML = `
       <div class="pagehead">
@@ -4909,6 +5505,7 @@ SCREENS.ship = async () => {
         <div><span>Build system</span><b>${esc(d.look?.framework ?? (d.look?.hasPackage ? 'No framework' : 'Plain files'))}</b></div>
         <div><span>GitHub</span><b>${bind.bound ? `${esc(bind.owner)}/${esc(bind.repo)}` : 'Not connected'}</b></div>
         <div><span>Unsaved</span><b class="${d.project?.unsaved ? 'warn' : ''}">${d.project?.unsaved ?? 'None'}</b></div>
+        <div><span>Web target</span><b>${esc(String(platforms.web?.status ?? 'UNKNOWN').replaceAll('_', ' '))}</b></div>
       </div>
     </section>
 
@@ -4932,6 +5529,13 @@ SCREENS.ship = async () => {
     <div class="release-workflows-v2 deploy-grid">
       <section class="deploy-lane">
         <div class="deploy-lane-head"><span class="release-step">01</span><span class="kindmark">${SITE_MARK}</span><span class="grow"><b>Website release</b><span>Put the current website online</span></span></div>
+        ${platforms.web?.category !== 'WEB_SAFE' ? `<div class="deploy-adaptation-v2">
+          <div><span class="eyebrow">${esc(platforms.web?.category?.replaceAll('_', ' ') ?? 'Web analysis')}</span>
+            <h3>${platforms.recommendation === 'WEB_COMPANION' ? 'Web Companion recommended' : 'A browser surface is needed'}</h3>
+            <p>${esc(platforms.web?.says ?? 'Analyze this project before deploying it as a website.')}</p></div>
+          <div class="adaptation-pills">${(platforms.blockers ?? []).slice(0, 4).map((one) => `<span>${esc(one.says)} · ${one.count}</span>`).join('')}</div>
+          <button class="quiet" id="dep-platforms">Open compatibility report →</button>
+        </div>` : ''}
         <div class="sheetlist term-cols">
       ${vercelRow(d)}
       ${site.places.filter((pl) => pl.id !== 'vercel').map((pl) => `
@@ -4998,6 +5602,10 @@ SCREENS.ship = async () => {
       b.textContent = 'Copied';
     };
   }
+  $('#dep-platforms')?.addEventListener('click', async () => {
+    await go('projects');
+    setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
+  });
 
   for (const id of ['#dep-publish', '#dep-publish2']) {
     $(id)?.addEventListener('click', () => firstTimeSheet());
@@ -6983,11 +7591,12 @@ let activityFilter = 'all';
  */
 SCREENS.activity = async () => {
   const [{ jobs }, p] = await Promise.all([get('/jobs'), get('/project')]);
-  const [sessions, previews, built, ways] = await Promise.all([
+  const [sessions, previews, built, ways, workspaceEvents] = await Promise.all([
     get('/remote/sessions'),
     get('/remote/previews'),
     p?.dir ? get('/remote/built') : Promise.resolve({ ok: false }),
     p?.dir ? get('/waysback') : Promise.resolve({ ok: true, waysBack: [] }),
+    get('/team/activity').catch(() => ({ ok: false, activity: [] })),
   ]);
 
   const mine = jobs.filter((j) => activityFilter === 'all' || j.kind === activityFilter);
@@ -7065,6 +7674,12 @@ SCREENS.activity = async () => {
       </div>` : ''}
       </div>
       <aside class="activity-side">
+
+    ${(workspaceEvents.activity ?? []).length ? `<div class="sect"><h2>Workspace activity</h2><span class="count">${workspaceEvents.activity.length}</span></div>
+      <div class="activity-facts-v2">${workspaceEvents.activity.slice(0, 8).map((one) => `<div>
+        <span class="dot ${/failed|did not/.test(one.kind) ? 'attention' : 'off'}"></span>
+        <span class="grow"><b>${esc(one.sentence)}</b><small>${esc(ago(one.at))}</small></span>
+      </div>`).join('')}</div>` : ''}
 
     <div class="sect"><h2>Being run here by another computer</h2>
       <span class="count">${sessions.sessions?.length ?? 0}</span></div>
@@ -7974,6 +8589,94 @@ function inspectSharedProject(p) {
   });
 }
 
+/** Authentication and linked identities, composed as one person rather than two account lists. */
+async function drawAccountCenter() {
+  const box = $('#account-center');
+  if (!box) return;
+  const [github, google] = await Promise.all([get('/github'), get('/google')]);
+  if (!box.isConnected) return;
+  const googleAccounts = google.accounts ?? [];
+  const githubAccounts = github.accounts ?? [];
+  const primary = github.active ?? google.active ?? me.machineName ?? 'This person';
+
+  box.innerHTML = `
+    <section class="account-identity-panel">
+      <div class="account-panel-heading"><span class="eyebrow">Your Viberant identity</span>
+        <p>One person on this computer, with the services used by individual features linked underneath.</p></div>
+      <div class="account-person-card">
+        <span class="account-avatar">${esc(primary.slice(0, 1).toUpperCase())}</span>
+        <div class="grow"><h2>${esc(primary)}</h2><p>${esc(me.machineName || 'This computer')}</p>
+          <span class="chip ${github.active || google.active ? 'live' : ''}">${github.active || google.active ? 'Signed in' : 'Local only'}</span></div>
+      </div>
+      <div class="account-linked-title"><span class="eyebrow">Linked identities</span><span>${githubAccounts.length + googleAccounts.length}</span></div>
+      <div class="account-linked-list">
+        ${githubAccounts.map((one) => `
+          <div class="account-linked-row"><span class="service-mark">${GITHUB_MARK}</span>
+            <span class="grow"><b>GitHub</b><small>${esc(one.name)}</small></span>
+            <span class="account-connected"><span class="dot live"></span>${one.active ? 'In use' : 'Connected'}</span>
+            ${one.active ? '' : `<button class="quiet small" data-account-github="${esc(one.name)}">Use</button>`}
+          </div>`).join('')}
+        ${googleAccounts.map((one) => `
+          <div class="account-linked-row"><span class="service-mark">${GOOGLE_MARK}</span>
+            <span class="grow"><b>Google</b><small>${esc(one.name)}</small></span>
+            <span class="account-connected"><span class="dot live"></span>${one.active ? 'In use' : 'Connected'}</span>
+            ${one.active ? '' : `<button class="quiet small" data-account-google="${esc(one.name)}">Use</button>`}
+          </div>`).join('')}
+        ${!githubAccounts.length && !googleAccounts.length ? '<div class="account-empty">No external identity is linked. Local projects and tools still work.</div>' : ''}
+      </div>
+      <div class="account-security-note"><span>⌾</span><p><b>Tokens stay on this Windows account.</b> GitHub tokens are protected by Windows before being written. Viberant never asks for a password.</p></div>
+    </section>
+
+    <section class="account-access-panel">
+      <div class="account-panel-heading"><span class="eyebrow">Sign in to Viberant</span><p>Choose the service needed for the feature you want to use.</p></div>
+      <div class="account-methods">
+        <button id="account-github-in">${GITHUB_MARK}<span><b>${github.active ? 'Connect another GitHub account' : 'Continue with GitHub'}</b><small>Browser device code · projects and collaboration</small></span></button>
+        <button id="account-google-in">${GOOGLE_MARK}<span><b>${google.active ? 'Connect another Google account' : 'Continue with Google'}</b><small>Browser account chooser · identity</small></span></button>
+      </div>
+
+      <div class="account-readiness">
+        <div class="account-readiness-head"><span class="eyebrow">GitHub browser sign-in</span>
+          <span class="chip ${github.signInReady ? 'live' : 'attention'}">${github.signInReady ? 'Ready' : 'Publisher setup required'}</span></div>
+        <p>${github.signInReady
+    ? 'Viberant shows a device code, opens GitHub in the browser, and notices authorization automatically.'
+    : 'The direct flow is implemented, but this build does not contain the public client ID for the Viberant OAuth application.'}</p>
+        <div class="account-flow"><span class="${github.active ? 'done' : 'on'}">1 <b>Device code</b></span><i></i><span class="${github.active ? 'done' : ''}">2 <b>Browser authorization</b></span><i></i><span class="${github.active ? 'done' : ''}">3 <b>${github.active ? `Connected as ${esc(github.active)}` : 'Connected'}</b></span></div>
+      </div>
+
+      <div class="account-runtime">
+        <div><span class="eyebrow">Project history</span><h3>${github.git?.available ? 'Ready' : 'Unavailable'}</h3></div>
+        <span class="state ${github.git?.available ? 'good' : 'attention'}"><span class="pip"></span>${github.git?.bundled ? 'Bundled MinGit' : github.git?.available ? 'System fallback' : 'Repair needed'}</span>
+        <p>${github.git?.available
+    ? 'Viberant resolves its bundled runtime first and does not change the computer PATH.'
+    : 'Clone, fetch, pull, and send are disabled until the packaged runtime is restored.'}</p>
+      </div>
+
+      <div class="account-secondary-actions">
+        <button id="account-create-github">Create a GitHub account</button>
+        ${github.active ? '<button class="danger" id="account-github-out">Disconnect GitHub</button>' : ''}
+        ${google.active ? '<button class="danger" id="account-google-out">Disconnect Google</button>' : ''}
+      </div>
+    </section>`;
+
+  $('#account-github-in').onclick = () => signInToGitHub();
+  $('#account-google-in').onclick = () => signInToGoogle({});
+  $('#account-create-github').onclick = () => post('/open/page', { at: 'https://github.com/signup' });
+  $('#account-github-out')?.addEventListener('click', async () => {
+    say(await post('/github/signout', { name: github.active }));
+    await refreshMe(); draw();
+  });
+  $('#account-google-out')?.addEventListener('click', async () => {
+    say(await post('/google/signout', { name: google.active }));
+    await refreshMe(); draw();
+  });
+  for (const button of box.querySelectorAll('[data-account-github]')) {
+    button.onclick = async () => { say(await post('/github/switch', { name: button.dataset.accountGithub })); await refreshMe(); draw(); };
+  }
+  for (const button of box.querySelectorAll('[data-account-google]')) {
+    button.onclick = async () => { say(await post('/google/switch', { name: button.dataset.accountGoogle })); await refreshMe(); draw(); };
+  }
+}
+
 SCREENS.settings = async () => {
   const [{ settings, parts, record }, { terminals }] = await Promise.all([post('/settings'), get('/terminals')]);
 
@@ -8010,15 +8713,7 @@ SCREENS.settings = async () => {
       </div>`;
   };
 
-  const accounts = `
-    <div class="card" id="gh-settings">
-      <div class="setting"><div class="about"><b>GitHub</b>
-        <span>Reading who this computer is signed in as…</span></div><div class="set"></div></div>
-    </div>
-    <div class="card" id="google-settings" style="margin-top:.6rem">
-      <div class="setting"><div class="about"><b>Google</b>
-        <span>Reading…</span></div><div class="set"></div></div>
-    </div>`;
+  const accounts = '<div class="account-center" id="account-center"><div class="github-loading"><span class="spin"></span> Reading connected identities…</div></div>';
 
   const asking = `
     <div class="card">
@@ -8137,7 +8832,7 @@ SCREENS.settings = async () => {
 
   // Only the part that is on the page is asked about. The three that reach the
   // network used to be asked on every draw, whichever part you were looking at.
-  if (settingsPlace === 'accounts') { drawGitHubSettings(); drawGoogleSettings(); }
+  if (settingsPlace === 'accounts') drawAccountCenter();
   if (settingsPlace === 'updates') drawNewerSettings();
   if (me.settings?.appearance === 'yours') checkPictureReads();
 
@@ -8680,8 +9375,14 @@ async function signInToGitHub({ inGate = false } = {}) {
   const started = await post('/github/signin');
   if (!started.ok) {
     if (inGate) return showGate({ trouble: started });
-    say(started);
-    return draw();
+    return sheet({
+      title: 'Sign in with GitHub',
+      narrow: true,
+      body: `<div class="said bad"><b>${esc(started.sentence)}</b><span>${esc(started.action ?? '')}</span></div>
+        <p class="sub">This is a publisher setting for the packaged app. People using Viberant should never have to create their own OAuth application.</p>`,
+      foot: '<button class="quiet" id="github-setup-close">Close</button>',
+      onOpen: () => { $('#github-setup-close').onclick = closeLayer; },
+    });
   }
 
   let watching = null;
@@ -8704,13 +9405,10 @@ async function signInToGitHub({ inGate = false } = {}) {
     : 'Asking GitHub for a code.'}</p>
         <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
         ${code ? `
-          <div class="menu">
-            <button class="opt" id="in-again">
-              <span class="glyph">${GITHUB_MARK}</span>
-              <span><span class="what">Open the page again</span><br>
-                <span class="why">${esc(String(where).replace(/^https:\/\//, ''))}</span></span>
-            </button>
-          </div>` : ''}`,
+          <div class="auth-code-actions">
+            <button class="go" id="in-copy">Copy code</button>
+            <button id="in-again"><span class="glyph">${GITHUB_MARK}</span><span>Open in browser</span></button>
+          </div><div class="auth-waiting"><span class="spin"></span><span><b>Waiting for authorization</b><small>${esc(String(where).replace(/^https:\/\//, ''))}</small></span></div>` : ''}`,
       foot: '<button class="quiet" id="in-cancel">Never mind</button>',
       onOpen: () => {
         // Dismissing this any other way — the corner, the darkened background
@@ -8719,6 +9417,10 @@ async function signInToGitHub({ inGate = false } = {}) {
         // on to. Whichever way it goes, it stops.
         whenLayerCloses(() => clearInterval(watching));
         $('#in-again')?.addEventListener('click', () => post('/open/page', { at: where }));
+        $('#in-copy')?.addEventListener('click', async () => {
+          await navigator.clipboard?.writeText(code);
+          $('#in-copy').textContent = 'Copied';
+        });
         $('#in-cancel').onclick = async () => {
           await stop({ giveUp: true, backToWelcome: true });
           if (!inGate) draw();
@@ -8734,6 +9436,7 @@ async function signInToGitHub({ inGate = false } = {}) {
 
     if (r.signin?.code && $('#layer .code')?.textContent.trim() !== r.signin.code) {
       paint(r.signin.code, r.signin.at);
+      post('/open/page', { at: r.signin.at });
     }
 
     // Done means the sign-in itself finished, or the account actually changed.
@@ -8785,28 +9488,11 @@ async function signInToGoogle({ inGate = false } = {}) {
       title: 'Sign in with Google',
       narrow: true,
       body: `
-        <p class="sub">A Google sign-in has to be backed by an application registered
-          with Google. Every Google button you have ever pressed is — there is no
-          anonymous way in, by design. Making one is free and takes about five
-          minutes, and it is asked once.</p>
-        <div class="menu">
-          <button class="opt" id="g-console">
-            <span class="glyph">${GOOGLE_MARK}</span>
-            <span><span class="what">Open the Google Cloud console</span><br>
-              <span class="why">Credentials → Create credentials → OAuth client ID → TV and Limited Input.</span></span>
-          </button>
-          <button class="opt" id="g-settings">
-            <span class="glyph">⚙</span>
-            <span><span class="what">Paste the two values into Settings</span><br>
-              <span class="why">Client ID and client secret. They stay on this computer.</span></span>
-          </button>
-        </div>
-        <p class="sub" style="margin-top:1rem">Everything else here works without it —
-          this is only for putting your Google name on this computer.</p>`,
+        <div class="auth-blocked"><span class="service-mark">${GOOGLE_MARK}</span>
+          <div><b>${esc(started.sentence)}</b><p>${esc(started.action)}</p></div></div>
+        <p class="sub" style="margin-top:1rem">Normal users should never configure a Google developer application. This is a publisher step for the packaged build, so no setup console is opened from Viberant.</p>`,
       foot: '<button class="quiet" id="g-close">Close</button>',
       onOpen: () => {
-        $('#g-console').onclick = () => post('/open/page', { at: started.howToRegister });
-        $('#g-settings').onclick = () => { closeLayer(); hideGate(); go('settings'); };
         $('#g-close').onclick = () => { closeLayer(); backWhereYouWere(); };
       },
     });
@@ -8830,18 +9516,19 @@ async function signInToGoogle({ inGate = false } = {}) {
     : 'Asking Google for a code.'}</p>
       <div class="code">${code ? esc(code) : '<span class="spin"></span>'}</div>
       ${code ? `
-        <div class="menu">
-          <button class="opt" id="g-again">
-            <span class="glyph">${GOOGLE_MARK}</span>
-            <span><span class="what">Open the page again</span><br>
-              <span class="why">${esc(String(where ?? '').replace(/^https:\/\//, ''))}</span></span>
-          </button>
-        </div>` : ''}`,
+        <div class="auth-code-actions">
+          <button class="go" id="g-copy">Copy code</button>
+          <button id="g-again"><span class="glyph">${GOOGLE_MARK}</span><span>Open in browser</span></button>
+        </div><div class="auth-waiting"><span class="spin"></span><span><b>Waiting for authorization</b><small>${esc(String(where ?? '').replace(/^https:\/\//, ''))}</small></span></div>` : ''}`,
     foot: '<button class="quiet" id="g-cancel">Never mind</button>',
     onOpen: () => {
       // The same rule as the other way in: closed is closed, however it closed.
       whenLayerCloses(() => clearInterval(watching));
       $('#g-again')?.addEventListener('click', () => post('/open/page', { at: where }));
+      $('#g-copy')?.addEventListener('click', async () => {
+        await navigator.clipboard?.writeText(code);
+        $('#g-copy').textContent = 'Copied';
+      });
       $('#g-cancel').onclick = () => { stop(); backWhereYouWere(); };
     },
   });

@@ -47,6 +47,21 @@ after(async () => {
   await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
+describe('the model picker only offers models this assistant can call', () => {
+  test('text models stay and media-only models stay out', async () => {
+    const { modelCanAnswer } = await import('../assistant.mjs');
+    assert.equal(modelCanAnswer('openai', 'gpt-5.2'), true);
+    assert.equal(modelCanAnswer('openai', 'chatgpt-image-latest'), false);
+    assert.equal(modelCanAnswer('openai', 'gpt-4o-mini-tts'), false);
+    assert.equal(modelCanAnswer('gemini', 'gemini-pro-latest', {
+      supportedGenerationMethods: ['generateContent'],
+    }), true);
+    assert.equal(modelCanAnswer('gemini', 'gemini-embedding-001', {
+      supportedGenerationMethods: ['embedContent'],
+    }), false);
+  });
+});
+
 describe('a secret never leaves this computer in a prompt', () => {
   test('the shapes a credential comes in are all replaced', async () => {
     const { withoutSecrets } = await import('../assistant.mjs');

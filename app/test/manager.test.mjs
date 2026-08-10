@@ -166,7 +166,12 @@ describe('launching a tool in your project', () => {
   test('a real tool starts, in the project folder', async () => {
     const { launch } = await import('../tools.mjs');
     const dir = await project('starting');
-    const r = await launch({ tool: { id: 'echo', name: 'Echo', kind: 'app', bin: 'echo' }, dir });
+    // `echo` is a shell keyword on Windows, not a program `where.exe` can
+    // resolve. Give both platforms a real, harmless program path.
+    const program = join(root, process.platform === 'win32' ? 'echo.cmd' : 'echo');
+    await writeFile(program, process.platform === 'win32' ? '@echo off\r\nexit /b 0\r\n' : '#!/bin/sh\nexit 0\n');
+    if (process.platform !== 'win32') await chmod(program, 0o755);
+    const r = await launch({ tool: { id: 'echo', name: 'Echo', kind: 'app', bin: program }, dir });
     assert.equal(r.ok, true);
     assert.equal(r.at, dir);
   });

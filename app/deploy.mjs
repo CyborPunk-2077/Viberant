@@ -27,6 +27,8 @@ import { platform } from 'node:process';
 
 import * as jobs from './jobs.mjs';
 import * as github from './github.mjs';
+import * as signin from './signin.mjs';
+import * as gitRuntime from './git-runtime.mjs';
 
 const run = promisify(execFile);
 const WINDOWS = platform === 'win32';
@@ -247,32 +249,39 @@ async function toPages(job, dir) {
   }
 
   jobs.step(job, 'Making sure GitHub has the latest of everything.');
-  const sent = await jobs.runInto(job, { file: 'git', args: ['push'], cwd: dir });
-  if (!sent.ok) jobs.write(job, 'Nothing new to send, or it could not be sent. Carrying on.');
+  const sent = await quiet(() => gitRuntime.run(dir, 'push'));
+  if (!sent) jobs.write(job, 'Nothing new to send, or it could not be sent. Carrying on.');
 
   const line = await quiet(async () =>
-    (await run('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir })).stdout.trim(), 'main');
+    (await gitRuntime.run(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim(), 'main');
+
+  const binding = await github.bindingOf(dir);
+  if (!binding?.owner || !binding?.repo) {
+    return jobs.end(job, {
+      ok: false,
+      sentence: 'This project does not have a GitHub destination to publish Pages from.',
+      action: 'Save and send it to GitHub first, then try again.',
+    });
+  }
+  const pagePath = at === '/' ? '/' : '/docs';
+  const pageRoute = `/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}/pages`;
 
   jobs.step(job, 'Asking GitHub to serve it as a website.');
-  let out = await jobs.runInto(job, {
-    file: 'gh',
-    args: ['api', '-X', 'POST', 'repos/{owner}/{repo}/pages',
-      '-f', `source[branch]=${line}`, '-f', `source[path]=${at}`],
-    cwd: dir,
+  let out = await signin.request(pageRoute, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source: { branch: line, path: pagePath } }),
   });
 
   if (!out.ok) {
     // Already serving. Point it at the right place instead of making it again.
-    out = await jobs.runInto(job, {
-      file: 'gh',
-      args: ['api', '-X', 'PUT', 'repos/{owner}/{repo}/pages',
-        '-f', `source[branch]=${line}`, '-f', `source[path]=${at}`],
-      cwd: dir,
+    out = await signin.request(pageRoute, {
+      method: 'PUT', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ source: { branch: line, path: pagePath } }),
     });
   }
 
-  const address = await quiet(async () =>
-    (await run('gh', ['api', 'repos/{owner}/{repo}/pages', '--jq', '.html_url'], { cwd: dir })).stdout.trim(), null);
+  const page = await signin.request(pageRoute);
+  const address = page.ok ? page.data?.html_url ?? null : null;
 
   if (!address) {
     return jobs.end(job, {
@@ -286,7 +295,7 @@ async function toPages(job, dir) {
   // reached GitHub; it says nothing at all about whether a website exists at
   // the other end. GitHub builds these on its own schedule and can decide it
   // cannot — so this waits for it to say which, and reports what it said.
-  const settled = await waitForPages(job, dir);
+  const settled = await waitForPages(job, binding);
 
   return jobs.end(job, {
     ok: settled.ok,
@@ -313,19 +322,18 @@ async function toPages(job, dir) {
  * build that is still going after two minutes is not a failure, it is a build
  * that is still going, and saying so is more honest than either verdict.
  */
-async function waitForPages(job, dir) {
+async function waitForPages(job, binding) {
   jobs.step(job, 'Waiting for GitHub to build it.');
   const gaps = [3000, 5000, 8000, 12000, 15000, 20000, 25000, 30000];
 
   for (const gap of gaps) {
     await new Promise((r) => setTimeout(r, gap));
 
-    const said = await quiet(async () => (await run('gh',
-      ['api', 'repos/{owner}/{repo}/pages/builds/latest', '--jq', '.status,.error.message'],
-      { cwd: dir })).stdout.trim(), null);
-    if (!said) continue;
+    const said = await signin.request(`/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}/pages/builds/latest`);
+    if (!said.ok) continue;
 
-    const [status, why] = said.split('\n');
+    const status = said.data?.status;
+    const why = said.data?.error?.message;
     if (status === 'built') return { ok: true };
     if (status === 'errored') {
       return {
@@ -446,13 +454,23 @@ async function runApp(job, { dir, alsoGiveOut, version, notes }) {
   }
 
   jobs.step(job, `Putting version ${tag} on GitHub for people to download.`);
-  const out = await jobs.runInto(job, {
-    file: 'gh',
-    args: ['release', 'create', `v${tag.replace(/^v/, '')}`,
-      ...made.map((m) => m.path),
-      '--title', `v${tag.replace(/^v/, '')}`,
-      ...(notes ? ['--notes', notes] : ['--generate-notes'])],
-    cwd: dir,
+  const binding = await github.bindingOf(dir);
+  if (!binding?.owner || !binding?.repo) {
+    return jobs.end(job, {
+      ok: false,
+      sentence: `It built, but version ${tag} has no GitHub destination.`,
+      action: 'Save and send this project to GitHub first, then publish the release again.',
+    });
+  }
+  const releaseRoute = `/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}/releases`;
+  const out = await signin.request(releaseRoute, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      tag_name: `v${tag.replace(/^v/, '')}`,
+      name: `v${tag.replace(/^v/, '')}`,
+      body: notes || undefined,
+      generate_release_notes: !notes,
+    }),
   });
 
   if (!out.ok) {
@@ -463,8 +481,28 @@ async function runApp(job, { dir, alsoGiveOut, version, notes }) {
     });
   }
 
-  const address = await quiet(async () =>
-    (await run('gh', ['release', 'view', `v${tag.replace(/^v/, '')}`, '--json', 'url', '--jq', '.url'], { cwd: dir })).stdout.trim(), null);
+  const uploadBase = String(out.data?.upload_url ?? '').replace(/\{.*$/, '');
+  for (const file of made) {
+    const bytes = await quiet(() => readFile(file.path));
+    if (!bytes || !uploadBase) {
+      return jobs.end(job, {
+        ok: false,
+        sentence: `Version ${tag} was made, but ${file.name} could not be uploaded.`,
+        action: 'The built file is still on this computer. Check the connection and try a new version number.',
+      });
+    }
+    const uploaded = await signin.request(`${uploadBase}?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes,
+    });
+    if (!uploaded.ok) {
+      return jobs.end(job, {
+        ok: false,
+        sentence: `Version ${tag} was made, but ${file.name} did not reach GitHub.`,
+        action: 'The built file is still on this computer. Check the connection and use a new version number.',
+      });
+    }
+  }
+  const address = out.data?.html_url ?? null;
 
   return jobs.end(job, {
     ok: true,

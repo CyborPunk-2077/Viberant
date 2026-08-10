@@ -164,6 +164,7 @@ export const KNOWN = [
   {
     id: 'googleClientId',
     where: 'joined',
+    unlisted: true,
     name: 'Google sign-in: client ID',
     why: 'A Google sign-in cannot exist without an application registered with Google — that is true of every Google button anywhere. Make one at console.cloud.google.com (type: TV and Limited Input) and paste its ID here.',
     kind: 'text',
@@ -177,6 +178,7 @@ export const KNOWN = [
   {
     id: 'googleClientSecret',
     where: 'joined',
+    unlisted: true,
     name: 'Google sign-in: client secret',
     why: 'The second half of the same thing. It stays on this computer, in the settings file, and goes nowhere but Google.',
     kind: 'secret',
@@ -328,6 +330,16 @@ export const KNOWN = [
     longest: 80,
     fallback: () => '',
   },
+  ...['claude', 'openai', 'gemini'].map((provider) => ({
+    id: `verifiedModel:${provider}`,
+    name: `Verified model for ${provider}`,
+    why: 'The live provider catalogue confirmed this model can answer project questions.',
+    kind: 'text',
+    optional: true,
+    unlisted: true,
+    longest: 80,
+    fallback: () => '',
+  })),
   {
     id: 'watchFolder',
     where: 'computer',

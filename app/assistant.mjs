@@ -290,6 +290,43 @@ function howLongToWait(res, said) {
 /** One by its name, or nothing. */
 export const modelCalled = (id) => MODELS.find((m) => m.id === id) ?? null;
 
+/** Only model families belonging to the three supported providers. */
+export function modelBelongsToProvider(providerId, modelId) {
+  const id = String(modelId ?? '');
+  return providerId === 'claude' ? /^claude-[a-z0-9.-]+$/i.test(id)
+    : providerId === 'openai' ? /^(gpt-|chatgpt-|o[1-9])[a-z0-9.-]*$/i.test(id)
+      : providerId === 'gemini' ? /^gemini-[a-z0-9.-]+$/i.test(id)
+        : false;
+}
+
+/**
+ * The catalogue endpoints also return image, speech, search and embedding
+ * models. They may belong to the same company, but this assistant sends a text
+ * conversation request, so offering one here would only turn a selection into
+ * a predictable refusal. Google's response tells us the supported operation;
+ * the other two use conservative family exclusions where no capability field
+ * is published.
+ */
+export function modelCanAnswer(providerId, modelId, record = null) {
+  const id = String(modelId ?? '');
+  if (!modelBelongsToProvider(providerId, id)) return false;
+  if (providerId === 'gemini') {
+    const methods = record?.supportedGenerationMethods;
+    if (Array.isArray(methods) && !methods.includes('generateContent')) return false;
+  }
+  return !/(?:image|audio|realtime|transcrib|speech|tts|search|embed|moderation|instruct|codex|computer-use)/i.test(id);
+}
+
+export const modelIsKnown = (providerId, modelId) => !!CATALOGUE[providerId]?.models
+  ?.some((one) => one.id === modelId);
+
+async function chosenModel(m) {
+  const wanted = await settings.get(`model:${m.id}`);
+  const verified = await settings.get(`verifiedModel:${m.id}`);
+  const allowed = modelIsKnown(m.id, wanted) || (wanted && wanted === verified && modelCanAnswer(m.id, wanted));
+  return allowed ? wanted : (CATALOGUE[m.id]?.default ?? m.model);
+}
+
 /** One company, named for one question, in the shape `ready` answers in. */
 async function onlyThisOne(providerId) {
   const m = modelCalled(providerId);
@@ -307,9 +344,7 @@ async function onlyThisOne(providerId) {
     };
   }
 
-  const wanted = await settings.get(`model:${m.id}`);
-  const offered = CATALOGUE[m.id]?.models ?? [];
-  const use = offered.some((one) => one.id === wanted) ? wanted : (CATALOGUE[m.id]?.default ?? m.model);
+  const use = await chosenModel(m);
   return { ok: true, model: { ...m, model: use }, name: m.name, using: use };
 }
 
@@ -345,21 +380,12 @@ export async function whatTheyOffer(providerId) {
    */
   const at = m.id === 'openai' ? 'https://api.openai.com/v1/models'
     : m.id === 'claude' ? 'https://api.anthropic.com/v1/models?limit=200'
-      : null;
-
-  if (!at) {
-    return {
-      ok: true,
-      cannotAsk: true,
-      models: offered.map((one) => ({ ...one, offered: null })),
-      sentence: `${m.name} does not publish a list, so these are as written down.`,
-    };
-  }
+      : `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
 
   const res = await quiet(() => fetch(at, {
     headers: m.id === 'openai'
       ? { authorization: `Bearer ${key}` }
-      : { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+      : m.id === 'claude' ? { 'x-api-key': key, 'anthropic-version': '2023-06-01' } : {},
   }));
 
   if (!res) {
@@ -369,9 +395,20 @@ export async function whatTheyOffer(providerId) {
   if (!res.ok) return whatThatMeant(m, theirRefusal(res, whatTheySent(await quiet(() => res.json(), null))));
 
   const body = await quiet(() => res.json(), null);
-  const have = new Set((body?.data ?? []).map((one) => String(one.id)));
-
-  const models = offered.map((one) => ({ ...one, offered: have.has(one.id) }));
+  const records = m.id === 'gemini' ? (body?.models ?? []) : (body?.data ?? []);
+  const ids = records.map((one) => m.id === 'gemini'
+    ? String(one.name ?? '').replace(/^models\//, '')
+    : String(one.id));
+  const have = new Set(ids.filter((id, index) => modelCanAnswer(m.id, id, records[index])));
+  const known = new Map(offered.map((one) => [one.id, one]));
+  const models = [...have].map((id) => ({
+    id,
+    name: known.get(id)?.name ?? id,
+    why: known.get(id)?.why ?? 'Available to this connected API account.',
+    free: known.get(id)?.free === true,
+    offered: true,
+  })).sort((a, b) => Number(b.id === CATALOGUE[m.id]?.default) - Number(a.id === CATALOGUE[m.id]?.default)
+    || a.name.localeCompare(b.name));
   const missing = models.filter((one) => one.offered === false);
 
   return {
@@ -381,7 +418,7 @@ export async function whatTheyOffer(providerId) {
     // whether the thing that is set is a thing that exists.
     sentence: missing.length
       ? `${missing.length} of these ${missing.length === 1 ? 'is' : 'are'} not offered to this account.`
-      : `All of these are offered to this account. ${have.size} in all are.`,
+      : `${have.size} compatible ${have.size === 1 ? 'model is' : 'models are'} offered to this API account.`,
     action: missing.length ? 'Pick one of the others.' : null,
   };
 }
@@ -403,9 +440,7 @@ export async function ready() {
    * model.
    */
   const withModel = async (m) => {
-    const wanted = await settings.get(`model:${m.id}`);
-    const offered = CATALOGUE[m.id]?.models ?? [];
-    const use = offered.some((one) => one.id === wanted) ? wanted : (CATALOGUE[m.id]?.default ?? m.model);
+    const use = await chosenModel(m);
     return { ...m, model: use };
   };
 
@@ -462,18 +497,23 @@ export async function whoCanBeAsked() {
   const chosen = await settings.get('askWho');
   return {
     chosen: modelCalled(chosen)?.id ?? MODELS[0].id,
-    models: await Promise.all(MODELS.map(async (m) => ({
-      id: m.id,
-      name: m.name,
-      where: m.where,
-      model: m.model,
-      setting: m.keySetting,
-      // Whether there is one, never what it is (D-81).
-      ready: !!(await settings.get(m.keySetting)),
-      // What this company offers, and which of them is in use here.
-      models: CATALOGUE[m.id]?.models ?? [],
-      using: (await settings.get(`model:${m.id}`)) || CATALOGUE[m.id]?.default || m.model,
-    }))),
+    models: await Promise.all(MODELS.map(async (m) => {
+      const using = await chosenModel(m);
+      const known = CATALOGUE[m.id]?.models ?? [];
+      return {
+        id: m.id,
+        name: m.name,
+        where: m.where,
+        model: m.model,
+        setting: m.keySetting,
+        // Whether there is one, never what it is (D-81).
+        ready: !!(await settings.get(m.keySetting)),
+        models: known.some((one) => one.id === using) || !modelCanAnswer(m.id, using)
+          ? known
+          : [{ id: using, name: using, why: 'Selected from this API account.' }, ...known],
+        using,
+      };
+    })),
   };
 }
 

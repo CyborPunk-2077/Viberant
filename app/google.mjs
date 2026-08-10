@@ -23,12 +23,17 @@
  */
 
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { HOUSE } from './projects.mjs';
 
 const WHO = join(HOUSE, 'google.json');
+const here = dirname(fileURLToPath(import.meta.url));
+const appOAuth = (() => {
+  try { return JSON.parse(readFileSync(join(here, 'oauth.json'), 'utf8')); } catch { return {}; }
+})();
 
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
@@ -155,13 +160,16 @@ export async function remember(account) {
 export function begin({ clientId, clientSecret }) {
   if (going && going.finished === null) return state();
 
+  clientId ||= process.env.VIBERANT_GOOGLE_CLIENT_ID || appOAuth.googleClientId;
+  clientSecret ||= process.env.VIBERANT_GOOGLE_CLIENT_SECRET || appOAuth.googleClientSecret;
+
   if (!clientId || !clientSecret) {
     return {
       running: false,
       ok: false,
       needsSetup: true,
-      sentence: 'Viberant has no Google application of its own yet.',
-      action: 'Make one in the Google Cloud console and paste its two values into Settings. It takes about five minutes and is asked once.',
+      sentence: 'This Viberant build has no Google sign-in identity.',
+      action: 'The app publisher must configure the Viberant Google OAuth application for this build.',
     };
   }
 

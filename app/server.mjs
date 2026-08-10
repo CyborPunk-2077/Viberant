@@ -61,6 +61,8 @@ import * as artifacts from './artifacts.mjs';
 import * as previewing from './preview.mjs';
 import * as carried from './carried.mjs';
 import * as activity from './activity.mjs';
+import * as keybinds from './keybinds.mjs';
+import * as webtarget from './webtarget.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -604,9 +606,9 @@ const routes = {
   // -- who and where ------------------------------------------------------
 
   async 'GET /me'() {
-    const [account, identity, ws, now, googleAccount, haveGh] = await Promise.all([
+    const [account, identity, ws, now, googleAccount, haveGh, keys] = await Promise.all([
       github.who(), github.identity(), workspace.state(), settings.allSafely(),
-      google.who(), github.haveGitHubTool(),
+      google.who(), github.haveGitHubTool(), keybinds.all(),
     ]);
     return {
       machine,
@@ -618,12 +620,25 @@ const routes = {
       workspace: ws,
       settings: now,
       haveGitHubTool: haveGh,
+      keybinds: keys.bindings,
       lookedIn: foundOnPath,
       noLongerPassedOn,
       sharingHere: lan.isOn(),
       current: current?.dir ?? null,
       currentName: current?.name ?? null,
     };
+  },
+
+  async 'GET /keybinds'() {
+    return { ok: true, ...(await keybinds.all()) };
+  },
+
+  async 'POST /keybinds'({ body }) {
+    return keybinds.set(body?.id, body?.key);
+  },
+
+  async 'POST /keybinds/reset'({ body }) {
+    return keybinds.reset(body?.id ?? null);
   },
 
   async 'GET /pulse'() {
@@ -729,6 +744,16 @@ const routes = {
       reach: projects.reachInWords(s, { private: !!remembered.private }),
       home: home(current.store.state()),
     };
+  },
+
+  async 'GET /project/platforms'() {
+    if (!current) return noProject;
+    return webtarget.analyze(current.dir);
+  },
+
+  async 'POST /project/platforms/create'() {
+    if (!current) return noProject;
+    return webtarget.create(current.dir);
   },
 
   async 'POST /projects/mark'({ body }) {
@@ -934,8 +959,8 @@ const routes = {
    * different questions at two different moments.
    */
   async 'GET /github'() {
-    const [accounts, identity, now] = await Promise.all([
-      github.accounts(), github.identity(), github.session(),
+    const [accounts, identity, now, git, signInReady] = await Promise.all([
+      github.accounts(), github.identity(), github.session(), github.gitState(), github.signInConfigured(),
     ]);
     const picture = current ? await github.picture(current.dir) : null;
     return {
@@ -947,6 +972,8 @@ const routes = {
       identity,
       picture,
       project: current?.name ?? null,
+      git,
+      signInReady,
     };
   },
 
@@ -964,11 +991,11 @@ const routes = {
   },
 
   async 'POST /github/signin'() {
-    if (!(await github.haveGitHubTool())) {
+    if (!(await github.signInConfigured())) {
       return {
         ok: false,
-        sentence: 'The GitHub helper is not installed on this computer.',
-        action: 'Install GitHub CLI from cli.github.com, then come back.',
+        sentence: 'This Viberant build has no GitHub sign-in identity.',
+        action: 'The app publisher must include the public client ID for the Viberant OAuth application.',
       };
     }
     // The attempt's own ok is null while it runs; it must not overwrite the
@@ -982,6 +1009,16 @@ const routes = {
     // remembered answer would be the difference between noticing you signed in
     // and appearing not to.
     return { ok: true, signin: signin.state(), github: await github.who({ fresh: true }) };
+  },
+
+  async 'GET /github/explore'({ url }) {
+    return github.explore({
+      query: url.searchParams.get('q') ?? '',
+      sort: url.searchParams.get('sort') ?? 'updated',
+      order: url.searchParams.get('order') ?? 'desc',
+      page: Number(url.searchParams.get('page') ?? 1),
+      limit: Number(url.searchParams.get('limit') ?? 30),
+    });
   },
 
   async 'POST /github/signin/stop'() {
@@ -2027,9 +2064,16 @@ const routes = {
 
     if (body?.provider) await settings.set('askWho', which);
     if (body?.model) {
-      const offered = assistant.CATALOGUE[which]?.models ?? [];
-      if (!offered.some((m) => m.id === body.model)) {
+      if (!assistant.modelCanAnswer(which, body.model)) {
         return { ok: false, sentence: 'That is not a model this offers.', action: null };
+      }
+      if (!assistant.modelIsKnown(which, body.model)) {
+        const live = await assistant.whatTheyOffer(which);
+        if (!live.ok) return live;
+        if (!live.models.some((model) => model.id === body.model)) {
+          return { ok: false, sentence: 'That model is not available to this API account.', action: 'Choose one from the refreshed list.' };
+        }
+        await settings.set(`verifiedModel:${which}`, String(body.model));
       }
       await settings.set(`model:${which}`, String(body.model));
     }
@@ -2045,6 +2089,10 @@ const routes = {
         : `${one.name} it is${named ? `, using ${named}` : ''}.`,
       ...said,
     };
+  },
+
+  async 'GET /ai/models'({ url }) {
+    return assistant.whatTheyOffer(String(url.searchParams.get('provider') ?? ''));
   },
 
   /** Where to get a key, opened in a browser. Never a key over the wire. */
@@ -2273,7 +2321,7 @@ const routes = {
       };
     }
 
-    const r = await projects.publish(current.dir, { message: body.message, private: body.private !== false });
+    const r = await github.saveAndSend(current.dir, { message: body.message, private: body.private !== false });
     projects.forgetSituations();
     return { ...r, destination: going.binding, ...(await routes['GET /project']()) };
   },
@@ -2994,32 +3042,18 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
     }
 
     jobs.step(job, `Making ${name} on GitHub as ${who}, visible to ${visibility === 'public' ? 'anybody' : 'only you'}.`);
-    const out = await jobs.runInto(job, {
-      file: 'gh',
-      args: ['repo', 'create', name, visibility === 'public' ? '--public' : '--private',
-        '--source', '.', '--remote', 'origin', '--push'],
-      cwd: dir,
-    });
+    const out = await github.connectTo(dir, { name, session: { login: who }, private: visibility !== 'public' });
     if (!out.ok) {
-      const said = job.lines.join(' ');
-      const notSignedIn = /gh auth login|GH_TOKEN|authentication/i.test(said);
-      const taken = /already exists|name already/i.test(said);
       return jobs.end(job, {
         ok: false,
-        sentence: notSignedIn
-          ? 'You are not signed in to GitHub, so nothing could be made there.'
-          : taken
-            ? `You already have a project called ${name} on GitHub.`
-            : `${name} could not be made on GitHub.`,
-        action: notSignedIn
-          ? 'Sign in from the account menu, then try again. Your work is saved here either way.'
-          : taken
-            ? 'Pick another name.'
-            : 'The lines below say what GitHub objected to.',
+        sentence: out.sentence ?? `${name} could not be made on GitHub.`,
+        action: out.action ?? 'Check the account and project name, then try again.',
       });
     }
 
     await github.useOwnCredentials(dir);
+    const sent = await github.saveAndSend(dir, { message: 'Everything so far', private: visibility !== 'public' });
+    if (!sent.ok) return jobs.end(job, sent);
     const where = await quietly(() => github.picture(dir));
 
     return jobs.end(job, {

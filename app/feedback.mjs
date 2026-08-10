@@ -15,8 +15,6 @@
  * no contents, nothing about your projects.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,8 +22,8 @@ import { join } from 'node:path';
 import { HOUSE } from './projects.mjs';
 import * as thisapp from './thisapp.mjs';
 import * as github from './github.mjs';
+import * as signin from './signin.mjs';
 
-const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
 /**
@@ -72,6 +70,18 @@ export async function send({ what, kind = 'wrong', about = {} }) {
   await mkdir(HOUSE, { recursive: true });
   await writeFile(KEPT, `${JSON.stringify(one)}\n`, { flag: 'a', encoding: 'utf8' });
 
+  const goesTo = await issuesGoTo();
+  if (!goesTo) {
+    return {
+      ok: false,
+      kept: true,
+      nowhereToSend: true,
+      sentence: 'That is written down here, and there is nowhere to send it.',
+      action: 'This copy of Viberant does not say where its issue list is. What you wrote is in '
+        + 'the record folder, and nothing left this computer.',
+    };
+  }
+
   if (!(await github.haveGitHubTool()) || !(await github.who())) {
     return {
       ok: false,
@@ -88,26 +98,18 @@ export async function send({ what, kind = 'wrong', about = {} }) {
     `Sent from ${about.machine ?? 'a computer'}${about.version ? `, version ${about.version}` : ''}.`,
   ].join('\n');
 
-  const goesTo = await issuesGoTo();
-  if (!goesTo) {
-    return {
-      ok: false,
-      kept: true,
-      nowhereToSend: true,
-      sentence: 'That is written down here, and there is nowhere to send it.',
-      action: 'This copy of Viberant does not say where its issue list is. What you wrote is in '
-        + 'the record folder, and nothing left this computer.',
-    };
-  }
+  const target = String(goesTo).replace(/^https?:\/\/github\.com\//, '').replace(/\/issues.*$/, '').replace(/\.git$/, '');
+  const [owner, project] = target.split('/').filter(Boolean);
+  const made = owner && project ? await signin.request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(project)}/issues`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      title: `${named.name}: ${text.split('\n')[0].slice(0, 70)}`,
+      body,
+    }),
+  }) : null;
 
-  const made = await quiet(() => run('gh', [
-    'issue', 'create',
-    '--repo', goesTo,
-    '--title', `${named.name}: ${text.split('\n')[0].slice(0, 70)}`,
-    '--body', body,
-  ], { maxBuffer: 8 * 1024 * 1024 }));
-
-  if (!made) {
+  if (!made?.ok) {
     return {
       ok: false,
       kept: true,
@@ -116,7 +118,7 @@ export async function send({ what, kind = 'wrong', about = {} }) {
     };
   }
 
-  const at = String(made.stdout ?? '').trim().split('\n').pop();
+  const at = made.data?.html_url ?? null;
   return {
     ok: true,
     at: at?.startsWith('http') ? at : null,

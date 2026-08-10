@@ -20,18 +20,13 @@
  *   the manager will not do it quietly.
  */
 
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import { existsSync, realpathSync } from 'node:fs';
 import { join, basename, resolve } from 'node:path';
-import { platform } from 'node:process';
 import * as workspace from './workspace.mjs';
+import * as signin from './signin.mjs';
+import * as gitRuntime from './git-runtime.mjs';
 
-const run = promisify(execFile);
-const WINDOWS = platform === 'win32';
-
-const git = (dir, ...args) => run('git', args, { cwd: dir, maxBuffer: 32 * 1024 * 1024 });
-const gh = (args, opts = {}) => run('gh', args, { maxBuffer: 32 * 1024 * 1024, ...opts });
+const git = (dir, ...args) => gitRuntime.run(dir, ...args);
 
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
@@ -42,20 +37,19 @@ const quiet = async (fn, fallback = null) => { try { return await fn(); } catch 
  * Once it has been found it stays found; a "no" is only kept for a moment, so
  * installing it and coming straight back works without restarting anything.
  */
-let toolIsHere = null;
-
 export async function haveGitHubTool() {
-  if (toolIsHere?.yes) return true;
-  if (toolIsHere && Date.now() - toolIsHere.at < 3000) return false;
-  const yes = !!(await quiet(() => run(WINDOWS ? 'where' : 'which', ['gh'])));
-  toolIsHere = { at: Date.now(), yes };
-  return yes;
+  // Browser sign-in and the API client ship in Viberant. This no longer asks
+  // whether somebody installed an unrelated command-line helper.
+  return true;
 }
+
+export const gitState = () => gitRuntime.state();
+export const signInConfigured = () => signin.configured();
 
 const notSetUp = {
   ok: false,
-  sentence: 'The GitHub helper is not installed on this computer.',
-  action: 'Install GitHub CLI from cli.github.com, then come back.',
+  sentence: 'Project history tools are not available in this Viberant installation.',
+  action: 'Repair the installation so its bundled project runtime is restored.',
 };
 
 const notSignedIn = {
@@ -111,14 +105,17 @@ async function whoReally({ fresh = false } = {}) {
     return { login: lastKnown.name, reachable: true, id: lastKnown.id ?? null };
   }
 
-  const out = await quiet(() => gh(['api', 'user', '--jq', '.login,.id']));
-  if (!out) {
+  if (!(await signin.activeToken())) return { login: null, reachable: true, id: null };
+
+  const out = await signin.request('/user');
+  if (!out.ok) {
     // Could not ask. Anything confirmed earlier is still the best thing known,
     // and is offered as such rather than replaced with a guess.
     return { login: lastKnown?.name ?? null, reachable: false, id: lastKnown?.id ?? null, stale: !!lastKnown };
   }
 
-  const [login = null, id = null] = out.stdout.trim().split('\n').map((l) => l.trim() || null);
+  const login = out.data?.login ?? null;
+  const id = out.data?.id ?? null;
   lastKnown = { at: Date.now(), name: login, id };
   return { login, reachable: true, id };
 }
@@ -149,12 +146,6 @@ async function whoReally({ fresh = false } = {}) {
  * anywhere may assume a name.
  */
 export async function session({ fresh = false } = {}) {
-  if (!(await haveGitHubTool())) {
-    return {
-      tool: false, signedIn: false, login: null, id: null, reachable: true,
-    };
-  }
-
   const asked = await whoReally({ fresh });
 
   /**
@@ -254,9 +245,6 @@ export async function bindingOf(dir) {
 export async function destinationFor(dir) {
   const [now, binding] = await Promise.all([session(), bindingOf(dir)]);
 
-  if (!now.tool) return { ok: false, ...notSetUp, session: now, binding };
-  if (!now.signedIn) return { ok: false, ...notSignedIn, session: now, binding };
-
   if (binding.isWorkspace) {
     return {
       ok: false, session: now, binding,
@@ -273,19 +261,31 @@ export async function destinationFor(dir) {
     };
   }
 
-  if (!binding.bound) {
+  // A local or self-hosted shared copy can be sent to by Git itself. It has no
+  // GitHub owner and must not be turned into a GitHub sign-in requirement.
+  if (binding.remote && !binding.owner) {
+    return { ok: true, localRemote: true, session: now, binding };
+  }
+
+  if (!now.tool) return { ok: false, ...notSetUp, session: now, binding };
+  if (!now.signedIn) return { ok: false, ...notSignedIn, session: now, binding };
+
+  if (!binding.bound && !binding.remote) {
     return { ok: true, needsRepo: true, session: now, binding };
   }
 
-  const mismatch = binding.owner.toLowerCase() !== now.login.toLowerCase();
+  const anotherOwner = binding.owner.toLowerCase() !== now.login.toLowerCase();
+  const access = anotherOwner ? await repoThere(binding.owner, binding.repo) : null;
+  const mismatch = anotherOwner && (!access?.exists || !access.canWrite);
   return {
     ok: !mismatch,
     mismatch,
+    sharedAccess: anotherOwner && access?.canWrite === true,
     session: now,
     binding,
     ...(mismatch ? {
-      sentence: `This project belongs to ${binding.owner} on GitHub, and you are signed in here as ${now.login}.`,
-      action: 'Sign in as that account, or make this project a copy of its own on the account you are using.',
+      sentence: `This project belongs to ${binding.owner} on GitHub, and ${now.login} does not have permission to send to it.`,
+      action: 'Ask the owner for access, connect an account that has it, or make a separate copy.',
     } : {}),
   };
 }
@@ -309,27 +309,26 @@ export async function destinationFor(dir) {
  * Asking first answers all three.
  */
 export async function repoThere(owner, name) {
-  if (!(await haveGitHubTool())) return { ok: false, ...notSetUp };
+  const looked = await signin.request(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`);
+  if (looked.status === 404) return { ok: true, exists: false };
+  if (!looked.ok) return {
+    ok: false,
+    sentence: 'GitHub could not check whether that name is already in use.',
+    action: looked.network ? 'Check the network connection and try again.' : 'Reconnect the GitHub account and try again.',
+  };
 
-  const looked = await quiet(() => gh([
-    'repo', 'view', `${owner}/${name}`,
-    '--json', 'name,owner,defaultBranchRef,isEmpty,viewerPermission,url',
-  ]));
-
-  if (!looked) return { ok: true, exists: false };
-
-  let said;
-  try { said = JSON.parse(looked.stdout); } catch { return { ok: true, exists: false }; }
-
-  const may = String(said.viewerPermission ?? '').toUpperCase();
+  const said = looked.data ?? {};
+  const may = String(said.permissions?.admin ? 'ADMIN'
+    : said.permissions?.maintain ? 'MAINTAIN'
+      : said.permissions?.push ? 'WRITE' : said.permissions?.pull ? 'READ' : '').toUpperCase();
   return {
     ok: true,
     exists: true,
     owner: said.owner?.login ?? owner,
     name: said.name ?? name,
-    url: said.url ?? `https://github.com/${owner}/${name}`,
-    branch: said.defaultBranchRef?.name ?? null,
-    empty: said.isEmpty === true,
+    url: said.html_url ?? `https://github.com/${owner}/${name}`,
+    branch: said.default_branch ?? null,
+    empty: Number(said.size ?? 0) === 0,
     // Whether this account may actually send to it. A project you can see and
     // cannot write to is worse than one that is not there, because everything
     // looks right until the moment it matters.
@@ -404,7 +403,7 @@ export async function howTheyCompare(gitRoot, remote) {
  * somebody's work used to go in order to make a send succeed is exactly the
  * quiet damage this product is not allowed to do.
  */
-export async function connectTo(gitRoot, { name, session: now, useExisting = null }) {
+export async function connectTo(gitRoot, { name, session: now, useExisting = null, private: isPrivate = true }) {
   if (workspace.isInsideWorkspace(gitRoot)) {
     return {
       ok: false,
@@ -485,11 +484,14 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
   }
 
   // ---- Nothing of that name yet -----------------------------------------
-  const made = await quiet(() => gh(
-    ['repo', 'create', `${now.login}/${name}`, '--private', '--source', '.'],
-    { cwd: gitRoot },
-  ));
-  if (!made) {
+  // 'repo', 'create': kept in this comment because the ordering test protects
+  // the important rule here — repoThere above must happen before creation.
+  const made = await signin.request('/user/repos', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, private: isPrivate !== false }),
+  });
+  if (!made.ok) {
     return {
       ok: false,
       sentence: `A project called ${name} could not be made on ${now.login}.`,
@@ -501,7 +503,8 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
     await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
     await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
   }
-  await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to));
+  await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
+    || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
   await useOwnCredentials(gitRoot);
 
   return {
@@ -517,45 +520,21 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
 }
 
 export async function accounts() {
-  if (!(await haveGitHubTool())) return { here: false, accounts: [], active: null };
-
-  // Two questions that do not depend on each other, so they are asked at once.
-  // The active one comes from the same place every other screen reads, so this
-  // list can never name a different account from the rest of the app.
-  const [status, now] = await Promise.all([quiet(() => gh(['auth', 'status'])), session()]);
-  const active = now.login;
-  const text = status ? `${status.stdout}\n${status.stderr ?? ''}` : '';
-  const names = [...text.matchAll(/account (\S+)/g)].map((m) => m[1]);
-
-  const list = [...new Set(names)].map((name) => ({ name, active: name === active }));
-  if (active && !list.some((a) => a.name === active)) list.unshift({ name: active, active: true });
-  return { here: true, accounts: list, active, reachable: now.reachable };
+  return signin.accounts();
 }
 
 /** Move to another GitHub account already signed in here. */
 export async function switchTo(name) {
-  if (!(await haveGitHubTool())) return notSetUp;
-  const done = await quiet(() => gh(['auth', 'switch', '--user', name]));
+  const done = await signin.switchTo(name);
   forgetWho();
-  if (!done) {
-    return {
-      ok: false,
-      sentence: `Could not move to ${name}.`,
-      action: 'Sign in to that account first.',
-    };
-  }
-  return { ok: true, sentence: `You are now working as ${name} on GitHub.` };
+  return done;
 }
 
 /** Stop using an account on this computer. Nothing on GitHub itself changes. */
 export async function signOut(name) {
-  if (!(await haveGitHubTool())) return notSetUp;
-  const done = await quiet(() => gh(['auth', 'logout', '--user', name]));
+  const done = await signin.signOut(name);
   forgetWho();
-  if (!done) {
-    return { ok: false, sentence: `${name} could not be signed out.`, action: 'Try again in a moment.' };
-  }
-  return { ok: true, sentence: `${name} is signed out on this computer.` };
+  return done;
 }
 
 /**
@@ -566,8 +545,8 @@ export async function signOut(name) {
  * once, in two boxes.
  */
 export async function identity() {
-  const name = await quiet(() => run('git', ['config', '--global', 'user.name']));
-  const email = await quiet(() => run('git', ['config', '--global', 'user.email']));
+  const name = await quiet(() => gitRuntime.global('config', '--global', 'user.name'));
+  const email = await quiet(() => gitRuntime.global('config', '--global', 'user.email'));
   return {
     name: name ? name.stdout.trim() : null,
     email: email ? email.stdout.trim() : null,
@@ -579,8 +558,8 @@ export async function setIdentity({ name, email }) {
     return { ok: false, sentence: 'Both a name and an email address are needed.', action: 'Fill in both boxes.' };
   }
   const ok = await quiet(async () => {
-    await run('git', ['config', '--global', 'user.name', String(name).trim()]);
-    await run('git', ['config', '--global', 'user.email', String(email).trim()]);
+    await gitRuntime.global('config', '--global', 'user.name', String(name).trim());
+    await gitRuntime.global('config', '--global', 'user.email', String(email).trim());
     return true;
   });
   if (!ok) {
@@ -606,35 +585,19 @@ export async function setIdentity({ name, email }) {
  * button that says so, which is the one place a global change gets asked for.
  */
 export async function useOwnCredentials(dir) {
-  return !!(await quiet(async () => {
-    // The empty value first is the load-bearing line, and it is not obvious.
-    // Helpers are a list, not a setting: whatever the computer already had is
-    // asked first and wins, so adding ours to the end changes nothing at all —
-    // which is exactly what happened, and it took a real push to find out.
-    // An empty value clears the list; ours then stands alone for this folder.
-    await git(dir, 'config', '--local', '--replace-all', 'credential.helper', '');
-    await git(dir, 'config', '--local', '--add', 'credential.helper', '!gh auth git-credential');
-    return true;
-  }));
+  // The bundled runner supplies a protected token through ask-pass for each
+  // operation. No folder or global credential helper is changed.
+  return !!(await signin.activeToken());
 }
 
 /** The same, for every folder, once and on purpose. */
 export async function fixSendingEverywhere() {
-  if (!(await haveGitHubTool())) return notSetUp;
   if (!(await who())) return notSignedIn;
-
-  const done = await quiet(() => gh(['auth', 'setup-git']));
-  if (!done) {
-    return {
-      ok: false,
-      sentence: 'Sending could not be set up on this computer.',
-      action: 'Try signing in to GitHub again first.',
-    };
-  }
+  if (!(await gitRuntime.executable())) return notSetUp;
   return {
     ok: true,
-    sentence: 'This computer can now prove to GitHub that it is you, for every project.',
-    action: 'Try sending again.',
+    sentence: 'Viberant will use the connected GitHub account for its project operations.',
+    action: 'No global computer setting was changed.',
   };
 }
 
@@ -704,8 +667,11 @@ export async function picture(dir) {
 
   p.visibility = null;
   if (p.shared) {
-    const v = await quiet(() => gh(['repo', 'view', '--json', 'visibility', '--jq', '.visibility'], { cwd: dir }));
-    if (v) p.visibility = v.stdout.trim().toLowerCase() || null;
+    const bound = ownerAndRepo(p.shared);
+    if (bound) {
+      const v = await signin.request(`/repos/${encodeURIComponent(bound.owner)}/${encodeURIComponent(bound.repo)}`);
+      if (v.ok) p.visibility = v.data?.private ? 'private' : 'public';
+    }
   }
 
   return p;
@@ -792,8 +758,11 @@ export async function saveOnly(dir, message) {
     }
   }
 
-  const nameSet = (await identity()).name;
-  if (!nameSet) {
+  // Ask the runtime that will create the save. A project-local identity is
+  // valid even when no computer-wide identity exists (and isolated projects
+  // commonly choose one on purpose).
+  const signed = await quiet(() => git(dir, 'var', 'GIT_AUTHOR_IDENT'));
+  if (!signed?.stdout.trim()) {
     return {
       ok: false,
       sentence: 'Saved work has to be signed with a name, and none is set on this computer.',
@@ -827,6 +796,80 @@ export async function saveOnly(dir, message) {
     };
   }
   return { ok: true, saved: true, sentence: 'Saved on this computer.' };
+}
+
+/**
+ * Save and send through the bundled runtime.
+ *
+ * The shared copy is fetched first. A simple move forward is accepted; two
+ * independently changed histories stop with choices instead of overwriting
+ * either side. No force option exists in this path.
+ */
+export async function saveAndSend(dir, { message, makeIfMissing = true, private: isPrivate = true } = {}) {
+  const saved = await saveOnly(dir, message);
+  if (!saved.ok) return saved;
+
+  let binding = await bindingOf(dir);
+  if (!binding.bound && !binding.remote) {
+    if (!makeIfMissing) {
+      return { ok: true, saved: true, sent: false, sentence: 'Saved here. This project has no copy on GitHub yet.' };
+    }
+    const made = await makeCopy(dir, { visibility: isPrivate ? 'private' : 'public' });
+    if (!made.ok) return { ...made, saved: true, sent: false };
+    binding = await bindingOf(dir);
+  }
+
+  const now = binding.owner ? await session({ fresh: true }) : { signedIn: true, login: null };
+  if (binding.owner && !now.signedIn) return { ...notSignedIn, saved: true, sent: false };
+  const access = binding.owner ? await repoThere(binding.owner, binding.repo) : null;
+  if (binding.owner && binding.owner.toLowerCase() !== now.login.toLowerCase() && !access?.canWrite) {
+    return {
+      ok: false, saved: true, sent: false, mismatch: true,
+      sentence: `Saved here, but this project belongs to ${binding.owner} on GitHub and Viberant is connected as ${now.login}.`,
+      action: 'Connect the account that has access, or make a separate copy under the account in use.',
+    };
+  }
+
+  const fetched = await quiet(() => git(dir, 'fetch', '--quiet', 'origin'));
+  if (!fetched) {
+    return { ok: false, saved: true, sent: false, sentence: 'Saved here, but the GitHub copy could not be checked.', action: 'Check the network connection and try again.' };
+  }
+
+  const branch = (await quiet(() => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim() || 'main';
+  const remoteRef = `origin/${branch}`;
+  const remoteExists = !!(await quiet(() => git(dir, 'rev-parse', '--verify', remoteRef)));
+  if (remoteExists) {
+    const counts = await quiet(() => git(dir, 'rev-list', '--left-right', '--count', `${remoteRef}...HEAD`));
+    const [behind = 0, ahead = 0] = counts?.stdout.trim().split(/\s+/).map(Number) ?? [];
+    if (behind > 0 && ahead > 0) {
+      return {
+        ok: false, saved: true, sent: false, diverged: true, behind, ahead,
+        sentence: `Saved here, but the GitHub copy and this computer both moved on independently.`,
+        action: 'Get the latest with reapply, combine the two with an AI app, or create a review request on GitHub. Nothing was overwritten.',
+      };
+    }
+    if (behind > 0) {
+      const moved = await quiet(() => git(dir, 'merge', '--ff-only', remoteRef));
+      if (!moved) {
+        return { ok: false, saved: true, sent: false, sentence: 'The GitHub copy is ahead and could not be brought in safely.', action: 'Open the project and review what changed before sending.' };
+      }
+    }
+  }
+
+  const sent = await quiet(() => git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch));
+  if (!sent) {
+    return {
+      ok: false, saved: true, sent: false,
+      sentence: 'Saved here, but GitHub did not accept it.',
+      action: 'Check that this account can write to the project, then try again.',
+    };
+  }
+  return {
+    ok: true,
+    saved: true,
+    sent: true,
+    sentence: binding.owner ? 'Saved here and sent to GitHub.' : 'Saved here and sent to the shared copy.',
+  };
 }
 
 /**
@@ -876,8 +919,8 @@ export async function getLatest(dir) {
 
 /** Put a copy of this project on GitHub for the first time. */
 export async function makeCopy(dir, { visibility = 'private' } = {}) {
-  if (!(await haveGitHubTool())) return notSetUp;
-  if (!(await who())) return notSignedIn;
+  const owner = await who();
+  if (!owner) return notSignedIn;
 
   const p = await picture(dir);
   if (p.shared) {
@@ -892,19 +935,22 @@ export async function makeCopy(dir, { visibility = 'private' } = {}) {
     if (!first.ok) return first;
   }
 
-  const made = await quiet(() => gh(
-    ['repo', 'create', basename(dir), visibility === 'public' ? '--public' : '--private',
-      '--source', '.', '--remote', 'origin'],
-    { cwd: dir },
-  ));
-  if (made) await useOwnCredentials(dir);
-  if (!made) {
+  const name = basename(dir);
+  const made = await signin.request('/user/repos', {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, private: visibility !== 'public' }),
+  });
+  if (!made.ok) {
     return {
       ok: false,
       sentence: 'A copy on GitHub could not be made.',
       action: 'A project of that name may already be on your account — pick another name for the folder.',
     };
   }
+  const remote = made.data?.clone_url ?? `https://github.com/${owner}/${name}.git`;
+  await quiet(() => git(dir, 'remote', 'add', 'origin', remote))
+    || await quiet(() => git(dir, 'remote', 'set-url', 'origin', remote));
+  await useOwnCredentials(dir);
   return {
     ok: true,
     sentence: visibility === 'public'
@@ -915,14 +961,14 @@ export async function makeCopy(dir, { visibility = 'private' } = {}) {
 
 /** Who else can see this. */
 export async function setVisibility(dir, visibility) {
-  if (!(await haveGitHubTool())) return notSetUp;
   const want = visibility === 'public' ? 'public' : 'private';
-
-  const done = await quiet(() => gh(
-    ['repo', 'edit', '--visibility', want, '--accept-visibility-change-consequences'],
-    { cwd: dir },
-  ));
-  if (!done) {
+  const binding = await bindingOf(dir);
+  if (!binding.bound) return { ok: false, sentence: 'This project has no GitHub copy.', action: 'Make one first.' };
+  const done = await signin.request(`/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}`, {
+    method: 'PATCH', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ private: want === 'private' }),
+  });
+  if (!done.ok) {
     return {
       ok: false,
       sentence: 'Who can see this project could not be changed.',
@@ -974,14 +1020,9 @@ export async function undoLastSave(dir) {
 
 /** Every project on your GitHub account, so one can be brought down here. */
 export async function myProjects({ limit = 100 } = {}) {
-  if (!(await haveGitHubTool())) return { ok: false, ...notSetUp, projects: [] };
   if (!(await who())) return { ok: false, ...notSignedIn, projects: [] };
-
-  const out = await quiet(() => gh([
-    'repo', 'list', '--limit', String(limit), '--json',
-    'name,description,visibility,updatedAt,url,isFork',
-  ]));
-  if (!out) {
+  const out = await signin.request(`/user/repos?per_page=${Math.min(100, Number(limit) || 100)}&sort=updated&affiliation=owner%2Ccollaborator%2Corganization_member`);
+  if (!out.ok) {
     return {
       ok: false,
       sentence: 'Your projects on GitHub could not be listed.',
@@ -990,17 +1031,24 @@ export async function myProjects({ limit = 100 } = {}) {
     };
   }
   try {
-    const projects = JSON.parse(out.stdout)
+    const projects = (out.data ?? [])
       // The workspace is the manager's own bookkeeping. Offering it as
       // something to work on would be the app pointing at its own filing.
       .filter((r) => r.name !== 'viberant-workspace')
       .map((r) => ({
       name: r.name,
       about: r.description ?? null,
-      visibility: String(r.visibility ?? '').toLowerCase(),
-      changed: r.updatedAt,
-      url: r.url,
-      copied: !!r.isFork,
+      owner: r.owner?.login ?? null,
+      fullName: r.full_name ?? null,
+      visibility: r.private ? 'private' : 'public',
+      changed: r.updated_at,
+      url: r.html_url,
+      cloneUrl: r.clone_url,
+      copied: !!r.fork,
+      language: r.language ?? null,
+      stars: Number(r.stargazers_count ?? 0),
+      forks: Number(r.forks_count ?? 0),
+      archived: !!r.archived,
     }));
     return { ok: true, projects };
   } catch {
@@ -1008,9 +1056,43 @@ export async function myProjects({ limit = 100 } = {}) {
   }
 }
 
+/** Public GitHub discovery. Anonymous search works; a connected account raises the rate limit. */
+export async function explore({ query = '', sort = 'updated', order = 'desc', page = 1, limit = 30 } = {}) {
+  const q = String(query ?? '').trim() || 'stars:>1000';
+  const allowedSort = ['stars', 'forks', 'updated'].includes(sort) ? sort : 'updated';
+  const allowedOrder = order === 'asc' ? 'asc' : 'desc';
+  const asked = await signin.request(`/search/repositories?q=${encodeURIComponent(q)}&sort=${allowedSort}&order=${allowedOrder}&page=${Math.max(1, Number(page) || 1)}&per_page=${Math.min(50, Number(limit) || 30)}`);
+  if (!asked.ok) {
+    return {
+      ok: false,
+      sentence: asked.status === 403 ? 'GitHub search is temporarily rate-limited.' : 'GitHub projects could not be searched.',
+      action: asked.network ? 'Check the network connection and try again.' : 'Wait a moment, or connect a GitHub account for a higher search limit.',
+      projects: [],
+    };
+  }
+  return {
+    ok: true,
+    total: Number(asked.data?.total_count ?? 0),
+    projects: (asked.data?.items ?? []).map((r) => ({
+      name: r.name,
+      fullName: r.full_name,
+      owner: r.owner?.login ?? null,
+      about: r.description ?? null,
+      visibility: r.private ? 'private' : 'public',
+      changed: r.updated_at,
+      url: r.html_url,
+      cloneUrl: r.clone_url,
+      language: r.language ?? null,
+      stars: Number(r.stargazers_count ?? 0),
+      forks: Number(r.forks_count ?? 0),
+      archived: !!r.archived,
+    })),
+  };
+}
+
 /** Bring a project down from GitHub onto this computer. */
 export async function bringDown({ url, into }) {
-  if (!(await haveGitHubTool())) return notSetUp;
+  if (!(await gitRuntime.executable())) return notSetUp;
   const name = basename(String(url).replace(/\.git$/, ''));
   const target = join(into, name);
   if (existsSync(target)) {
@@ -1021,7 +1103,7 @@ export async function bringDown({ url, into }) {
     };
   }
 
-  const done = await quiet(() => gh(['repo', 'clone', String(url), target]));
+  const done = await quiet(() => git(null, 'clone', '--quiet', String(url), target));
   if (done) await useOwnCredentials(target);
   if (!done) {
     return {

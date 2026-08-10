@@ -6,6 +6,7 @@ node_modules/
 # both hold paths that only mean something on the machine that made them.
 dist/
 Viberant.lnk
+runtime/*.zip
 
 # Two copies of the app, started side by side to prove the workspace between
 # them. Each keeps a home of its own with its own device key in it, and a key

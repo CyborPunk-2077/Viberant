@@ -27,7 +27,7 @@ import { promisify } from 'node:util';
 import { platform } from 'node:process';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 
 import { openTerminal } from './terminals.mjs';
 import { kindOfProgram } from './windowed.mjs';
@@ -321,6 +321,7 @@ async function askOnce(key, ask) {
 
 async function onPath(bin) {
   if (!bin) return null;
+  if (isAbsolute(bin) && existsSync(bin)) return bin;
   return askOnce(`path:${bin}`, async () => {
     try {
       const { stdout } = await run(WINDOWS ? 'where' : 'which', [bin]);

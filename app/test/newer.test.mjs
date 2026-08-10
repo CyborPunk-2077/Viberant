@@ -126,11 +126,11 @@ describe('nothing here can download and run anything', () => {
         `newer.mjs must not be able to ${way} — an update path that runs unsigned code is worse than none`);
     }
 
-    // And exactly one way to start a program, pointed at exactly one command.
+    // The release check now uses GitHub's HTTPS API directly, so it starts no
+    // helper program at all.
     const starts = [...code.matchAll(/\brun\(\s*'([^']+)'\s*,\s*\[\s*'([^']+)',\s*'([^']+)'/g)]
       .map((m) => `${m[1]} ${m[2]} ${m[3]}`);
-    assert.deepEqual(starts, ['gh release view'],
-      'the only program it starts is the one that asks what has been released');
+    assert.deepEqual(starts, [], 'checking releases must not start a separately installed helper');
 
     for (const worse of ['spawn(', 'execSync', 'execFileSync', 'child_process\').exec']) {
       assert.equal(code.includes(worse), false, `newer.mjs must not use ${worse}`);
