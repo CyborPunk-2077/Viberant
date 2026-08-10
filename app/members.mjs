@@ -294,6 +294,9 @@ const hashOf = (code) => createHash('sha256')
   .update(String(code ?? '').toUpperCase().replace(/[^0-9A-Z]/g, ''))
   .digest('hex');
 
+/** Whether a code belongs to this workspace; redeem still decides if it works. */
+export const hasInvite = (workspace, code) => !!workspace?.invites?.[hashOf(code)];
+
 /**
  * Invitations that have not been used and have not run out.
  *
@@ -386,6 +389,14 @@ export async function redeem({ workspace, code, person, device }) {
   if (!one) { await save(workspace); return no; }
   if (one.usedAt) { await save(workspace); return no; }
   if (Date.now() >= one.expiresAt) { await save(workspace); return no; }
+  if (workspace.devices?.[device?.deviceId]) {
+    return {
+      ok: false,
+      alreadyJoined: true,
+      sentence: `This computer is already in ${workspace.name}.`,
+      action: 'Open it from Workspaces.',
+    };
+  }
 
   one.usedAt = Date.now();
   one.usedBy = person;

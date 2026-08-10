@@ -755,6 +755,44 @@ export const SCENE_FOR = {
 fit();
 
 // ---------------------------------------------------------------------------
+// The pointer, present without becoming a pointer effect
+// ---------------------------------------------------------------------------
+
+/**
+ * A small pool of the theme colour trails a precise pointer by a few pixels.
+ * It is deliberately attached to the shell rather than any screen: moving
+ * between places must not restart it, and no feature owns it. Touch, reduced
+ * motion and an unfocused window get nothing at all.
+ */
+const aura = document.querySelector('#cursor-aura');
+const finePointer = matchMedia('(pointer: fine)');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let auraAt = { x: innerWidth / 2, y: innerHeight / 2 };
+let auraWants = { ...auraAt };
+let auraFrame = null;
+
+function moveAura() {
+  auraAt.x += (auraWants.x - auraAt.x) * 0.16;
+  auraAt.y += (auraWants.y - auraAt.y) * 0.16;
+  aura?.style.setProperty('--pointer-x', `${auraAt.x}px`);
+  aura?.style.setProperty('--pointer-y', `${auraAt.y}px`);
+
+  const apart = Math.abs(auraWants.x - auraAt.x) + Math.abs(auraWants.y - auraAt.y);
+  if (apart > 0.35) auraFrame = requestAnimationFrame(moveAura);
+  else auraFrame = null;
+}
+
+addEventListener('pointermove', (event) => {
+  if (!aura || !finePointer.matches || reducedMotion.matches) return;
+  auraWants = { x: event.clientX, y: event.clientY };
+  aura.classList.add('awake');
+  if (!auraFrame) auraFrame = requestAnimationFrame(moveAura);
+}, { passive: true });
+
+addEventListener('pointerleave', () => aura?.classList.remove('awake'));
+addEventListener('blur', () => aura?.classList.remove('awake'));
+
+// ---------------------------------------------------------------------------
 // Something is happening
 // ---------------------------------------------------------------------------
 

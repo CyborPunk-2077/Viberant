@@ -65,6 +65,18 @@ describe('a workspace has an owner, and the owner is not everybody', () => {
   test('a workspace needs a name', async () => {
     assert.equal((await members.create({ name: '  ', owner: 'd', device: aDevice('x', 'x') })).ok, false);
   });
+
+  test('known workspaces stay memberships until one is explicitly opened', async () => {
+    const atlas = await members.create({ name: 'Atlas', owner: 'danni', device: aDevice('d', 'D') });
+    const comet = await members.create({ name: 'Comet', owner: 'danni', device: aDevice('d', 'D') });
+
+    assert.deepEqual((await members.all()).map((one) => one.name), ['Atlas', 'Comet']);
+    assert.equal((await members.current()).id, comet.workspace.id);
+    assert.equal((await members.switchTo(atlas.workspace.id)).ok, true);
+    assert.equal((await members.current()).id, atlas.workspace.id);
+    assert.deepEqual((await members.all()).map((one) => one.name), ['Atlas', 'Comet'],
+      'opening one changed membership in the other');
+  });
 });
 
 describe('an invitation is short lived, single use, and never the secret', () => {
@@ -94,6 +106,18 @@ describe('an invitation is short lived, single use, and never the secret', () =>
       workspace: first.workspace, code: asked.code, person: 'someone-else', device: aDevice('s', 'S'),
     });
     assert.equal(second.ok, false, 'an invitation that works twice is a password');
+  });
+
+  test('a computer already in the workspace is told to open it instead', async () => {
+    const made = await members.create({ name: 'Atlas', owner: 'danni', device: aDevice('d', 'D') });
+    const asked = await members.invite({ workspace: made.workspace, by: 'danni' });
+    const out = await members.redeem({
+      workspace: await members.current(), code: asked.code, person: 'danni', device: aDevice('d', 'D'),
+    });
+
+    assert.equal(out.ok, false);
+    assert.equal(out.alreadyJoined, true);
+    assert.match(out.action, /Open it from Workspaces/);
   });
 
   test('one that has run out does not work', async () => {

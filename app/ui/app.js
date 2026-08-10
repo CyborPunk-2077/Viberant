@@ -920,11 +920,18 @@ let activityTimer = null;
  * from. It is the same page either way; only how far it is allowed to spread
  * changes.
  */
-const READING = new Set(['settings', 'feedback', 'ask']);
+const READING = new Set(['settings', 'feedback']);
 
 async function go(tab, { keepSaid = false } = {}) {
   // Whatever the screen you are leaving had asking on its own behalf.
   clearTimeout(activityTimer);
+  // The rail names the hub, not whichever workspace happened to be open last.
+  // Only an explicit Open action changes this to the collaboration room.
+  if (tab === 'workspace') workspacePlace = 'home';
+  // The rail names the project command center. Opening a project is explicit;
+  // the open project remains available to the other tools without replacing
+  // the meaning of the Projects navigation item.
+  if (tab === 'projects') at.inside = false;
   at.tab = tab;
   if (!keepSaid) said = null;
   closePanels();
@@ -2648,6 +2655,8 @@ const MARK_LOOK = {
   published: { name: 'Published' },
 };
 
+let projectListFilter = 'all';
+
 const stateChip = (mark) => {
   const which = MARK_LOOK[mark] ? mark : 'notStarted';
   return `<span class="state ${which}"><span class="pip"></span>${esc(MARK_LOOK[which].name)}</span>`;
@@ -2662,16 +2671,18 @@ SCREENS.projects = async () => {
   // from a field that would have to be kept in step with it.
   const onGitHub = d.projects.filter((p) => /copy on GitHub/.test(p.reach ?? '')).length;
   const waiting = d.projects.filter((p) => (p.toSend ?? 0) > 0).length;
+  const notStarted = d.projects.filter((p) => !p.mark || p.mark === 'notStarted').length;
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Your work</span>
         <h1>Projects</h1>
         <p class="sub">Pick one, and every app on this computer opens already inside it.</p>
       </div>
       <div class="acts">
         ${me.github ? '<button id="p-cloud">From GitHub…</button>' : ''}
-        <button class="go" id="p-add">Add a folder…</button>
+        <button class="go" id="p-add">＋ Add project</button>
       </div>
     </div>
     ${saidHtml()}
@@ -2689,24 +2700,35 @@ SCREENS.projects = async () => {
       big: onGitHub,
       what: waiting ? `have a copy on GitHub, ${waiting} behind it` : 'have a copy on GitHub',
     },
+    {
+      mark: SUM_MARK.running,
+      big: notStarted,
+      what: notStarted === 1 ? 'project not started' : 'projects not started',
+    },
   ]) : ''}
 
     ${d.projects.length ? `
-      <div class="sect">
-        <h2>On this computer</h2>
-        <span class="count">${d.projects.length}${busy ? ` · ${busy} unsaved` : ''}</span>
-        <div class="rest"></div>
-        <div class="acts">
-          <label class="find">
-            <span class="mark" aria-hidden="true">⌕</span>
-            <input id="p-find" placeholder="Filter projects" aria-label="Filter projects">
-          </label>
+      <div class="commandbar" aria-label="Project controls">
+        <div class="segmented" id="p-filters">
+          ${[
+    ['all', 'All projects', d.projects.length],
+    ['here', 'On this computer', d.projects.length],
+    ['attention', 'Needs attention', busy],
+    ['github', 'Has GitHub copy', onGitHub],
+  ].map(([id, name, count]) => `<button class="${projectListFilter === id ? 'on' : ''}"
+            data-project-filter="${id}">${name}<span>${count}</span></button>`).join('')}
         </div>
+        <div class="rest"></div>
+        <label class="find command-find">
+          <span class="mark" aria-hidden="true">⌕</span>
+          <input id="p-find" placeholder="Search projects…" aria-label="Search projects">
+          <span class="kbd">Ctrl K</span>
+        </label>
       </div>
       <div class="sheetlist projects-cols" id="p-list">
         <div class="thead">
           <span></span><span>Project</span><span>State</span>
-          <span>Last saved</span><span></span>
+          <span>Last saved</span><span>Source</span><span></span>
         </div>
         ${d.projects.map(projectRow).join('')}
       </div>`
@@ -2737,12 +2759,15 @@ SCREENS.projects = async () => {
   // Narrowing a list is a thing you do to the page you are looking at, so it
   // happens here rather than by asking the manager again and redrawing.
   const find = $('#p-find');
-  if (find) {
-    find.oninput = () => {
-      const want = find.value.trim().toLowerCase();
+  const filterProjects = () => {
+    const want = find?.value.trim().toLowerCase() ?? '';
       let showing = 0;
       for (const row of document.querySelectorAll('#p-list .trow[data-name]')) {
-        const match = !want || row.dataset.name.includes(want);
+        const inText = !want || row.dataset.name.includes(want);
+        const inGroup = projectListFilter === 'all' || projectListFilter === 'here'
+          || (projectListFilter === 'attention' && row.dataset.attention === '1')
+          || (projectListFilter === 'github' && row.dataset.github === '1');
+        const match = inText && inGroup;
         row.hidden = !match;
         if (match) showing += 1;
       }
@@ -2751,6 +2776,13 @@ SCREENS.projects = async () => {
         $('#p-list').insertAdjacentHTML('beforeend',
           `<div class="empty" id="p-none"><b>No project matches “${esc(find.value.trim())}”.</b></div>`);
       }
+  };
+  if (find) find.oninput = filterProjects;
+  for (const b of document.querySelectorAll('[data-project-filter]')) {
+    b.onclick = () => {
+      projectListFilter = b.dataset.projectFilter;
+      for (const other of document.querySelectorAll('[data-project-filter]')) other.classList.toggle('on', other === b);
+      filterProjects();
     };
   }
 
@@ -2791,6 +2823,10 @@ SCREENS.projects = async () => {
       menuAt({ x: room.right - 200, y: room.bottom + 6 },
         moreForProject(b.dataset.more, b.dataset.now === '1'));
     };
+  }
+  if (!inspecting && d.projects[0]) {
+    document.querySelector(`[data-open="${CSS.escape(d.projects[0].path)}"]`)?.classList.add('on');
+    inspectProject(d.projects[0]);
   }
 };
 
@@ -2882,9 +2918,11 @@ let lastMarks = [];
  */
 function projectRow(p) {
   const mark = MARK_LOOK[p.mark] ? p.mark : 'notStarted';
+  const hasGitHub = /copy on GitHub/.test(p.reach ?? '');
   return `
     <div class="trow tap" data-open="${esc(p.path)}"
-      data-name="${esc(p.name.toLowerCase())} ${esc(String(p.path).toLowerCase())}">
+      data-name="${esc(p.name.toLowerCase())} ${esc(String(p.path).toLowerCase())}"
+      data-attention="${p.unsaved ? '1' : '0'}" data-github="${hasGitHub ? '1' : '0'}">
       <span class="dot ${p.unsaved ? 'attention' : 'off'}"
         data-tip="${p.unsaved ? `${p.unsaved} unsaved` : 'Everything saved'}"></span>
       <span class="tname">
@@ -2893,9 +2931,9 @@ function projectRow(p) {
       </span>
       ${stateChip(mark)}
       <span class="tcell dim">${esc(p.saved ?? '')}</span>
+      <span class="tcell project-source"><span class="dot ${hasGitHub ? 'live' : p.private ? 'off' : 'cool'}"></span>${
+  hasGitHub ? 'GitHub' : p.private ? 'This computer' : 'Offered'}</span>
       <span class="tacts">
-        ${p.private ? '' : '<span class="chip" data-tip="Your other computers can ask for this">offered</span>'}
-        ${p.kind ? `<span class="chip">${esc(p.kind)}</span>` : ''}
         <span class="onhover"><button class="small" data-open-now="${esc(p.path)}">Open</button></span>
         <button class="quiet small icon" data-more="${esc(p.path)}" data-now="${p.private ? '1' : '0'}"
           data-tip="More for ${esc(p.name)}" aria-label="More for ${esc(p.name)}">⋯</button>
@@ -3056,6 +3094,7 @@ async function drawCloud(here, { again = false } = {}) {
 async function openProject(path) {
   const r = await post('/open', { path });
   if (r.ok === false) { say(r); return draw(); }
+  inspect(null);
   at.inside = true;
   said = null;
   await refreshMe();
@@ -3250,23 +3289,29 @@ async function fromGitHub() {
  */
 function askPanel(p, { heading = 'Ask about this project' } = {}) {
   return `
-    <div class="sect"><h2>${esc(heading)}</h2>
-      <button class="count" id="ai-who">\u2026</button></div>
-    <div class="card">
-      <div class="bar" style="margin:0 0 .2rem">
-        <button class="small" id="ai-diagnose">Is anything wrong with it?</button>
-        <button class="small" id="ai-review" ${p?.situation?.unsaved ? '' : 'disabled'}
-          data-tip="${p?.situation?.unsaved ? 'Look over what you have changed but not saved'
-    : 'Nothing unsaved to look at'}">Look over my changes</button>
-        <label class="find" style="flex:1;min-width:12rem">
-          <span class="mark" aria-hidden="true">?</span>
-          <input id="ai-q" placeholder="Where is signing in handled?" aria-label="Ask about this project">
-        </label>
-        <button class="small" id="ai-ask">Ask</button>
-        <button class="small" id="ai-change"
-          data-tip="Asks for a change and shows every file it would write, before anything happens">Ask for a change</button>
+    <div class="assistant-panel">
+      <header class="assistant-head">
+        <div><span class="eyebrow">Project intelligence</span><h2>${esc(heading)}</h2></div>
+        <button class="provider-pill" id="ai-who">Reading provider…</button>
+      </header>
+      <div class="assistant-suggestions" aria-label="Suggested questions">
+        <button data-ai-prompt="Give me a concise overview of this project">Project overview</button>
+        <button data-ai-prompt="What should I work on next in this project?">What next?</button>
+        <button data-ai-prompt="Where are the highest-risk parts of this project?">Find risks</button>
       </div>
-      <div id="ai-out"></div>
+      <div class="assistant-composer">
+        <span class="assistant-spark" aria-hidden="true">✦</span>
+        <input id="ai-q" placeholder="Ask anything about ${esc(p?.name ?? 'this project')}…"
+          aria-label="Ask about this project">
+        <button class="quiet small" id="ai-diagnose">Check project</button>
+        <button class="quiet small" id="ai-review" ${p?.situation?.unsaved ? '' : 'disabled'}
+          data-tip="${p?.situation?.unsaved ? 'Look over what you have changed but not saved'
+    : 'Nothing unsaved to look at'}">Review changes</button>
+        <button class="small" id="ai-change"
+          data-tip="Shows every file it would write before anything changes">Plan a change</button>
+        <button class="go small" id="ai-ask">Ask</button>
+      </div>
+      <div class="assistant-result" id="ai-out"></div>
     </div>`;
 }
 
@@ -3303,6 +3348,12 @@ function wireAskPanel() {
   };
   $('#ai-ask').onclick = askIt;
   $('#ai-q').onkeydown = (e) => { if (e.key === 'Enter') askIt(); };
+  for (const b of document.querySelectorAll('[data-ai-prompt]')) {
+    b.onclick = () => {
+      $('#ai-q').value = b.dataset.aiPrompt;
+      askIt();
+    };
+  }
   $('#ai-change').onclick = () => {
     const q = $('#ai-q').value.trim();
     if (!q) return say({ ok: false, sentence: 'There was nothing to ask for.', action: 'Say what you want changed first.' }) && draw();
@@ -3321,34 +3372,37 @@ SCREENS.ask = async () => {
   const p = await get('/project');
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Focused on the open project</span>
         <h1>AI Assistant</h1>
-        <p class="sub">Questions about the project that is open, answered by whichever company
-          you already pay for. The question and the few files it needs go to that one and
-          nowhere else \u2014 never the whole folder, and never another project.</p>
+        <p class="sub">Understand the code, review your work, and prepare changes with the project already in context.</p>
       </div>
-      <div class="acts"><button class="quiet" id="ai-pick">Which one answers\u2026</button></div>
+      <div class="acts"><button class="quiet" id="ai-pick">Provider and model…</button></div>
     </div>
     ${saidHtml()}
 
     ${p?.name ? `
-      <div class="factbar">
-        <span><b>${esc(p.name)}</b><span class="dim">is the one being asked about</span></span>
-        <span class="rest"></span>
+      <div class="assistant-context">
+        <span class="project-badge">${KIND_MARK.project}</span>
+        <span class="grow"><b>${esc(p.name)}</b><span>${esc(p.dir)}</span></span>
+        ${stateChip(p.mark)}
+        <span class="context-fact"><b>${p.situation?.unsaved ?? 0}</b> unsaved</span>
       </div>
-      ${askPanel(p, { heading: `About ${p.name}` })}
-
-      <div class="sect"><h2>What it will and will not do</h2></div>
-      <div class="card">
-        <ul class="steps">
-          <li><span>It reads only what the question needs \u2014 not the whole folder,
-            and nothing from another project.</span></li>
-          <li><span>Anything that looks like a key or a password is taken out before
-            the question is sent, and the file that holds real values is never opened.</span></li>
-          <li><span>A change is something you read and then approve. Nothing is written
-            to a file because a model suggested it.</span></li>
-        </ul>
+      <div class="assistant-workspace">
+        <div class="assistant-main">${askPanel(p, { heading: `Ask about ${p.name}` })}</div>
+        <aside>
+          <div class="panel-block context-panel">
+            <div class="panel-title"><b>Context in use</b><span>Scoped</span></div>
+            <div class="context-item"><span>Project</span><b>${esc(p.name)}</b></div>
+            <div class="context-item"><span>Files</span><b>Only what the question needs</b></div>
+            <div class="context-item"><span>Sensitive values</span><b>Removed before sending</b></div>
+          </div>
+          <div class="panel-block context-panel">
+            <div class="panel-title"><b>Before files change</b></div>
+            <p>Every proposed file is shown for review. Nothing is written until you approve it.</p>
+          </div>
+        </aside>
       </div>`
     : `<div class="empty"><b>Nothing is open yet.</b>
         These questions are about a project, so there has to be one.
@@ -3367,62 +3421,105 @@ async function drawOpenProject() {
   const open = whatIsOpen(p, t.tools);
 
   view.innerHTML = `
-    <button class="quiet" id="back" style="margin:0 0 1rem;padding-left:0">← all projects</button>
-    <h1>${esc(p.name)}
-      <span style="vertical-align:middle;margin-left:.5rem">${stateChip(p.mark)}</span>
-    </h1>
-    <p class="sub">${esc(p.says)} · ${esc(p.saved)}
-      · ${p.situation?.shared ? 'on GitHub' : 'only on this computer'}
-      <br><span style="color:var(--faint)">${esc(p.dir)}</span></p>
-
-    <div class="card" style="margin-bottom:1.4rem">
-      <label class="field">What did you do?</label>
-      <div class="bar" style="margin:0">
-        <input id="msg" placeholder="Made the sign-in page work" style="flex:1">
-        <button class="go" id="pub">Save and send</button>
-        <button id="more">More…</button>
+    <button class="backlink" id="back">← Projects</button>
+    <header class="project-identity">
+      <div class="project-badge" aria-hidden="true">${KIND_MARK.project}</div>
+      <div class="grow">
+        <div class="identity-line"><h1>${esc(p.name)}</h1>${stateChip(p.mark)}</div>
+        <p>${esc(p.says)} <span>·</span> ${esc(p.saved)} <span>·</span>
+          ${p.situation?.shared ? 'GitHub copy connected' : 'Only on this computer'}</p>
+        <div class="path">${esc(p.dir)}</div>
       </div>
-      <div id="going" class="going"></div>
-    </div>
+      <div class="acts">
+        <button id="pd-reveal">Explorer</button>
+        <button id="to-terms">Terminal</button>
+        <button class="go" id="to-apps">Open in AI app</button>
+        <button class="quiet icon" id="more" aria-label="More project actions">⋯</button>
+      </div>
+    </header>
+
+    <nav class="context-tabs" aria-label="Project sections">
+      <button class="on">Overview</button>
+      <button data-project-jump="ask">AI Assistant</button>
+      <button data-project-jump="apps">Apps</button>
+      <button data-project-jump="terminals">Terminals</button>
+      <button data-project-jump="activity">Activity</button>
+      <button data-project-jump="ship">Deploy</button>
+      <button data-project-jump="settings">Settings</button>
+    </nav>
+
     ${saidHtml()}
-
-    ${askPanel(p)}
-
-    <div class="sect"><h2>Open this project in</h2></div>
-    <div class="bar">
-      <button id="to-apps">Choose an AI app →</button>
-      <button id="to-terms">Open a terminal here →</button>
-      <button id="to-ship">Deploy it →</button>
-    </div>
-
-    ${open.length ? `
-      <h2>Pick up where you left off
-        <button class="quiet small" id="tidy" style="float:right;text-transform:none;letter-spacing:0">clear the list</button>
-      </h2>
-      <div class="lane">
-        ${open.map((g) => `
-          <div class="slab" data-again="${esc(g.assistant)}">
-            <span class="dot ${g.rank === 'moving' ? 'live' : g.rank === 'waiting on you' ? 'attention' : 'off'}"></span>
-            <div class="grow">
-              <div class="line1"><b>${esc(g.name)}</b>
-                ${g.times > 1 ? `<span class="chip">opened ${g.times} times</span>` : ''}
-                ${g.canCarryOn ? '<span class="chip cool">carries on where you left off</span>' : ''}
-                ${g.here ? '' : '<span class="chip">not on this computer now</span>'}
-              </div>
-              <div class="fact">Last opened ${esc(g.ago)}.</div>
+    <div class="project-cockpit">
+      <div class="cockpit-main">
+        <section class="cockpit-overview">
+          <div class="panel-block">
+            <div class="panel-title"><b>Status</b><span>${p.situation?.unsaved ? 'Needs attention' : 'Ready'}</span></div>
+            <dl class="status-list">
+              <div><dt>Last saved</dt><dd>${esc(p.saved || 'Not saved yet')}</dd></div>
+              <div><dt>Location</dt><dd>${p.situation?.shared ? 'GitHub' : 'This computer'}</dd></div>
+              <div><dt>Unsaved work</dt><dd class="${p.situation?.unsaved ? 'warn' : ''}">${esc(String(p.situation?.unsaved ?? 0))}</dd></div>
+              <div><dt>Open sessions</dt><dd>${open.length}</dd></div>
+            </dl>
+          </div>
+          <div class="panel-block project-description">
+            <div class="panel-title"><b>Project context</b><button class="quiet small" data-project-jump="ask">Ask AI</button></div>
+            <p>${esc(p.says || 'No project description is available yet.')}</p>
+            <div class="context-actions">
+              <button id="to-ship">Deploy</button>
+              <button data-project-look="1">Inspect files</button>
             </div>
-            <div class="acts">
-              ${g.here ? `<button class="go small" data-again-now="${esc(g.assistant)}">Open again</button>` : ''}
-              <button class="quiet small" data-done="${esc(g.ids.join(' '))}">finished</button>
-              <button class="quiet small" data-drop="${esc(g.ids.join(' '))}">remove</button>
-            </div>
-          </div>`).join('')}
-      </div>` : ''}`;
+          </div>
+        </section>
+
+        <section class="cockpit-ai">${askPanel(p, { heading: 'AI Assistant' })}</section>
+
+        <section>
+          <div class="panel-title section-title"><b>Recent sessions</b>
+            ${open.length ? '<button class="quiet small" id="tidy">Clear list</button>' : ''}</div>
+          ${open.length ? `<div class="lane session-lane">
+            ${open.map((g) => `
+              <div class="slab" data-again="${esc(g.assistant)}">
+                <span class="dot ${g.rank === 'moving' ? 'live' : g.rank === 'waiting on you' ? 'attention' : 'off'}"></span>
+                <div class="grow">
+                  <div class="line1"><b>${esc(g.name)}</b>
+                    ${g.times > 1 ? `<span class="chip">opened ${g.times} times</span>` : ''}
+                    ${g.canCarryOn ? '<span class="chip cool">can continue</span>' : ''}
+                  </div>
+                  <div class="fact">Last opened ${esc(g.ago)}${g.here ? '' : ' · not on this computer now'}.</div>
+                </div>
+                <div class="acts">
+                  ${g.here ? `<button class="go small" data-again-now="${esc(g.assistant)}">Open again</button>` : ''}
+                  <button class="quiet small" data-done="${esc(g.ids.join(' '))}">Finished</button>
+                  <button class="quiet small" data-drop="${esc(g.ids.join(' '))}">Remove</button>
+                </div>
+              </div>`).join('')}
+          </div>` : '<div class="empty compact"><b>No recent sessions.</b>Open an AI app or terminal and it will appear here.</div>'}
+        </section>
+      </div>
+
+      <aside class="cockpit-side">
+        <div class="panel-block save-panel">
+          <div class="panel-title"><b>Save your work</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div>
+          <label class="field" for="msg">What did you do?</label>
+          <textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea>
+          <button class="go wide" id="pub">Save and send</button>
+          <div id="going" class="going"></div>
+        </div>
+        <div class="panel-block quick-panel">
+          <div class="panel-title"><b>Quick actions</b></div>
+          <button id="side-apps">Open in an AI app <span>→</span></button>
+          <button id="side-term">Open a terminal <span>→</span></button>
+          <button id="side-ship">Deploy this project <span>→</span></button>
+          <button id="side-files">Inspect project files <span>→</span></button>
+        </div>
+      </aside>
+    </div>`;
   said = null;
 
   $('#back').onclick = async () => { at.inside = false; await post('/close'); await refreshMe(); draw(); };
+  $('#pd-reveal').onclick = () => post('/reveal', { path: p.dir });
   $('#pub').onclick = saveAndSend;
-  $('#msg').onkeydown = (e) => { if (e.key === 'Enter') saveAndSend(); };
+  $('#msg').onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveAndSend(); };
   showWhereItGoes();
   $('#more').onclick = () => gitHubSheet(p);
   /**
@@ -3439,6 +3536,12 @@ async function drawOpenProject() {
   $('#to-apps').onclick = () => go('apps');
   $('#to-terms').onclick = () => go('terminals');
   $('#to-ship').onclick = () => go('ship');
+  $('#side-ship').onclick = () => go('ship');
+  $('#side-apps').onclick = () => go('apps');
+  $('#side-term').onclick = () => go('terminals');
+  for (const b of document.querySelectorAll('[data-project-look]')) b.onclick = () => statusSheet(p.dir);
+  $('#side-files').onclick = () => statusSheet(p.dir);
+  for (const b of document.querySelectorAll('[data-project-jump]')) b.onclick = () => go(b.dataset.projectJump);
   $('#tidy')?.addEventListener('click', async () => {
     const sure = await confirmThat({
       title: 'Clear the list',
@@ -3979,11 +4082,11 @@ SCREENS.apps = async () => {
   const signedInto = here.filter((x) => (chosen.account[x.id] ?? x.active)).length;
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Developer tools</span>
         <h1>AI apps</h1>
-        <p class="sub">Each one opens already inside the folder below, as the account you
-          picked. You never add the folder by hand again.</p>
+        <p class="sub">Launch the right coding app, account, and project context in one step.</p>
       </div>
       <div class="acts">${whereBar(p)}</div>
     </div>
@@ -4009,6 +4112,8 @@ SCREENS.apps = async () => {
     },
   ])}
 
+    <div class="resource-layout">
+      <div class="resource-main">
     ${here.length ? `
       <div class="sect">
         <h2>Ready on this computer</h2><span class="count">${here.length}</span>
@@ -4026,6 +4131,20 @@ SCREENS.apps = async () => {
       <div class="sheetlist apps-cols">
         ${away.map((x) => appRow(x, p, t)).join('')}
       </div>` : ''}
+      </div>
+      <aside class="resource-side">
+        <div class="panel-block">
+          <div class="panel-title"><b>Launch context</b><span>${whereFor(null, p) ? 'Ready' : 'Choose a folder'}</span></div>
+          <div class="context-item"><span>Project folder</span><b>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'None chosen')}</b></div>
+          <div class="context-item"><span>Apps available</span><b>${here.length}</b></div>
+          <div class="context-item"><span>Accounts selected</span><b>${signedInto}</b></div>
+        </div>
+        <div class="panel-block context-panel">
+          <div class="panel-title"><b>How launch works</b></div>
+          <p>The app opens directly in the selected folder. Account selection stays per app on this computer.</p>
+        </div>
+      </aside>
+    </div>
 
     <div id="job"></div>`;
   said = null;
@@ -4443,11 +4562,11 @@ SCREENS.terminals = async () => {
   const dir = whereFor(null, p);
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Developer workstation</span>
         <h1>Terminals</h1>
-        <p class="sub">Each of these opens already inside the folder below, so the first thing
-          you type is the thing you meant to type.</p>
+        <p class="sub">Start a shell in the right project and keep remote sessions visible.</p>
       </div>
       <div class="acts">${whereBar(p)}</div>
     </div>
@@ -4479,8 +4598,10 @@ SCREENS.terminals = async () => {
     },
   ])}
 
-    <div class="sect"><h2>On this computer</h2><span class="count">${terminals.length}</span></div>
-    <div class="sheetlist term-cols">
+    <div class="resource-layout terminals-layout">
+      <div class="resource-main">
+      <div class="sect"><h2>Available shells</h2><span class="count">${terminals.length}</span></div>
+      <div class="sheetlist term-cols">
       ${terminals.map((t) => `
         <div class="trow ${dir ? 'tap' : ''}" ${dir ? `data-open-term="${esc(t.id)}"` : ''}>
           <span class="kindmark" aria-hidden="true">${TERM_MARK}</span>
@@ -4494,7 +4615,7 @@ SCREENS.terminals = async () => {
             </span>
           </span>
         </div>`).join('')}
-    </div>
+      </div>
 
     ${(sessions.sessions ?? []).length ? `
       <div class="sect"><h2>Running here for another computer</h2>
@@ -4513,18 +4634,19 @@ SCREENS.terminals = async () => {
             </span>
           </div>`).join('')}
       </div>` : ''}
-
-    <div class="sect"><h2>What a terminal here can reach</h2></div>
-    <div class="card">
-      <ul class="steps">
-        <li><span>It opens already inside
-          <b class="mono">${esc(dir ?? 'no folder yet')}</b>, so the first thing you type is the
-          thing you meant to type.</span></li>
-        <li><span>Nothing is typed for you. Signing an app in, installing something, running a
-          build — those are yours, in your own terminal.</span></li>
-        <li><span>Another computer in your workspace can be allowed to open one here, one
-          capability at a time. It is off for everybody until you say otherwise.</span></li>
-      </ul>
+      </div>
+      <aside class="resource-side">
+        <div class="panel-block">
+          <div class="panel-title"><b>Launch context</b><span>${dir ? 'Ready' : 'Missing folder'}</span></div>
+          <div class="context-item"><span>Starts in</span><b class="mono">${esc(dir ?? 'No folder chosen')}</b></div>
+          <div class="context-item"><span>Shells found</span><b>${terminals.length}</b></div>
+          <div class="context-item"><span>Remote sessions</span><b>${sessions.sessions?.filter((one) => one.running).length ?? 0}</b></div>
+        </div>
+        <div class="panel-block context-panel">
+          <div class="panel-title"><b>Session behavior</b></div>
+          <p>Nothing is typed for you. A terminal opens in the selected folder and stays under your control.</p>
+        </div>
+      </aside>
     </div>`;
   said = null;
 
@@ -4727,12 +4849,11 @@ SCREENS.ship = async () => {
   const bind = d.binding ?? {};
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Release center</span>
         <h1>Deploy</h1>
-        <p class="sub">Two errands, kept apart because they really are different. A website
-          is replaced whole every time. An application is downloaded, and every version
-          you hand out stays out there.</p>
+        <p class="sub">Publish a website or produce a downloadable application from the open project.</p>
       </div>
     </div>
     ${saidHtml()}
@@ -4789,8 +4910,10 @@ SCREENS.ship = async () => {
         <span class="acts"><button class="go small" id="dep-publish">Put it on GitHub…</button></span>
       </div>`}
 
-    <div class="sect"><h2>Website</h2><span class="count">replaced whole, every time</span></div>
-    <div class="sheetlist term-cols">
+    <div class="deploy-grid">
+      <section class="deploy-lane">
+        <div class="deploy-lane-head"><span class="kindmark">${SITE_MARK}</span><span class="grow"><b>Website</b><span>Replaced whole on each deploy</span></span></div>
+        <div class="sheetlist term-cols">
       ${vercelRow(d)}
       ${site.places.filter((pl) => pl.id !== 'vercel').map((pl) => `
         <div class="trow">
@@ -4805,14 +4928,13 @@ SCREENS.ship = async () => {
             <button class="small" data-site="${esc(pl.id)}" ${pl.ready ? '' : 'disabled'}>Deploy website</button>
           </span>
         </div>`).join('')}
-    </div>
+        </div>
+      </section>
 
-    <div class="sect">
-      <h2>Application</h2>
-      <span class="count">${app.packStep
+      <section class="deploy-lane">
+        <div class="deploy-lane-head"><span class="kindmark">${KIND_MARK.file}</span><span class="grow"><b>Application</b><span>${app.packStep
     ? `builds with this project’s own “${esc(app.packStep)}” step`
-    : app.manager === 'cargo' ? 'builds with cargo' : 'no build step yet'}</span>
-    </div>
+    : app.manager === 'cargo' ? 'builds with cargo' : 'No build step yet'}</span></span></div>
     ${app.installers.length ? `
       <div class="sheetlist term-cols">
         ${app.installers.map((f) => `
@@ -4838,6 +4960,8 @@ SCREENS.ship = async () => {
         ${app.canRelease && (app.packStep || app.installers.length) ? '' : 'disabled'}
         data-tip="${app.canRelease ? 'Builds it, then puts the file on GitHub under a version anybody can download'
     : 'Needs a copy of this project on GitHub, and you signed in to it'}">Build &amp; publish</button>
+        </div>
+      </section>
     </div>
 
     <div id="job"></div>`;
@@ -5370,7 +5494,7 @@ async function drawTeam() {
     }
   });
 
-  $('#team-enter').onclick = () => { showingPlumbing = false; draw(); };
+  $('#team-enter').onclick = () => { workspacePlace = 'inside'; draw(); };
   $('#team-invite').onclick = inviteSomebody;
   $('#team-manage').onclick = () => manageWorkspace(t);
 
@@ -5479,6 +5603,30 @@ function inspectTeamDevice(one, t) {
   });
 }
 
+/** A person is not a computer: summarize their presence, then let devices speak for themselves. */
+function inspectPerson(who, projects, busy) {
+  if (!who) return inspect(null);
+  const online = who.devices.filter((one) => one.online).length;
+  const copies = projects.reduce((many, project) => many
+    + project.copies.filter((copy) => copy.person === who.person).length, 0);
+
+  inspect({
+    name: who.person,
+    kind: who.you ? 'You, in this workspace' : 'Member of this workspace',
+    mark: online ? '\u25c9' : '\u25cb',
+    facts: [
+      { label: 'Right now', value: online ? `${online} of ${who.devices.length} computers reachable` : 'No computers reachable' },
+      { label: 'Last shared work', value: busy ? `${busy.project} \u00b7 ${ago(busy.at)}` : 'Nothing shared lately' },
+      { label: 'Shared copies', value: copies ? `${copies} across their computers` : 'No copies visible right now' },
+    ],
+    countsAre: 'Computers',
+    counts: [
+      { many: who.devices.length, what: who.devices.length === 1 ? 'computer' : 'computers' },
+      { many: online, what: 'reachable' },
+    ],
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Making one, joining one, inviting somebody
 // ---------------------------------------------------------------------------
@@ -5491,7 +5639,9 @@ async function makeWorkspace() {
     confirm: 'Make it',
   });
   if (!name) return;
-  say(await post('/team/create', { name }));
+  const made = await post('/team/create', { name });
+  say(made);
+  if (made.ok) workspacePlace = 'inside';
   draw();
 }
 
@@ -5503,7 +5653,9 @@ async function joinWorkspace() {
     confirm: 'Join',
   });
   if (!code) return;
-  say(await post('/team/join', { code }));
+  const joined = await post('/team/join', { code });
+  say(joined);
+  if (joined.ok) workspacePlace = 'inside';
   draw();
 }
 
@@ -5975,11 +6127,17 @@ async function sendOneNote(text, into = null) {
 
   const mine = into ?? document.createElement('div');
   mine.className = 'bubble mine going';
+  // The stream can report the locally saved note before this request returns.
+  // Give both paths one identity up front so the optimistic bubble cannot be
+  // followed by a duplicate of itself.
+  const eventId = mine.dataset.note || crypto.randomUUID();
+  mine.dataset.note = eventId;
+  heardAlready.add(eventId);
   mine.innerHTML = `<div class="who">You \u00b7 <span>Sending\u2026</span></div>${esc(text)}`;
   if (!into) talkBox?.append(mine);
   if (talkBox) talkBox.scrollTop = talkBox.scrollHeight;
 
-  const r = await post('/workspace/say', { text });
+  const r = await post('/workspace/say', { text, id: eventId });
   if (!mine.isConnected) return;
 
   mine.classList.remove('going');
@@ -6013,7 +6171,7 @@ async function sendOneNote(text, into = null) {
   mine.append(again);
 }
 
-async function drawWorkspaceOverview() {
+async function drawLegacyWorkspace() {
   clearTimeout(workspaceTimer);
   const w = await get('/workspace');
 
@@ -6029,9 +6187,12 @@ async function drawWorkspaceOverview() {
      * next room, which is the opposite of the point.
      */
     view.innerHTML = `
-      <div id="team"></div>
-
-      <h1>Shared workspace</h1>
+      <div class="pagehead">
+        <div class="grow"><button class="wsback" id="legacy-back">\u2190 Workspaces</button>
+          <h1>Your own computers</h1>
+          <p class="sub">The older account-backed way your computers exchange folders.</p></div>
+      </div>
+      <h2>Shared workspace through GitHub</h2>
       <p class="sub">Every computer signed in to the same GitHub account, in one place —
         and folders that go straight from one to another across your own network.</p>
       ${saidHtml()}
@@ -6053,7 +6214,7 @@ async function drawWorkspaceOverview() {
         </div>
       </div>`;
     said = null;
-    drawTeam();
+    $('#legacy-back').onclick = () => { workspacePlace = 'home'; draw(); };
     $('#w-join')?.addEventListener('click', async () => {
       const b = $('#w-join');
       b.disabled = true;
@@ -6100,6 +6261,7 @@ async function drawWorkspaceOverview() {
           computer cannot write to it. Switch account, or make a workspace on this one.</p>` : ''}
       </div>
       <div class="acts">
+        <button class="quiet small" id="legacy-back">\u2190 Workspaces</button>
         <button class="small" id="w-refresh">Check again</button>
         <button class="go" id="w-offer">Offer…</button>
       </div>
@@ -6268,7 +6430,7 @@ async function drawWorkspaceOverview() {
     draw();
   };
 
-  drawTeam();
+  $('#legacy-back').onclick = () => { workspacePlace = 'home'; draw(); };
 
   for (const b of document.querySelectorAll('[data-peek]')) {
     b.onclick = (e) => { e.stopPropagation(); peekAt(b.dataset.peek, w); };
@@ -6835,12 +6997,11 @@ SCREENS.activity = async () => {
     </div>`;
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Operational history</span>
         <h1>Activity</h1>
-        <p class="sub">Long errands while they run, what a build left behind, what other
-          computers are running here, and what was kept before anything was written over.
-          Nothing on this page starts anything.</p>
+        <p class="sub">Track work in progress, items needing attention, and completed output across this computer.</p>
       </div>
       <div class="acts"><button class="quiet" id="act-again">Look again</button></div>
     </div>
@@ -6868,7 +7029,9 @@ SCREENS.activity = async () => {
     },
   ])}
 
-    <div id="job"></div>
+    <div class="activity-layout">
+      <div class="activity-main">
+        <div id="job"></div>
 
     ${filters.length > 2 ? `
       <div class="bar chips" style="margin:0 0 .2rem">
@@ -6889,6 +7052,8 @@ SCREENS.activity = async () => {
         <div class="thead"><span></span><span>Errand</span><span>Project</span><span>Kind</span><span>Ended</span><span></span></div>
         ${over.map(jobLine).join('')}
       </div>` : ''}
+      </div>
+      <aside class="activity-side">
 
     <div class="sect"><h2>Being run here by another computer</h2>
       <span class="count">${sessions.sessions?.length ?? 0}</span></div>
@@ -6947,7 +7112,9 @@ SCREENS.activity = async () => {
         </div>`
     : `<div class="card" style="color:var(--quiet)">Nothing has been written over in
         ${esc(p.name)}, so there is nothing to go back to. Anything that arrives from
-        another computer is kept here first, automatically.</div>`}` : ''}`;
+        another computer is kept here first, automatically.</div>`}` : ''}
+      </aside>
+    </div>`;
   said = null;
 
   $('#act-again').onclick = () => draw();
@@ -7047,11 +7214,11 @@ let settingsPlace = 'accounts';
  * here rather than inside the screen.
  */
 /**
- * The older GitHub-backed page, which is now somewhere you go rather than where
- * you land. It is about your own computers and about an account; the workspace
- * is about people and projects, and that is what the tab shows.
+ * Workspace has two product levels, plus one deliberately subordinate legacy
+ * page. A membership may stay active for discovery while this remains `home`;
+ * navigation and peer state are related, but they are not the same state.
  */
-let showingPlumbing = false;
+let workspacePlace = 'home'; // home | inside | legacy
 let lookingAtProject = null;
 let lookingAtPerson = null;
 
@@ -7090,6 +7257,205 @@ function changeInWords(c) {
   return bits.length ? bits.join(' \u00b7 ') : null;
 }
 
+/** Offers from reachable member computers, read from the existing peer registry. */
+async function workspaceHomeState(t) {
+  if (!t.workspace) return { projects: [], offers: [], failed: 0 };
+
+  const shared = await get('/team/projects').catch(() => ({ projects: [] }));
+  const projects = shared.projects ?? [];
+  const copiesHere = new Set(projects.filter((p) => p.mine).map((p) => p.name.toLowerCase()));
+  const devices = [...(t.mine ?? []), ...(t.team ?? [])].filter((one) => !one.you && one.online);
+  let failed = 0;
+
+  const answers = await Promise.all(devices.map(async (one) => {
+    const said = await get(`/local/offers?machine=${encodeURIComponent(one.deviceId)}`).catch(() => null);
+    if (!said?.ok) { failed += 1; return []; }
+    return (said.offers ?? []).map((offer) => ({
+      ...offer,
+      deviceId: one.deviceId,
+      device: one.displayName,
+      person: one.person ?? one.displayName,
+      how: one.how,
+      haveCopy: offer.kind === 'file' ? null : copiesHere.has(String(offer.name).toLowerCase()),
+    }));
+  }));
+
+  return { projects, offers: answers.flat(), failed };
+}
+
+/** Bring one real offer over using the transfer path already used by inspectors. */
+async function receiveWorkspaceOffer(one, workFolder) {
+  const into = await pickFolder({
+    title: `Where should ${one.name} go on this computer?`,
+    confirm: 'Put it in here',
+    startAt: workFolder,
+  });
+  if (!into) return;
+
+  const started = await post('/local/take', {
+    machine: one.deviceId, offer: one.id, name: one.name, into,
+  });
+  if (started.ok) watchJob(started.job); else { say(started); draw(); }
+}
+
+/** Inspect an offer without creating a second representation of it. */
+function inspectWorkspaceOffer(one, workFolder) {
+  inspect({
+    name: one.name,
+    kind: `${one.kind === 'file' ? 'File' : 'Folder'} shared with you`,
+    mark: KIND_MARK[one.kind === 'file' ? 'file' : 'project'],
+    facts: [
+      { label: 'Offered by', value: `${one.person} on ${one.device}` },
+      { label: 'Reachable', value: one.how || 'Yes' },
+      { label: 'Contents', value: one.files ? `${one.files} file${one.files === 1 ? '' : 's'}` : null },
+      { label: 'Size', value: one.bytes ? size(one.bytes) : null },
+      { label: 'On this computer', value: one.haveCopy === null ? null : (one.haveCopy ? 'A copy is already here' : 'No copy here yet') },
+    ],
+    acts: [{ what: one.haveCopy ? 'Receive another copy…' : 'Receive…', run: () => receiveWorkspaceOffer(one, workFolder) }],
+  });
+}
+
+/**
+ * The collaboration hub. It is always the destination of the main rail item;
+ * opening, making, or joining is the only way from here into a workspace.
+ */
+async function drawWorkspaceHome() {
+  clearTimeout(workspaceTimer);
+  const [device, t] = await Promise.all([get('/me/device'), get('/team')]);
+  const state = await workspaceHomeState(t);
+  const all = device.all ?? [];
+  const everybody = [...(t.mine ?? []), ...(t.team ?? [])];
+  const people = new Map();
+  for (const one of everybody) {
+    const name = one.person || one.displayName;
+    if (!people.has(name)) people.set(name, { name, devices: [], you: false });
+    people.get(name).devices.push(one);
+    people.get(name).you ||= one.you;
+  }
+  const here = everybody.filter((one) => one.online).length;
+
+  const workspaceRows = all.map((one) => {
+    const current = one.id === device.workspace?.id;
+    return `
+      <div class="wshome-workspace ${current ? 'current' : ''}">
+        <span class="workspace-orbit" aria-hidden="true"><span></span></span>
+        <span class="grow">
+          <b>${esc(one.name)}</b>
+          <span>${current
+    ? `${people.size} ${people.size === 1 ? 'person' : 'people'} \u00b7 ${here} of ${everybody.length} computers reachable`
+    : 'Known on this computer \u00b7 open it to check who is reachable'}</span>
+        </span>
+        ${current ? '<span class="chip live">Active nearby</span>' : ''}
+        <button class="go small" data-open-workspace="${esc(one.id)}">Open</button>
+      </div>`;
+  }).join('');
+
+  const shareRows = state.offers.map((one, index) => `
+    <div class="wshome-share" data-home-share="${index}">
+      <span class="kindmark" aria-hidden="true">${KIND_MARK[one.kind === 'file' ? 'file' : 'project']}</span>
+      <span class="grow">
+        <b>${esc(one.name)}</b>
+        <span>${esc(one.person)} \u00b7 ${esc(one.device)}${one.files ? ` \u00b7 ${one.files} files` : ''}${one.bytes ? ` \u00b7 ${esc(size(one.bytes))}` : ''}</span>
+      </span>
+      <span class="share-state"><span class="dot live"></span>${esc(one.how || 'Reachable')}</span>
+      ${one.haveCopy === true ? '<span class="chip">Copy here</span>' : ''}
+      <button class="small" data-receive-share="${index}">${one.haveCopy ? 'Receive another…' : 'Receive…'}</button>
+    </div>`).join('');
+
+  const peopleRows = [...people.values()].sort((a, b) => Number(b.you) - Number(a.you)).map((who) => {
+    const online = who.devices.filter((one) => one.online).length;
+    return `
+      <div class="wshome-person">
+        <span class="dot ${online ? 'live' : 'off'}"></span>
+        <span class="grow"><b>${esc(who.name)}</b><span>${online
+    ? `${online} of ${who.devices.length} computers reachable`
+    : `${who.devices.length} computer${who.devices.length === 1 ? '' : 's'} offline`}</span></span>
+        ${who.you ? '<span class="chip vibe">you</span>' : ''}
+      </div>`;
+  }).join('');
+
+  view.innerHTML = `
+    <div class="wshome">
+      <header class="wshome-hero">
+        <div class="grow">
+          <span class="eyebrow">Collaboration</span>
+          <h1>Workspaces</h1>
+          <p>Your shared projects, people, and conversations. Choose a workspace when you are ready to step inside.</p>
+        </div>
+        <div class="acts">
+          <button class="small" id="home-join">Join workspace</button>
+          <button class="go" id="home-create">Create workspace</button>
+        </div>
+      </header>
+      ${saidHtml()}
+
+      <div class="wshome-layout">
+        <main>
+          <section class="wshome-section">
+            <div class="wshome-title"><div><span class="eyebrow">Your places</span><h2>Existing workspaces</h2></div>
+              <span class="count">${all.length}</span></div>
+            <div class="wshome-list">${workspaceRows || `
+              <div class="wshome-empty"><b>No workspaces on this computer yet.</b>
+                <span>Create one for a new group, or join with a code somebody sent you.</span></div>`}</div>
+          </section>
+
+          <section class="wshome-section shares">
+            <div class="wshome-title"><div><span class="eyebrow">Available now</span><h2>Shared with you</h2></div>
+              <span class="count">${state.offers.length}</span></div>
+            <p class="section-intro">Files and folders offered by reachable computers in ${esc(t.workspace?.name ?? 'your active workspace')}.</p>
+            <div class="wshome-list">${shareRows || `
+              <div class="wshome-empty"><b>${t.workspace ? 'Nothing is being offered by another reachable computer.' : 'Open or join a workspace to see what other computers offer.'}</b>
+                <span>${t.workspace ? 'This list updates as member computers appear and disappear.' : 'Offers stay on the computer sharing them until you ask for a copy.'}</span></div>`}</div>
+            ${state.failed ? `<p class="home-note">${state.failed} reachable computer${state.failed === 1 ? '' : 's'} could not answer just now. The list will check again.</p>` : ''}
+          </section>
+        </main>
+
+        <aside class="wshome-aside">
+          <section>
+            <div class="wshome-title"><div><span class="eyebrow">Presence</span><h2>People & computers</h2></div></div>
+            ${t.workspace ? `<p class="section-intro">Currently active for ${esc(t.workspace.name)}.</p>
+              <div class="wshome-people">${peopleRows}</div>`
+    : '<div class="wshome-empty compact">Nobody is connected until this computer joins a workspace.</div>'}
+          </section>
+          <section class="legacy-link">
+            <span class="eyebrow">Your own computers</span>
+            <h3>Account-backed sharing</h3>
+            <p>The older page for computers signed in to the same GitHub account remains available separately.</p>
+            <button class="quiet small" id="home-legacy">Open that page</button>
+          </section>
+        </aside>
+      </div>
+    </div>`;
+  said = null;
+
+  $('#home-create').onclick = makeWorkspace;
+  $('#home-join').onclick = joinWorkspace;
+  $('#home-legacy').onclick = () => { workspacePlace = 'legacy'; draw(); };
+  for (const button of document.querySelectorAll('[data-open-workspace]')) {
+    button.onclick = async () => {
+      button.disabled = true;
+      const opened = await post('/team/open', { workspace: button.dataset.openWorkspace });
+      if (!opened.ok) { say(opened); return draw(); }
+      workspacePlace = 'inside';
+      lookingAtProject = null;
+      await draw();
+    };
+  }
+  for (const row of document.querySelectorAll('[data-home-share]')) {
+    row.onclick = () => inspectWorkspaceOffer(state.offers[Number(row.dataset.homeShare)], t.workFolder);
+  }
+  for (const button of document.querySelectorAll('[data-receive-share]')) {
+    button.onclick = (event) => {
+      event.stopPropagation();
+      receiveWorkspaceOffer(state.offers[Number(button.dataset.receiveShare)], t.workFolder);
+    };
+  }
+
+  workspaceTimer = setTimeout(() => {
+    if (at.tab === 'workspace' && workspacePlace === 'home' && !layer.innerHTML) draw({ quietly: true });
+  }, 10000);
+}
+
 /**
  * The workspace, as the place work actually happens.
  *
@@ -7118,8 +7484,10 @@ function changeInWords(c) {
  * bottom of the left column, where infrastructure belongs.
  */
 SCREENS.workspace = async () => {
+  if (workspacePlace === 'home') return drawWorkspaceHome();
+  if (workspacePlace === 'legacy') return drawLegacyWorkspace();
   const t = await get('/team');
-  if (!t.workspace || showingPlumbing) return drawWorkspaceOverview();
+  if (!t.workspace) { workspacePlace = 'home'; return drawWorkspaceHome(); }
 
   const [shared, offers] = await Promise.all([get('/team/projects'), get('/local/offers')]);
 
@@ -7142,8 +7510,9 @@ SCREENS.workspace = async () => {
 
   view.innerHTML = `
     <div class="wshead">
-      <div class="grow">
-        <h1>${esc(t.workspace.name)}</h1>
+      <div class="wsidentity grow">
+        <button class="wsback" id="ws-back">\u2190 Workspaces</button>
+        <div class="grow"><span class="eyebrow">Workspace</span><h1>${esc(t.workspace.name)}</h1></div>
         <span class="chip ${waiting ? 'attention' : ''}">${waiting
     ? `${waiting} ${waiting === 1 ? 'project needs' : 'projects need'} attention`
     : 'Everything up to date'}</span>
@@ -7237,15 +7606,23 @@ SCREENS.workspace = async () => {
             Offer a folder and it becomes something everybody here can have a copy of.
             <span class="acts"><button class="go" id="ws-offer-empty">Offer a folder\u2026</button></span></div>`}
 
-        <div class="label-tiny stacked">General <span class="count" id="general-count"></span></div>
+        <div class="wschat-head"><div><span class="eyebrow">Everyone here</span><h2>General chat</h2></div>
+          <span class="count" id="general-count"></span></div>
         <div class="wsgeneral" id="wsnotes"></div>
       </div>
     </div>`;
   said = null;
 
+  $('#ws-back').onclick = () => {
+    workspacePlace = 'home';
+    lookingAtProject = null;
+    lookingAtPerson = null;
+    closeInspector();
+    draw();
+  };
   $('#ws-invite')?.addEventListener('click', inviteSomebody);
   for (const b of [$('#ws-offer'), $('#ws-offer-empty')]) b?.addEventListener('click', offerSomething);
-  $('#ws-github')?.addEventListener('click', () => { showingPlumbing = true; draw(); });
+  $('#ws-github')?.addEventListener('click', () => { workspacePlace = 'legacy'; draw(); });
 
   for (const b of document.querySelectorAll('[data-stop-offer]')) {
     b.onclick = async () => {
@@ -7417,9 +7794,10 @@ function projectInWorkspace(p) {
 
       <div id="job"></div>
 
-      <div class="label-tiny stacked">Lately <span class="count">${(p.lately ?? []).length}</span></div>
-      ${(p.lately ?? []).length ? `
-        <ul class="wsevents">
+      <details class="wsmore project-activity">
+        <summary>Project activity <span class="count">${(p.lately ?? []).length}</span></summary>
+        <div>${(p.lately ?? []).length ? `
+          <ul class="wsevents">
           ${p.lately.map((one) => `
             <li class="${one.kind === 'sync.failed' ? 'bad' : ''}">
               <span class="mark">${one.kind === 'project.changed' ? '\u25cf' : one.kind === 'sync.failed' ? '\u25b3' : '\u2713'}</span>
@@ -7430,8 +7808,9 @@ function projectInWorkspace(p) {
       : 'brought changes over'}</span>
               <span class="when">${esc(ago(one.at))}</span>
             </li>`).join('')}
-        </ul>`
-    : '<p class="sub quiet">Nothing has happened to this one yet.</p>'}
+          </ul>`
+    : '<p class="sub quiet">Nothing has happened to this one yet.</p>'}</div>
+      </details>
 
     </div>`;
 }
@@ -7678,11 +8057,11 @@ SCREENS.settings = async () => {
           : rows(settingsPlace);
 
   view.innerHTML = `
-    <div class="pagehead">
+    <div class="pagehead command-head">
       <div class="grow">
+        <span class="eyebrow">Preferences and connections</span>
         <h1>Settings</h1>
-        <p class="sub">Everything here changes how the manager behaves, never what it tells
-          you is true.</p>
+        <p class="sub">Control accounts, AI, appearance, computer behavior, and updates.</p>
       </div>
     </div>
     ${saidHtml()}
@@ -7955,49 +8334,60 @@ SCREENS.feedback = async () => {
   const d = await get('/feedback');
 
   view.innerHTML = `
-    <h1>Tell us what is wrong</h1>
-    <p class="sub">This is early, and the most useful thing anybody can do is say
-      what annoyed them the moment it happened — before you have worked around it
-      and forgotten. It goes to the project's own list on GitHub.</p>
-    ${saidHtml()}
-
-    <div class="card">
-      <label class="field">What happened?</label>
-      <textarea id="fb-what" rows="5" style="width:100%;margin-bottom:1rem"
-        placeholder="I pressed Open on Antigravity and nothing appeared."></textarea>
-
-      <label class="field">What kind of thing is it?</label>
-      <div class="menu" style="margin-bottom:1rem">
-        ${d.kinds.map((k, i) => `
-          <button class="opt ${i === 0 ? 'on' : ''}" data-kind="${esc(k.id)}">
-            <span class="glyph">${['✕', '?', '＋', '✓'][i] ?? '·'}</span>
-            <span><span class="what">${esc(k.name)}</span><br><span class="why">${esc(k.blurb)}</span></span>
-          </button>`).join('')}
-      </div>
-
-      <div class="bar" style="margin:0">
-        <button class="go" id="fb-send" ${me.github ? '' : 'disabled'}>Send it</button>
-        <span class="note" style="color:var(--quiet);font-size:.84rem">
-          ${me.github
-    ? 'What you typed, plus which computer and which version. Nothing about your projects.'
-    : 'Sign in to GitHub first — it is sent as you, to the project\'s own list.'}
-        </span>
+    <div class="pagehead command-head">
+      <div class="grow">
+        <span class="eyebrow">Product feedback</span>
+        <h1>Tell us what happened</h1>
+        <p class="sub">Describe the moment while it is still fresh. Your report is kept on this computer first, then sent when a destination is available.</p>
       </div>
     </div>
+    ${saidHtml()}
 
-    ${d.said.length ? `
-      <h2>What you have said before</h2>
-      <div class="lane">
-        ${d.said.slice(0, 12).map((s) => `
-          <div class="slab" style="cursor:default">
-            <span class="spine clean"></span>
-            <div class="grow">
-              <div class="line1"><b>${esc(d.kinds.find((k) => k.id === s.kind)?.name ?? s.kind)}</b>
-                <span class="chip">${ago(s.at)}</span></div>
-              <div class="fact">${esc(s.what)}</div>
-            </div>
-          </div>`).join('')}
-      </div>` : ''}`;
+    <div class="feedback-layout">
+      <section class="feedback-compose panel-block">
+        <div class="panel-title"><b>New report</b><span>Kept locally first</span></div>
+        <label class="field">What happened?</label>
+        <textarea id="fb-what" rows="7" placeholder="I pressed Open on Antigravity and nothing appeared."></textarea>
+
+        <label class="field">What kind of feedback is this?</label>
+        <div class="feedback-kinds">
+          ${d.kinds.map((k, i) => `
+            <button class="${i === 0 ? 'on' : ''}" data-kind="${esc(k.id)}">
+              <span class="glyph">${['×', '?', '＋', '✓'][i] ?? '·'}</span>
+              <span><b>${esc(k.name)}</b><small>${esc(k.blurb)}</small></span>
+            </button>`).join('')}
+        </div>
+
+        <div class="feedback-send">
+          <button class="go" id="fb-send">Send feedback</button>
+          <span>${d.home && me.github
+    ? 'Only what you typed, this computer name, and the app version are sent.'
+    : 'It will be written down here even if it cannot be sent yet.'}</span>
+        </div>
+      </section>
+
+      <aside class="feedback-side">
+        <div class="panel-block context-panel">
+          <div class="panel-title"><b>What leaves this computer</b></div>
+          <div class="context-item"><span>Your words</span><b>Included</b></div>
+          <div class="context-item"><span>Computer and version</span><b>Included</b></div>
+          <div class="context-item"><span>Project files and paths</span><b>Never included</b></div>
+          <div class="delivery-state ${d.home && me.github ? 'ready' : ''}"><span class="dot ${d.home && me.github ? 'live' : 'attention'}"></span>
+            ${d.home ? (me.github ? 'Ready to send' : 'Sign in to GitHub to send; local saving still works')
+    : 'No sending destination is configured; local saving still works'}</div>
+        </div>
+
+        ${d.said.length ? `
+          <div class="panel-block feedback-history">
+            <div class="panel-title"><b>Recent feedback</b><span>${d.said.length}</span></div>
+            ${d.said.slice(0, 6).map((s) => `
+              <div class="history-line">
+                <span>${esc(d.kinds.find((k) => k.id === s.kind)?.name ?? s.kind)} · ${ago(s.at)}</span>
+                <b>${esc(s.what)}</b>
+              </div>`).join('')}
+          </div>` : ''}
+      </aside>
+    </div>`;
   said = null;
 
   let kind = d.kinds[0]?.id ?? 'wrong';

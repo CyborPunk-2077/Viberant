@@ -1078,10 +1078,41 @@ const routes = {
     return {
       ...(await anywhere.around()),
       invites: ws ? await membersOf.liveInvites(ws) : [],
+      workFolder: await settings.get('workFolder'),
       // Whether this computer may do the things that manage a workspace, so the
       // page can offer them rather than offering and then refusing.
       mayManage: !!ws && membersOf.may(ws, me.deviceId, 'manageMembers'),
     };
+  },
+
+  /**
+   * Open one of the workspaces this computer already belongs to.
+   *
+   * Membership and navigation are separate: merely visiting Workspace Home
+   * never changes this value. An explicit Open is what changes which
+   * workspace the peer listener and offer beacon speak for.
+   */
+  async 'POST /team/open'({ body }) {
+    const wanted = String(body?.workspace ?? '');
+    const currentWorkspace = await membersOf.current();
+    if (currentWorkspace?.id === wanted) {
+      return withWorkspace({ ok: true, workspace: currentWorkspace });
+    }
+
+    await anywhere.stop().catch(() => null);
+    const out = await membersOf.switchTo(wanted);
+    if (!out.ok) {
+      // Put the previous listener back when the requested membership is stale.
+      if (currentWorkspace) await anywhere.beAbout({ workspace: currentWorkspace }).catch(() => null);
+      return withWorkspace(out);
+    }
+
+    const ws = await membersOf.current();
+    await anywhere.beAbout({ workspace: ws }).catch(() => null);
+    await lan.stop().catch(() => null);
+    await localSharing().catch(() => null);
+    await listenForJoiners();
+    return withWorkspace({ ok: true, workspace: ws });
   },
 
   /**
@@ -1461,35 +1492,39 @@ const routes = {
     const person = (await github.session())?.login || me.displayName;
     const ws = await membersOf.current();
 
-    if (!ws) {
-      const found = await joining.askToJoin({ code: body?.code, card: me, person });
-      if (!found.ok) return found;
-
-      const kept = await membersOf.remember(found.workspace);
-      await anywhere.beAbout({ workspace: kept.workspace }).catch(() => null);
-      // The beacon is keyed on the workspace, so joining one changes which key
-      // this computer answers to. Restarted here rather than on the next thing
-      // that happens to touch it.
-      await lan.stop().catch(() => null);
-      await localSharing().catch(() => null);
-      await activity.remember('joined', { who: me.displayName, what: kept.workspace.name });
-
-      return withWorkspace({
-        ok: true,
-        workspace: kept.workspace,
-        sentence: `You are in ${kept.workspace.name}.`,
-        action: found.from ? `${found.from} let this computer in.` : null,
-      });
+    // A code made by the current workspace can be decided locally. Any other
+    // code may belong to another workspace this computer has never seen, so it
+    // must use the existing discovery errand even though a membership exists.
+    if (ws && membersOf.hasInvite(ws, body?.code)) {
+      const out = await membersOf.redeem({ workspace: ws, code: body?.code, person, device: me });
+      if (out.ok) {
+        await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
+        await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
+        await lan.stop().catch(() => null);
+        await localSharing().catch(() => null);
+      }
+      return await withWorkspace(out);
     }
 
-    const out = await membersOf.redeem({ workspace: ws, code: body?.code, person, device: me });
-    if (out.ok) {
-      await anywhere.beAbout({ workspace: out.workspace }).catch(() => null);
-      await activity.remember('joined', { who: me.displayName, what: out.workspace.name });
-      await lan.stop().catch(() => null);
-      await localSharing().catch(() => null);
-    }
-    return await withWorkspace(out);
+    const found = await joining.askToJoin({ code: body?.code, card: me, person });
+    if (!found.ok) return found;
+
+    if (ws) await anywhere.stop().catch(() => null);
+    const kept = await membersOf.remember(found.workspace);
+    await anywhere.beAbout({ workspace: kept.workspace }).catch(() => null);
+    // The beacon is keyed on the workspace, so joining one changes which key
+    // this computer answers to. Restarted here rather than on the next thing
+    // that happens to touch it.
+    await lan.stop().catch(() => null);
+    await localSharing().catch(() => null);
+    await activity.remember('joined', { who: me.displayName, what: kept.workspace.name });
+
+    return withWorkspace({
+      ok: true,
+      workspace: kept.workspace,
+      sentence: `You are in ${kept.workspace.name}.`,
+      action: found.from ? `${found.from} let this computer in.` : null,
+    });
   },
 
   // -- who may do what -------------------------------------------------------
@@ -2556,12 +2591,14 @@ const routes = {
     if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: 'Make one or join one.' };
 
     const me = await device.card();
+    const clientId = /^[0-9a-f-]{20,80}$/i.test(String(body?.id ?? '')) ? String(body.id) : null;
     const one = chatter.anEvent({
       kind: 'note',
       workspace: ws.id,
       from: me.deviceId,
       fromName: me.displayName,
       text,
+      ...(clientId ? { id: clientId } : {}),
     });
 
     await chatter.remember(one);
