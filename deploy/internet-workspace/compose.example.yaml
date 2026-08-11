@@ -1,0 +1,28 @@
+services:
+  workspace-plane:
+    build:
+      context: ../..
+      dockerfile: deploy/internet-workspace/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: "47781"
+      VIBERANT_PLANE_STATE: /var/lib/viberant/workspace-plane.json
+      VIBERANT_TRUST_PROXY: "1"
+    volumes:
+      - workspace-plane:/var/lib/viberant
+    ports:
+      - "127.0.0.1:47781:47781"
+
+  workspace-relay:
+    build:
+      context: ../..
+      dockerfile: deploy/internet-workspace/Dockerfile
+    command: ["node", "app/relay.mjs"]
+    restart: unless-stopped
+    environment:
+      PORT: "47780"
+    ports:
+      - "47780:47780/tcp"
+
+volumes:
+  workspace-plane:

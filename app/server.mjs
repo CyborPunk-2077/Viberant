@@ -50,6 +50,7 @@ import * as peers from './peers.mjs';
 import * as device from './device.mjs';
 import * as membersOf from './members.mjs';
 import * as anywhere from './anywhere.mjs';
+import * as plane from './plane.mjs';
 import * as joining from './joining.mjs';
 import * as chatter from './chatter.mjs';
 import * as remote from './remote.mjs';
@@ -63,6 +64,7 @@ import * as carried from './carried.mjs';
 import * as activity from './activity.mjs';
 import * as keybinds from './keybinds.mjs';
 import * as webtarget from './webtarget.mjs';
+import * as webcompanion from './webcompanion.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -475,6 +477,36 @@ async function localSharing() {
   return lan.start({ machine, name: await myName(), account: state.account, key });
 }
 
+/** Offers as another workspace member may see them, with no private paths. */
+async function workspaceOffers() {
+  return Promise.all((await lan.offers()).map(async (one) => {
+    if (one.kind !== 'project') return one;
+    const bound = await github.bindingOf(one.path).catch(() => null);
+    return {
+      ...one,
+      github: bound?.bound ? {
+        owner: bound.owner, repo: bound.repo, url: bound.url, branch: bound.branch,
+      } : null,
+    };
+  }));
+}
+
+/** LAN first; the authenticated direct/relay channel when the device is away. */
+async function workspaceOffersFrom(deviceId) {
+  const nearby = await lan.offeredBy(deviceId).catch(() => null);
+  if (nearby?.ok) return nearby;
+
+  const found = await anywhere.reach(deviceId);
+  if (!found.ok) return found;
+  const theirs = await askPeer(found.peer, { what: 'offers' });
+  found.peer.close?.();
+  return theirs?.ok ? theirs : {
+    ok: false,
+    sentence: 'That computer did not share its available projects.',
+    action: 'Try again in a moment.',
+  };
+}
+
 /**
  * Answer people trying to join, whenever there is a live invitation.
  *
@@ -504,7 +536,7 @@ async function listenForJoiners() {
 
   const live = await membersOf.liveInvites(ws);
   if (!live.length) return joining.stopAnswering();
-  if (joining.isAnswering()) return null;
+  if (joining.isAnswering()) return joining.refreshRemoteInvitations();
 
   return joining.answerJoiners({
     liveOnes: async () => {
@@ -530,6 +562,20 @@ const json = (res, body, code = 200) => {
   res.writeHead(code, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
   res.end(JSON.stringify(body));
 };
+
+function companionCors(res, origin) {
+  let allowed = false;
+  try {
+    const url = new URL(String(origin ?? ''));
+    allowed = url.protocol === 'https:' || ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  } catch { allowed = false; }
+  if (allowed) res.setHeader('access-control-allow-origin', origin);
+  res.setHeader('vary', 'Origin');
+  res.setHeader('access-control-allow-methods', 'POST, OPTIONS');
+  res.setHeader('access-control-allow-headers', 'authorization, content-type');
+  res.setHeader('access-control-allow-private-network', 'true');
+  res.setHeader('cache-control', 'no-store');
+}
 
 const noProject = { ok: false, sentence: 'No project is open.', action: 'Pick one first.' };
 
@@ -661,6 +707,13 @@ const routes = {
     const r = await settings.set(body.id, body.value);
     if (r.ok && body.id === 'watchFolder') await watchProject(current?.dir ?? null);
     if (r.ok && body.id === 'localSharing') await localSharing();
+    if (r.ok && (body.id === 'workspaceService' || body.id === 'relayService')) {
+      const ws = await membersOf.current();
+      await anywhere.stop().catch(() => null);
+      plane.reset();
+      if (ws) await anywhere.beAbout({ workspace: ws }).catch(() => null);
+      await joining.refreshRemoteInvitations().catch(() => null);
+    }
     /*
      * What this computer is called is one name, not two.
      *
@@ -754,6 +807,91 @@ const routes = {
   async 'POST /project/platforms/create'() {
     if (!current) return noProject;
     return webtarget.create(current.dir);
+  },
+
+  /** Begin an explicit, loopback-only Web Companion pairing. */
+  async 'GET /web-companion/pair'({ url, res }) {
+    const remembered = await projects.remembered();
+    const candidates = [
+      ...(current ? [{ name: current.name, path: current.dir }] : []),
+      ...remembered.map((one) => ({ name: one.name, path: one.path })),
+    ];
+    const wanted = String(url.searchParams.get('project') ?? '');
+    const project = candidates.find((one) => one.path && webcompanion.projectId(one.path) === wanted);
+    const pairing = project ? webcompanion.beginPairing({
+      origin: url.searchParams.get('origin'),
+      returnTo: url.searchParams.get('return'),
+      challenge: url.searchParams.get('challenge'),
+      state: url.searchParams.get('state'),
+      project: { ...project, id: wanted },
+    }) : null;
+    const headers = {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
+      'x-frame-options': 'DENY',
+      'x-content-type-options': 'nosniff',
+    };
+    if (!pairing) {
+      res.writeHead(400, headers);
+      res.end('<!doctype html><meta charset="utf-8"><title>Viberant companion</title><p>This pairing request is invalid or the project is not on this computer.</p>');
+      return null;
+    }
+    const safe = (value) => String(value).replace(/[&<>"']/g, (one) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[one]));
+    res.writeHead(200, headers);
+    res.end(`<!doctype html><meta charset="utf-8"><title>Connect web companion</title>
+      <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#080b13;color:#eef0ff;font:15px system-ui}main{width:min(34rem,calc(100% - 3rem));padding:2rem;border:1px solid #30354a;border-radius:16px;background:#111522}h1{margin:.2rem 0 1rem}p{color:#b6bbca;line-height:1.5}.facts{padding:1rem;border:1px solid #272c3e;border-radius:10px}.actions{display:flex;gap:.75rem;margin-top:1.3rem}a{padding:.7rem 1rem;border-radius:8px;text-decoration:none;color:#fff;border:1px solid #343a50}a.allow{background:#7048e8;border-color:#8b67f2}</style>
+      <main><small>VIBERANT WEB COMPANION</small><h1>Allow this web version to connect?</h1>
+      <p>This grants <b>${safe(pairing.origin)}</b> access to the approved adapters for <b>${safe(pairing.project)}</b> on this computer. It does not grant process, desktop-window, device-driver, hidden-file, or credential access.</p>
+      <div class="facts">Available: project status, project file listing, and reading non-secret project files up to 1 MB.</div>
+      <div class="actions"><a class="allow" href="/web-companion/approve?id=${encodeURIComponent(pairing.id)}">Allow</a><a href="/web-companion/cancel?id=${encodeURIComponent(pairing.id)}">Cancel</a></div></main>`);
+    return null;
+  },
+
+  async 'GET /web-companion/approve'({ url, res }) {
+    const back = webcompanion.approve(url.searchParams.get('id'));
+    if (!back) {
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      res.end('This pairing request has expired. Return to the web version and try again.');
+      return null;
+    }
+    res.writeHead(302, { location: back, 'cache-control': 'no-store' });
+    res.end();
+    return null;
+  },
+
+  async 'GET /web-companion/cancel'({ url, res }) {
+    webcompanion.cancel(url.searchParams.get('id'));
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'x-frame-options': 'DENY' });
+    res.end('<!doctype html><meta charset="utf-8"><title>Viberant companion</title><p>Nothing was connected. You can close this tab.</p>');
+    return null;
+  },
+
+  async 'OPTIONS /web-companion/token'({ req, res }) {
+    companionCors(res, req.headers.origin);
+    res.writeHead(204); res.end(); return null;
+  },
+
+  async 'OPTIONS /web-companion/call'({ req, res }) {
+    companionCors(res, req.headers.origin);
+    res.writeHead(204); res.end(); return null;
+  },
+
+  async 'POST /web-companion/token'({ body, req, res }) {
+    const origin = String(req.headers.origin ?? '');
+    companionCors(res, origin);
+    const token = await webcompanion.exchange({ ...body, origin });
+    return token
+      ? { ok: true, ...token }
+      : { ok: false, sentence: 'That companion pairing could not be completed.', action: 'Start the connection again from the web version.' };
+  },
+
+  async 'POST /web-companion/call'({ body, req, res }) {
+    const origin = String(req.headers.origin ?? '');
+    companionCors(res, origin);
+    const session = await webcompanion.authorize({ authorization: req.headers.authorization, origin });
+    if (!session) return { ok: false, sentence: 'This web companion is not connected.', action: 'Connect it to Viberant again.' };
+    return webcompanion.call(session, body);
   },
 
   async 'POST /projects/mark'({ body }) {
@@ -1008,7 +1146,12 @@ const routes = {
     // Asked afresh every time. This is the one place where a few seconds of a
     // remembered answer would be the difference between noticing you signed in
     // and appearing not to.
-    return { ok: true, signin: signin.state(), github: await github.who({ fresh: true }) };
+    const account = await github.who({ fresh: true });
+    // Read the attempt after the account request. The device poll may finish
+    // while that request is in flight; returning the earlier state made the
+    // visible sign-in page wait for another cycle, or indefinitely after a
+    // slow overlapping browser request.
+    return { ok: true, signin: signin.state(), github: account };
   },
 
   async 'GET /github/explore'({ url }) {
@@ -1028,7 +1171,7 @@ const routes = {
 
   async 'POST /google/signin'() {
     const now = await settings.all();
-    const begun = google.begin({ clientId: now.googleClientId, clientSecret: now.googleClientSecret });
+    const begun = google.begin({ clientId: now.googleClientId });
     return {
       ...begun,
       // The attempt's own ok is null while it runs; it must not overwrite the
@@ -1040,7 +1183,12 @@ const routes = {
   },
 
   async 'GET /google/signin'() {
-    return { ok: true, signin: google.state(), google: await google.who() };
+    const account = await google.who();
+    return { ok: true, signin: google.state(), google: account };
+  },
+
+  async 'POST /google/signin/stop'() {
+    return google.forget();
   },
 
   async 'POST /google/signout'({ body }) {
@@ -1176,7 +1324,7 @@ const routes = {
       byName.get(key).copies.push(who);
     };
 
-    for (const one of await lan.offers()) {
+    for (const one of await workspaceOffers()) {
       if (one.kind === 'file') continue;
       note(one.name, {
         deviceId: me.deviceId,
@@ -1188,13 +1336,14 @@ const routes = {
         path: one.path,
         files: one.files ?? null,
         bytes: one.bytes ?? null,
+        github: one.github ?? null,
       });
     }
 
     // Asked of each computer that is actually here. One that is not simply has
     // no copy listed, which is true rather than a guess.
     await Promise.all(everybody.filter((who) => !who.you && who.online).map(async (who) => {
-      const theirs = await lan.offeredBy(who.deviceId).catch(() => null);
+      const theirs = await workspaceOffersFrom(who.deviceId).catch(() => null);
       for (const one of theirs?.offers ?? []) {
         if (one.kind === 'file') continue;
         note(one.name, {
@@ -1206,6 +1355,7 @@ const routes = {
           offer: one.id,
           files: one.files ?? null,
           bytes: one.bytes ?? null,
+          github: one.github ?? null,
         });
       }
     }));
@@ -1297,6 +1447,13 @@ const routes = {
 
       return {
         ...one,
+        github: (() => {
+          const sources = [...new Map(withNews.filter((copy) => copy.github)
+            .map((copy) => [`${copy.github.owner}/${copy.github.repo}`, copy.github])).values()];
+          if (sources.length === 1) return { state: 'SHARED', ...sources[0] };
+          if (sources.length > 1) return { state: 'DIFFERENT', sources };
+          return null;
+        })(),
         copies: withNews,
         mine: withNews.find((c) => c.you) ?? null,
         others: withNews.filter((c) => !c.you),
@@ -1412,6 +1569,54 @@ const routes = {
       // Names only, and only a handful: this is a summary, not a file browser.
       examples: [...work.extra.slice(0, 5), ...work.changed.slice(0, 5)].slice(0, 8),
     };
+  },
+
+  /** Use the common GitHub destination for one offered workspace project. */
+  async 'POST /team/project/github'({ body }) {
+    const ws = await membersOf.current();
+    if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: 'Open a workspace first.' };
+
+    const offered = await workspaceOffers();
+    const local = offered.find((one) => one.kind === 'project'
+      && (one.id === body?.offer || one.name.toLowerCase() === String(body?.project ?? '').toLowerCase()));
+    if (!local) {
+      return { ok: false, sentence: 'That shared project is not on this computer.', action: 'Bring a copy here first.' };
+    }
+
+    const shared = await routes['GET /team/projects']();
+    const project = shared.projects?.find((one) => one.name.toLowerCase() === local.name.toLowerCase());
+    if (!project?.github || project.github.state === 'DIFFERENT') {
+      return {
+        ok: false,
+        sentence: project?.github?.state === 'DIFFERENT'
+          ? 'The workspace copies point at different GitHub projects.'
+          : 'Nobody has connected this shared project to GitHub yet.',
+        action: project?.github?.state === 'DIFFERENT'
+          ? 'Choose the common GitHub project before sending anything.'
+          : 'Connect one copy to GitHub first.',
+      };
+    }
+
+    const common = project.github;
+    const action = String(body?.action ?? 'connect');
+    if (action === 'connect') {
+      return github.connectExisting(local.path, { owner: common.owner, repo: common.repo });
+    }
+
+    const bound = await github.bindingOf(local.path);
+    if (!bound.bound || bound.owner !== common.owner || bound.repo !== common.repo) {
+      return {
+        ok: false,
+        sentence: 'This copy is not connected to the workspace’s common GitHub project.',
+        action: 'Connect it first. Its current destination will be kept.',
+      };
+    }
+    if (action === 'latest') return github.getLatest(local.path);
+    if (action === 'send') {
+      return github.saveAndSend(local.path, { message: body?.message, makeIfMissing: false });
+    }
+    if (action === 'review') return github.requestReview(local.path, { title: body?.title });
+    return { ok: false, sentence: 'That GitHub action is not available.', action: 'Choose connect, get latest, send, or ask for review.' };
   },
 
   async 'POST /team/leave'({ body }) {
@@ -2900,8 +3105,8 @@ data: ${JSON.stringify(one)}
    */
   async 'GET /local/offers'({ url }) {
     const which = url.searchParams.get('machine');
-    if (!which) return { ok: true, offers: await lan.offers(), you: true };
-    return lan.offeredBy(which);
+    if (!which) return { ok: true, offers: await workspaceOffers(), you: true };
+    return workspaceOffersFrom(which);
   },
 
   // -- the same project, on two computers at once -------------------------
@@ -3289,6 +3494,11 @@ async function answerPeer(peer, asked) {
     const one = (await lan.offers()).find((o) => o.id === asked.offer);
     if (!one) return reply({ ok: false });
     return reply({ ok: true, ...(await syncing.manifest(one.path, { everything: one.everything })) });
+  }
+
+  if (asked.what === 'offers') {
+    if (!membersOf.may(ws, from, 'seeOffered')) return reply({ ok: false });
+    return reply({ ok: true, offers: await workspaceOffers() });
   }
 
   if (asked.what === 'can') {

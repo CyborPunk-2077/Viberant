@@ -293,6 +293,11 @@ export function dialRelay({ host, port = RELAY_PORT, ticket, within = 60000 }) {
          * are paired — and a socket with its listener removed keeps reading into
          * nothing, so putting it back was a race rather than a fix.
          */
+        // Stop the stream before handing it to the next reader. Bytes that
+        // arrive after this callback but before that reader attaches otherwise
+        // disappear into a flowing socket with no listener. The next reader
+        // resumes it after attaching.
+        socket.pause();
         socket.off('data', onData);
         clearTimeout(waiting);
         const alreadyRead = Buffer.concat([...got.slice(i + 1).map(framed), reader.rest]);

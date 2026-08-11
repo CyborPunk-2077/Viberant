@@ -83,16 +83,18 @@ describe('a layer takes what it started away with it', () => {
 
 describe('nothing asks forever', () => {
   const shouldStop = [
-    ['signing in to GitHub', 'async function signInToGitHub'],
-    ['signing in to Google', 'async function signInToGoogle'],
+    ['signing in to GitHub', 'async function signInToGitHub', '/github/signin/stop'],
+    ['signing in to Google', 'async function signInToGoogle', '/google/signin/stop'],
   ];
 
-  for (const [what, opening] of shouldStop) {
+  for (const [what, opening, stopAt] of shouldStop) {
     test(`${what} stops when its window goes, however it goes`, () => {
       const body = bodyOf(page, opening);
       assert.match(body, /setInterval/, `${what} no longer asks repeatedly, so this test is stale`);
-      assert.match(body, /whenLayerCloses\(\(\) => clearInterval\(watching\)\)/,
+      assert.match(body, /whenLayerCloses\(\(\) => \{[\s\S]*?clearInterval\(watching\)/,
         `${what} keeps asking after its window is closed from the corner`);
+      assert.ok(body.includes(`post('${stopAt}')`),
+        `${what} closes its window but leaves the server-side attempt running`);
     });
   }
 

@@ -35,6 +35,14 @@ import { createServer, createConnection } from 'node:net';
 import { createSocket } from 'node:dgram';
 import { createHash } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
+import * as device from './device.mjs';
+import * as members from './members.mjs';
+import * as plane from './plane.mjs';
+import * as relay from './relay.mjs';
+import { framed, frames } from './peers.mjs';
+import * as settings from './settings.mjs';
+import * as services from './services.mjs';
+import { dialWebSocketRelay } from './cloudflare-relay.mjs';
 
 /**
  * Its own door, so nothing about joining shares a path with anything else.
@@ -113,6 +121,36 @@ const quietly = (line) => { try { return JSON.parse(line); } catch { return null
 // ---------------------------------------------------------------------------
 
 let listening = null;
+let remoteRefresh = null;
+let answering = null;
+
+async function relayAddress() {
+  const said = String((await settings.get('relayService')) || await services.relayService()).trim();
+  return services.relayEndpoint(said, relay.RELAY_PORT);
+}
+
+async function dialConfiguredRelay(where, ticket) {
+  if (where?.kind === 'websocket') return dialWebSocketRelay({ url: where.url, ticket });
+  if (where?.host) return relay.dialRelay({ host: where.host, port: where.port, ticket });
+  return null;
+}
+
+async function offerInvitationsRemotely() {
+  if (!answering) return;
+  const ws = await members.current();
+  const where = await relayAddress();
+  const service = await plane.plane();
+  if (!ws || !where || typeof service.offerInvitation !== 'function') return;
+  const owner = await device.card();
+  for (const one of await answering.liveOnes()) {
+    await service.offerInvitation({
+      workspace: ws.id, scope: members.beaconKey(ws), mark: one.of,
+      expiresAt: one.expiresAt, owner, relay: where,
+    }).catch(() => null);
+  }
+}
+
+export const refreshRemoteInvitations = () => offerInvitationsRemotely();
 
 /**
  * Answer people trying to join, for as long as there is a live invitation.
@@ -128,6 +166,7 @@ let listening = null;
  */
 export async function answerJoiners({ liveOnes, letThemIn, whoAmI }) {
   await stopAnswering();
+  answering = { liveOnes, letThemIn, whoAmI };
 
   const tries = new Map();
   const tooMany = (from) => {
@@ -227,10 +266,16 @@ export async function answerJoiners({ liveOnes, letThemIn, whoAmI }) {
   }
 
   listening = { door, shouts };
+  await offerInvitationsRemotely().catch(() => null);
+  remoteRefresh = setInterval(() => offerInvitationsRemotely().catch(() => null), 30_000);
+  remoteRefresh.unref?.();
   return { ok: true, port: door.address()?.port };
 }
 
 export async function stopAnswering() {
+  clearInterval(remoteRefresh);
+  remoteRefresh = null;
+  answering = null;
   const was = listening;
   listening = null;
   if (!was) return;
@@ -275,6 +320,11 @@ export function publicPartOf(workspace) {
  * somebody looking in the wrong place.
  */
 export async function askToJoin({ code, card, person, waitFor = WAIT_FOR }) {
+  const service = await plane.plane();
+  if (service.kind === 'over') {
+    const remote = await askAcrossInternet({ code, card, person });
+    if (remote?.ok || remote?.answered) return remote;
+  }
   const mark = markOf(code);
   const shouts = createSocket({ type: 'udp4', reuseAddr: true });
   shouts.on('error', () => { /* answered by the timeout below */ });
@@ -304,12 +354,13 @@ export async function askToJoin({ code, card, person, waitFor = WAIT_FOR }) {
   try { shouts.close(); } catch { /* already gone */ }
 
   if (!found) {
+    const remote = service.kind === 'over' ? null : await askAcrossInternet({ code, card, person });
+    if (remote?.ok || remote?.answered) return remote;
     return {
       ok: false,
       nobodyAnswered: true,
-      sentence: 'Nobody on this network is offering a workspace that code opens.',
-      action: 'The computer that made the code has to be on this network with Viberant open. '
-        + 'Check the code, and that the invitation has not run out.',
+      sentence: 'No reachable computer is offering a workspace that code opens.',
+      action: 'The computer that made the code must have Viberant open. Check the code and that the invitation has not run out.',
     };
   }
 
@@ -331,6 +382,82 @@ export async function askToJoin({ code, card, person, waitFor = WAIT_FOR }) {
     sentence: `${found.name ?? 'That computer'} answered and then could not be reached.`,
     action: 'Try again in a moment.',
   };
+}
+
+function oneFrame(socket, alreadyRead = Buffer.alloc(0), within = 15_000) {
+  return new Promise((done) => {
+    const reader = frames();
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(waiting);
+      socket.off('data', onData);
+      done(value);
+    };
+    const onData = (chunk) => {
+      let got;
+      try { got = reader.take(chunk); } catch { return finish(null); }
+      if (got.length) finish(got[0]);
+    };
+    const waiting = setTimeout(() => finish(null), within);
+    socket.on('data', onData);
+    if (alreadyRead.length) onData(alreadyRead);
+    if (!settled && socket.isPaused?.()) socket.resume();
+  });
+}
+
+/** Join through the configured public plane and encrypted relay. */
+async function askAcrossInternet({ code, card, person }) {
+  const service = await plane.plane();
+  if (typeof service.findInvitation !== 'function' || typeof service.ticketToJoin !== 'function') return null;
+  const mark = markOf(code);
+  const found = await service.findInvitation({ mark });
+  if (!found?.ok) return null;
+  const made = await service.ticketToJoin({ mark, from: card });
+  if (!made?.ok || !made.ticket || !made.owner?.agreePublic || (!made.relay?.host && !made.relay?.url)) return null;
+
+  const joined = await dialConfiguredRelay(made.relay, made.ticket);
+  if (!joined) return { answered: true, ok: false, sentence: 'The workspace computer did not reach the relay.', action: 'Try again in a moment.' };
+
+  const key = await device.sharedWith(made.owner.agreePublic, { salt: made.ticket, label: 'viberant-join' });
+  joined.socket.write(framed(device.seal(key, JSON.stringify({ what: 'join', code, card, person }))));
+  const raw = await oneFrame(joined.socket, joined.alreadyRead);
+  joined.socket.destroy();
+  const clear = raw ? device.open(key, raw) : null;
+  let said;
+  try { said = clear ? JSON.parse(clear.toString('utf8')) : null; } catch { said = null; }
+  if (!said) return { answered: true, ok: false, sentence: 'The workspace computer returned an unreadable answer.', action: 'Try again.' };
+  if (!said.ok) return { answered: true, ok: false, sentence: said.sentence ?? 'That invitation does not work.', action: 'Ask for a new code.' };
+  return { answered: true, ok: true, workspace: said.workspace, from: made.owner.displayName ?? null };
+}
+
+/** Answer a relay introduction marked as a join, before ordinary membership exists. */
+export async function answerRelayJoin(joined, invitation) {
+  if (!answering || !invitation?.card?.agreePublic) { joined.socket.destroy(); return false; }
+  const live = await answering.liveOnes();
+  if (!live.some((one) => one.of === invitation.mark)) { joined.socket.destroy(); return false; }
+
+  const key = await device.sharedWith(invitation.card.agreePublic, {
+    salt: invitation.ticket, label: 'viberant-join',
+  });
+  const raw = await oneFrame(joined.socket, joined.alreadyRead);
+  const clear = raw ? device.open(key, raw) : null;
+  let asked;
+  try { asked = clear ? JSON.parse(clear.toString('utf8')) : null; } catch { asked = null; }
+  if (!asked || asked.what !== 'join' || asked.card?.deviceId !== invitation.from) {
+    joined.socket.destroy();
+    return false;
+  }
+
+  const out = await quiet(() => answering.letThemIn(
+    asked.code, asked.card, String(asked.person ?? '').slice(0, 80),
+  ));
+  const answer = out?.ok
+    ? { ok: true, workspace: publicPartOf(out.workspace) }
+    : { ok: false, sentence: out?.sentence ?? 'That invitation does not work.' };
+  joined.socket.end(framed(device.seal(key, JSON.stringify(answer))));
+  return !!out?.ok;
 }
 
 /** Say the code to one computer, down one connection, and read one answer. */

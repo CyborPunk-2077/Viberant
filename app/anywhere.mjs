@@ -23,6 +23,9 @@ import * as plane from './plane.mjs';
 import * as members from './members.mjs';
 import * as device from './device.mjs';
 import * as lan from './lan.mjs';
+import * as joining from './joining.mjs';
+import * as services from './services.mjs';
+import { dialWebSocketRelay } from './cloudflare-relay.mjs';
 
 /** Where relays are, when nobody has said otherwise. */
 export const RELAYS = [];
@@ -50,7 +53,9 @@ export async function around({ workspace = null } = {}) {
   let planeReachable = true;
   try {
     const service = await plane.plane();
-    const asked = await service.whoIsAbout({ workspace: ws.id, notMe: me.deviceId });
+    const asked = await service.whoIsAbout({
+      workspace: ws.id, scope: members.beaconKey(ws), notMe: me.deviceId,
+    });
     planeReachable = asked.reachable !== false;
     said = asked.ok ? asked : { devices: [] };
   } catch { planeReachable = false; }
@@ -66,7 +71,7 @@ export async function around({ workspace = null } = {}) {
     const onThisNetwork = near.has(id);
     const elsewhere = heard.get(id);
     const kind = onThisNetwork ? peers.LAN
-      : elsewhere?.hereNow ? (elsewhere.directPort ? peers.DIRECT : peers.RELAY)
+      : elsewhere?.hereNow ? ((elsewhere.direct?.length || elsewhere.directPort) ? peers.DIRECT : peers.RELAY)
         : null;
 
     const card = {
@@ -177,12 +182,15 @@ async function oneWay(way, { ws, deviceId, wanted }) {
   const service = await plane.plane();
 
   if (way === peers.DIRECT) {
-    const asked = await service.whoIsAbout({ workspace: ws.id });
+    const asked = await service.whoIsAbout({ workspace: ws.id, scope: members.beaconKey(ws) });
     const them = (asked.devices ?? []).find((d) => d.deviceId === deviceId);
-    if (!them?.directPort || !them.addresses?.length) return null;
+    const doors = Array.isArray(them?.direct) && them.direct.length
+      ? them.direct
+      : (them?.addresses ?? []).map((host) => ({ host, port: them.directPort }));
+    if (!doors.length) return null;
 
-    for (const address of them.addresses) {
-      const got = await peers.dialDirect({ address, port: them.directPort, expect: deviceId });
+    for (const door of doors) {
+      const got = await peers.dialDirect({ address: door.host, port: door.port, expect: deviceId });
       if (got) return got;
     }
     return null;
@@ -193,10 +201,16 @@ async function oneWay(way, { ws, deviceId, wanted }) {
     if (!where) return null;
 
     const me = await device.card();
-    const asked = await service.ticketFor({ workspace: ws.id, from: me.deviceId, to: deviceId });
+    const asked = await service.ticketFor({
+      workspace: ws.id,
+      scope: members.beaconKey(ws),
+      from: me.deviceId,
+      to: deviceId,
+      relay: where,
+    });
     if (!asked?.ok || !asked.ticket) return null;
 
-    const joined = await relay.dialRelay({ host: where.host, port: where.port, ticket: asked.ticket });
+    const joined = await dialRelay(where, asked.ticket);
     if (!joined) return null;
 
     // The relay hands over what it had already read, so nothing is lost in the
@@ -215,12 +229,24 @@ async function oneWay(way, { ws, deviceId, wanted }) {
 /** Which relay to use, from the setting, or none. */
 async function whichRelay() {
   const settings = await import('./settings.mjs');
-  const said = String((await settings.get('relayService')) ?? '').trim();
+  const said = String((await settings.get('relayService')) || await services.relayService()).trim();
   const from = said ? [said] : RELAYS;
   if (!from.length) return null;
+  return services.relayEndpoint(from[0], relay.RELAY_PORT);
+}
 
-  const [host, port] = from[0].split(':');
-  return { host, port: Number(port) || relay.RELAY_PORT };
+async function dialRelay(where, ticket) {
+  if (where?.kind === 'websocket') return dialWebSocketRelay({ url: where.url, ticket });
+  if (where?.host) return relay.dialRelay({ host: where.host, port: where.port, ticket });
+  return null;
+}
+
+function sameRelay(a, b) {
+  if (!a || !b) return false;
+  if (a.kind === 'websocket' || b.kind === 'websocket' || a.url || b.url) {
+    return String(a.url ?? '') === String(b.url ?? '');
+  }
+  return a.host === b.host && Number(a.port) === Number(b.port);
 }
 
 /**
@@ -233,12 +259,14 @@ async function whichRelay() {
  */
 let saying = null;
 let listening = null;
+let ticketListener = 0;
 
 export async function beAbout({ workspace = null } = {}) {
   const ws = workspace ?? await members.current();
   if (!ws) return { ok: false, sentence: 'This computer is not in a workspace.', action: 'Make one, or join one.' };
 
   const me = await device.card();
+  const scope = members.beaconKey(ws);
 
   /**
    * The door, opened once and answered fresh every time.
@@ -286,12 +314,19 @@ export async function beAbout({ workspace = null } = {}) {
 
   const hello = async () => {
     const seen = await peers.whereTheInternetSeesMe();
+    const configuredDirect = services.hostAndPort(await services.directService(), peers.DIRECT_PORT);
+    const direct = [
+      ...(configuredDirect ? [configuredDirect] : []),
+      ...(seen ? [{ host: seen.address, port: peers.DIRECT_PORT }] : []),
+    ].filter((one, at, all) => all.findIndex((other) => other.host === one.host && other.port === one.port) === at);
     const service = await plane.plane();
     await service.announce({
       workspace: ws.id,
+      scope,
       card: me,
       addresses: seen ? [seen.address] : [],
       directPort: seen ? peers.DIRECT_PORT : null,
+      direct,
     }).catch(() => null);
   };
 
@@ -301,15 +336,77 @@ export async function beAbout({ workspace = null } = {}) {
     saying.unref?.();
   }
 
+  // The caller receives a relay ticket directly. This quiet long-poll gives
+  // the same ticket to the computer being reached, without page polling or a
+  // second signalling path.
+  const generation = ++ticketListener;
+  const waitForRelay = async () => {
+    let failures = 0;
+    while (ticketListener === generation) {
+      const service = await plane.plane();
+      if (typeof service.waitForTicket !== 'function') return;
+      const asked = await service.waitForTicket({
+        workspace: ws.id, scope, deviceId: me.deviceId, within: 20_000,
+      }).catch(() => null);
+      if (ticketListener !== generation) return;
+      if (!asked?.ok) {
+        // A quota, a network handover, or a sleeping service must not become a
+        // tight request loop. LAN/direct stay alive while the public path backs
+        // off, then reconnects on its own.
+        failures += 1;
+        const wait = Math.min(30_000, 500 * (2 ** Math.min(failures, 6)));
+        await new Promise((done) => {
+          const timer = setTimeout(done, wait);
+          timer.unref?.();
+        });
+        continue;
+      }
+      failures = 0;
+      const invitation = asked?.ticket;
+      if (!invitation) continue;
+
+      const live = members.now() ?? ws;
+      const from = invitation.from;
+      const configured = await whichRelay();
+      const expectedRelay = sameRelay(configured, invitation.relay);
+      if (invitation.kind === 'join') {
+        if (!expectedRelay || live.id !== invitation.workspace) continue;
+        const joined = await dialRelay(configured, invitation.ticket);
+        if (joined) await joining.answerRelayJoin(joined, invitation).catch(() => joined.socket.destroy());
+        continue;
+      }
+
+      const allowed = live.id === invitation.workspace
+        && live.devices?.[from] && !members.isRevoked(live, from);
+      if (!allowed || !expectedRelay) continue;
+
+      const joined = await dialRelay(configured, invitation.ticket);
+      if (!joined || ticketListener !== generation) {
+        joined?.socket?.destroy?.();
+        continue;
+      }
+      const known = await peers.greet(joined.socket, {
+        expect: from, alreadyRead: joined.alreadyRead,
+      });
+      if (!known) { joined.socket.destroy(); continue; }
+      arrived(peers.conversation(joined.socket, { ...known, kind: peers.RELAY }), live);
+    }
+  };
+  waitForRelay().catch(() => null);
+
   return { ok: true, sentence: `${me.displayName} is about.` };
 }
 
 /** Stop saying hello and stop listening. */
 export async function stop() {
+  ticketListener += 1;
   if (saying) { clearInterval(saying); saying = null; }
   if (listening) { listening.close(); listening = null; }
   const me = await device.card().catch(() => null);
-  if (me) await (await plane.plane()).forget(me.deviceId).catch(() => null);
+  const ws = members.now();
+  if (me && ws) await (await plane.plane()).forget({
+    workspace: ws.id, scope: members.beaconKey(ws), deviceId: me.deviceId,
+  }).catch(() => null);
   return { ok: true };
 }
 
@@ -317,4 +414,4 @@ export async function stop() {
 let arrived = () => {};
 export const whenSomebodyArrives = (fn) => { arrived = fn; };
 
-export const __testOnly = { oneWay, whichRelay };
+export const __testOnly = { oneWay, whichRelay, dialRelay, sameRelay };

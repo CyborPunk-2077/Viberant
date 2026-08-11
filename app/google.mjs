@@ -7,13 +7,10 @@
  * sign-in button, anywhere, is backed by a client the developer registered.
  * There is no anonymous way in, by design.
  *
- * So this is the whole flow, built and working, waiting on the one thing only
- * the owner of the app can supply: a client of your own, made once, in about
- * five minutes. Paste its two values into Settings and the button becomes real.
- *
- * What it uses is Google's device flow — the one televisions use. Your browser
- * shows the account picker, the code travels from here to there, and nothing on
- * this computer ever sees your password.
+ * The publisher supplies one Desktop OAuth client ID. Viberant opens Google's
+ * ordinary browser account chooser and receives the authorization code on a
+ * short-lived loopback listener protected by PKCE and state. No confidential
+ * value is shipped and nothing on this computer ever sees a password.
  *
  * What signing in with Google gets you, honestly: your name and picture on this
  * computer, and a second name for your other computers to know you by. It does
@@ -24,6 +21,8 @@
 
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createServer } from 'node:http';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,7 +36,7 @@ const appOAuth = (() => {
 
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
-const DEVICE_CODE = 'https://oauth2.googleapis.com/device/code';
+const AUTHORIZE = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN = 'https://oauth2.googleapis.com/token';
 const PERSON = 'https://openidconnect.googleapis.com/v1/userinfo';
 const SCOPE = 'openid email profile';
@@ -55,6 +54,7 @@ export const state = () => (going
     ok: going.ok,
     sentence: going.sentence,
     action: going.action,
+    browser: true,
   }
   : null);
 
@@ -157,13 +157,12 @@ export async function remember(account) {
  * returning the previous attempt's ending as this one's beginning is a mistake
  * this codebase has now made twice (D-64).
  */
-export function begin({ clientId, clientSecret }) {
+export function begin({ clientId }) {
   if (going && going.finished === null) return state();
 
   clientId ||= process.env.VIBERANT_GOOGLE_CLIENT_ID || appOAuth.googleClientId;
-  clientSecret ||= process.env.VIBERANT_GOOGLE_CLIENT_SECRET || appOAuth.googleClientSecret;
 
-  if (!clientId || !clientSecret) {
+  if (!clientId) {
     return {
       running: false,
       ok: false,
@@ -175,96 +174,140 @@ export function begin({ clientId, clientSecret }) {
 
   going = {
     code: null,
-    at: 'https://www.google.com/device',
-    deviceCode: null,
+    at: null,
+    listener: null,
+    timeout: null,
     finished: null,
     ok: null,
     sentence: null,
     action: null,
   };
 
-  start(going, { clientId, clientSecret });
+  start(going, { clientId });
   return state();
 }
 
-async function start(mine, { clientId, clientSecret }) {
-  const asked = await form(DEVICE_CODE, { client_id: clientId, scope: SCOPE });
-  if (going !== mine) return;
+async function start(mine, { clientId }) {
+  const verifier = randomBytes(48).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const expectedState = randomBytes(24).toString('base64url');
 
-  if (!asked || !asked.device_code) {
-    return settle(mine, {
-      ok: false,
-      sentence: 'Google would not start a sign-in for this application.',
-      action: 'Check the client ID and secret in Settings, and that the consent screen is published.',
-    });
-  }
-
-  mine.code = asked.user_code;
-  mine.at = asked.verification_url ?? asked.verification_uri ?? mine.at;
-  mine.deviceCode = asked.device_code;
-
-  const every = Math.max(5, Number(asked.interval) || 5) * 1000;
-  const until = Date.now() + (Number(asked.expires_in) || 900) * 1000;
-
-  // Google says how often to ask and gets cross if you ask faster.
-  const poll = async () => {
-    if (going !== mine || mine.finished !== null) return;
-
-    if (Date.now() > until) {
-      return settle(mine, {
-        ok: false,
-        sentence: 'That sign-in was left too long, so Google stopped it.',
-        action: 'Start it again when you are ready.',
-      });
+  const listener = createServer(async (request, response) => {
+    const address = listener.address();
+    const callback = new URL(request.url ?? '/', `http://127.0.0.1:${address?.port ?? 0}`);
+    if (callback.pathname !== '/oauth2/callback') {
+      response.writeHead(404).end();
+      return;
     }
 
+    const receivedState = Buffer.from(callback.searchParams.get('state') ?? '');
+    const wantedState = Buffer.from(expectedState);
+    const stateMatches = receivedState.length === wantedState.length
+      && timingSafeEqual(receivedState, wantedState);
+    const code = callback.searchParams.get('code');
+    const refused = callback.searchParams.get('error');
+
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+    response.end(`<!doctype html><meta charset="utf-8"><title>Viberant sign-in</title>
+      <style>body{font:16px system-ui;background:#090b14;color:#eef0ff;display:grid;place-items:center;height:100vh;margin:0}main{max-width:34rem;padding:2rem;border:1px solid #33364d;border-radius:16px;background:#101321}h1{margin-top:0}</style>
+      <main><h1>${code && stateMatches && !refused ? 'Connected to Viberant' : 'Viberant could not finish signing in'}</h1>
+      <p>${code && stateMatches && !refused ? 'You can close this browser tab and return to Viberant.' : 'Return to Viberant and start the sign-in again.'}</p></main>`);
+
+    if (going !== mine || mine.finished !== null) return;
+    if (refused === 'access_denied') return settle(mine, {
+      ok: false,
+      sentence: 'That sign-in was turned down in the browser.',
+      action: 'Start again if you still want to connect this account.',
+    });
+    if (!stateMatches || !code) return settle(mine, {
+      ok: false,
+      sentence: 'Google returned a sign-in that did not belong to this attempt.',
+      action: 'Start the sign-in again from Viberant.',
+    });
+
+    const redirectUri = `http://127.0.0.1:${address.port}/oauth2/callback`;
     const got = await form(TOKEN, {
       client_id: clientId,
-      client_secret: clientSecret,
-      device_code: mine.deviceCode,
-      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      code,
+      code_verifier: verifier,
+      grant_type: 'authorization_code',
+      redirect_uri: redirectUri,
+    });
+    if (!got?.access_token) return settle(mine, {
+      ok: false,
+      sentence: 'Google authorized the browser but did not finish connecting Viberant.',
+      action: 'Check the publisher OAuth configuration and try again.',
     });
 
-    if (got?.access_token) {
-      const person = await person_(got.access_token);
-      // Added to whatever is already here rather than replacing it. Signing in
-      // to a second account used to sign you out of the first, silently.
-      await remember({
-        email: person?.email ?? null,
-        name: person?.name ?? null,
-        picture: person?.picture ?? null,
-        at: Date.now(),
-      });
+    const person = await person_(got.access_token);
+    if (!person?.email && !person?.name) return settle(mine, {
+      ok: false,
+      sentence: 'Google connected but did not return an identity.',
+      action: 'Try signing in again.',
+    });
 
-      return settle(mine, {
-        ok: true,
-        sentence: `Signed in to Google as ${person?.email ?? 'your account'}.`,
-        action: null,
-      });
-    }
+    await remember({
+      email: person.email ?? null,
+      name: person.name ?? null,
+      picture: person.picture ?? null,
+      at: Date.now(),
+    });
+    settle(mine, {
+      ok: true,
+      sentence: `Signed in to Google as ${person.email ?? person.name}.`,
+      action: null,
+    });
+  });
+  mine.listener = listener;
 
-    // Still waiting is not a failure; anything else is.
-    if (got?.error && got.error !== 'authorization_pending' && got.error !== 'slow_down') {
-      return settle(mine, {
-        ok: false,
-        sentence: got.error === 'access_denied'
-          ? 'That sign-in was turned down in the browser.'
-          : 'Google did not finish the sign-in.',
-        action: 'Try again.',
-      });
-    }
+  listener.on('error', () => {
+    if (going === mine && mine.finished === null) settle(mine, {
+      ok: false,
+      sentence: 'Viberant could not open its private sign-in callback on this computer.',
+      action: 'Restart Viberant and try again.',
+    });
+  });
 
-    setTimeout(poll, every).unref?.();
-  };
+  listener.listen(0, '127.0.0.1', () => {
+    if (going !== mine || mine.finished !== null) return listener.close();
+    const address = listener.address();
+    const redirectUri = `http://127.0.0.1:${address.port}/oauth2/callback`;
+    mine.at = `${AUTHORIZE}?${new URLSearchParams({
+      client_id: clientId,
+      code_challenge: challenge,
+      code_challenge_method: 'S256',
+      prompt: 'select_account',
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: SCOPE,
+      state: expectedState,
+    })}`;
+  });
 
-  setTimeout(poll, every).unref?.();
+  mine.timeout = setTimeout(() => settle(mine, {
+    ok: false,
+    sentence: 'That Google sign-in was left too long.',
+    action: 'Start it again when you are ready.',
+  }), 15 * 60 * 1000);
+  mine.timeout.unref?.();
 }
 
 function settle(mine, how) {
+  clearTimeout(mine.timeout);
+  mine.listener?.close?.();
   mine.finished = Date.now();
   mine.ok = how.ok;
   mine.sentence = how.sentence;
   mine.action = how.action;
+}
+
+export async function forget() {
+  if (going) {
+    clearTimeout(going.timeout);
+    going.listener?.close?.();
+  }
+  going = null;
+  return { ok: true };
 }
 
 /** One form post, never throwing — a network that is not there is an answer. */

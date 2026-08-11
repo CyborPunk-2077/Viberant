@@ -1,0 +1,5 @@
+{
+  "workspaceService": "https://viberant-workspace.viberant-workspace.workers.dev",
+  "relayService": "wss://viberant-workspace.viberant-workspace.workers.dev/relay",
+  "directAddress": ""
+}

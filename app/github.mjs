@@ -30,6 +30,12 @@ const git = (dir, ...args) => gitRuntime.run(dir, ...args);
 
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
 
+// Read what the project recorded, before Git applies any machine-local URL
+// rewrite. Those rewrites are useful for mirrors and tests, but they must not
+// make a shared GitHub project appear to point somewhere else.
+const originAddress = async (dir) => (await quiet(() => git(dir, 'config', '--get', 'remote.origin.url')))
+  ?? (await quiet(() => git(dir, 'remote', 'get-url', 'origin')));
+
 /**
  * Is the GitHub command on this computer at all?
  *
@@ -214,7 +220,7 @@ export async function bindingOf(dir) {
     return { ...base, isWorkspace: true, purpose: 'workspace' };
   }
 
-  const remote = await quiet(() => git(base.gitRoot, 'remote', 'get-url', 'origin'));
+  const remote = await originAddress(base.gitRoot);
   const url = remote ? remote.stdout.trim() : '';
   const named = ownerAndRepo(url);
 
@@ -413,7 +419,7 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
   }
   if (!now?.login) return { ok: false, ...notSignedIn };
 
-  const was = await quiet(() => git(gitRoot, 'remote', 'get-url', 'origin'));
+  const was = await originAddress(gitRoot);
   const old = was ? was.stdout.trim() : null;
   const to = `https://github.com/${now.login}/${name}.git`;
 
@@ -516,6 +522,77 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
     action: old
       ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
       : 'Send your work whenever you are ready.',
+  };
+}
+
+/**
+ * Point a local copy at an existing shared GitHub project.
+ *
+ * This is the workspace counterpart to `connectTo`: the owner may be another
+ * member, so the destination is explicit and permission is checked through the
+ * signed-in member's own GitHub account. Unrelated histories are never joined
+ * and the previous address is retained.
+ */
+export async function connectExisting(gitRoot, { owner, repo }) {
+  const at = resolve(gitRoot);
+  const now = await session();
+  if (!now?.login) return { ok: false, ...notSignedIn };
+  if (workspace.isInsideWorkspace(at)) {
+    return { ok: false, sentence: 'That is Viberant’s own workspace folder.', action: 'Choose the shared project folder.' };
+  }
+
+  const root = await quiet(() => git(at, 'rev-parse', '--show-toplevel'));
+  if (!root?.stdout.trim()) {
+    return {
+      ok: false,
+      sentence: 'This copy has not been saved locally yet.',
+      action: 'Make its first save, then connect it to the shared GitHub project.',
+    };
+  }
+
+  const there = await repoThere(owner, repo);
+  if (!there.ok) return there;
+  if (!there.exists || !there.canWrite) {
+    return {
+      ok: false,
+      sentence: there.exists
+        ? `${owner}/${repo} exists, but this GitHub account cannot send to it.`
+        : `${owner}/${repo} could not be found on GitHub.`,
+      action: there.exists
+        ? 'Ask the owner to grant this GitHub account access.'
+        : 'Check the shared GitHub project and try again.',
+    };
+  }
+
+  const remote = `https://github.com/${owner}/${repo}.git`;
+  const compared = there.empty ? { ok: true, empty: true } : await howTheyCompare(at, remote);
+  if (!compared.ok) {
+    return { ok: false, sentence: 'The shared GitHub project could not be read.', action: 'Check the connection and try again.' };
+  }
+  if (compared.unrelated) {
+    return {
+      ok: false,
+      unrelated: true,
+      sentence: 'This folder and the shared GitHub project contain unrelated work.',
+      action: 'Compare the two copies and choose what to keep. Nothing has been changed.',
+    };
+  }
+
+  const old = await originAddress(at);
+  if (old?.stdout.trim() && old.stdout.trim() !== remote) {
+    await quiet(() => git(at, 'remote', 'remove', 'where-it-used-to-go'));
+    await quiet(() => git(at, 'remote', 'add', 'where-it-used-to-go', old.stdout.trim()));
+  }
+  const changed = await quiet(() => git(at, 'remote', 'set-url', 'origin', remote))
+    || await quiet(() => git(at, 'remote', 'add', 'origin', remote));
+  if (!changed) {
+    return { ok: false, sentence: 'This copy could not be connected to the shared GitHub project.', action: 'Try again.' };
+  }
+  await useOwnCredentials(at);
+  return {
+    ok: true,
+    binding: await bindingOf(at),
+    sentence: `This copy now uses ${owner}/${repo} on GitHub.`,
   };
 }
 
@@ -634,7 +711,7 @@ export async function picture(dir) {
   const status = await quiet(() => git(dir, 'status', '--porcelain'));
   p.unsaved = status ? status.stdout.split('\n').filter((l) => l.trim()).length : 0;
 
-  const remote = await quiet(() => git(dir, 'remote', 'get-url', 'origin'));
+  const remote = await originAddress(dir);
   p.shared = remote ? remote.stdout.trim() || null : null;
   p.url = p.shared ? webAddress(p.shared) : null;
 
@@ -869,6 +946,82 @@ export async function saveAndSend(dir, { message, makeIfMissing = true, private:
     saved: true,
     sent: true,
     sentence: binding.owner ? 'Saved here and sent to GitHub.' : 'Saved here and sent to the shared copy.',
+  };
+}
+
+/**
+ * Put this computer's independently changed work on a new GitHub line and ask
+ * the common project to review it. The common line is never overwritten and
+ * no force operation exists here.
+ */
+export async function requestReview(dir, { title = null } = {}) {
+  const pictureNow = await picture(dir);
+  if (!pictureNow.tracked || !pictureNow.shared) {
+    return { ok: false, sentence: 'This project is not connected to GitHub.', action: 'Connect it first.' };
+  }
+  if (pictureNow.unsaved > 0) {
+    return { ok: false, sentence: 'Some work on this computer is not saved yet.', action: 'Save it first, then ask for a review.' };
+  }
+
+  const binding = await bindingOf(dir);
+  if (!binding.bound) {
+    return { ok: false, sentence: 'The GitHub project could not be identified.', action: 'Reconnect this copy and try again.' };
+  }
+  const account = await session({ fresh: true });
+  if (!account.signedIn) return notSignedIn;
+  const access = await repoThere(binding.owner, binding.repo);
+  if (!access.ok) return access;
+  if (!access.canWrite) {
+    return {
+      ok: false,
+      sentence: `The ${account.login} account cannot add work to ${binding.owner}/${binding.repo}.`,
+      action: 'Ask the owner to grant this GitHub account access, then try again.',
+    };
+  }
+
+  const fetched = await quiet(() => git(dir, 'fetch', '--quiet', 'origin'));
+  if (!fetched) {
+    return { ok: false, sentence: 'The GitHub copy could not be checked.', action: 'Check the connection and try again.' };
+  }
+  const current = (await quiet(() => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim() || 'main';
+  const base = access.branch || current;
+  const safeName = String(account.login).toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 28) || 'member';
+  const reviewLine = `viberant/${safeName}-${Date.now().toString(36)}`;
+  const sent = await quiet(() => git(dir, 'push', '--quiet', 'origin', `HEAD:refs/heads/${reviewLine}`));
+  if (!sent) {
+    return {
+      ok: false,
+      sentence: 'The review copy could not be placed on GitHub.',
+      action: 'Check that this account can write to the shared project and try again.',
+    };
+  }
+
+  const asked = await signin.request(
+    `/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}/pulls`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        title: String(title ?? `Work from ${account.login}`).slice(0, 200),
+        head: reviewLine,
+        base,
+        body: 'Prepared by Viberant after the shared copy and this computer changed independently.',
+      }),
+    },
+  );
+  if (!asked.ok) {
+    return {
+      ok: false,
+      placed: true,
+      sentence: 'The work is safely on GitHub, but the review request could not be opened.',
+      action: `Open ${binding.owner}/${binding.repo} on GitHub and choose the ${reviewLine} work for review.`,
+    };
+  }
+  return {
+    ok: true,
+    url: asked.data?.html_url ?? null,
+    sentence: 'The work is safely on GitHub and ready for the workspace to review.',
+    action: asked.data?.html_url ? 'Open the review request on GitHub.' : null,
   };
 }
 

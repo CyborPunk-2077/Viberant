@@ -7,8 +7,12 @@
   "scripts": {
     "start": "node app/server.mjs",
     "desktop": "electron .",
+    "workspace:service": "node app/plane-service.mjs",
+    "workspace:relay": "node app/relay.mjs",
+    "workspace:cloudflare:dev": "npx wrangler dev --config deploy/cloudflare-workspace/wrangler.jsonc",
+    "workspace:cloudflare:deploy": "npx wrangler deploy --config deploy/cloudflare-workspace/wrangler.jsonc",
     "icon": "node build/icon.mjs",
-    "build": "node build/icon.mjs && electron-builder --win --x64",
+    "build": "node build/require-oauth.mjs && node build/icon.mjs && electron-builder --win --x64",
     "test": "node --test \"core/reference/test/*.test.mjs\" && node --test \"app/test/*.test.mjs\""
   },
   "build": {

@@ -272,6 +272,7 @@ export async function greet(socket, { expect = null, mine = null, alreadyRead = 
   socket.on('data', onData);
   socket.on('error', (e) => { broke ??= e; push(null); });
   socket.on('close', () => push(null));
+  if (socket.isPaused?.()) socket.resume();
 
   socket.write(framed(Buffer.from(JSON.stringify({ hello: me, challenge: myChallenge }))));
 

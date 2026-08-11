@@ -1,6 +1,6 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -37,7 +37,9 @@ describe('desktop to web analysis reports facts and never invents a translation'
     });
     const report = await analyze(at);
     assert.equal(report.web.category, 'DESKTOP_ONLY');
-    assert.equal((await create(at)).ok, false);
+    const made = await create(at);
+    assert.equal(made.ok, true);
+    assert.match(await readFile(join(at, 'web', 'index.html'), 'utf8'), /Connect to Viberant/);
   });
 
   test('a browser surface that calls native features asks for adapters and a companion', async () => {
@@ -50,7 +52,31 @@ describe('desktop to web analysis reports facts and never invents a translation'
     assert.equal(report.web.category, 'ADAPTER_REQUIRED');
     assert.equal(report.recommendation, 'WEB_COMPANION');
     assert.ok(report.blockers.some((one) => one.id === 'files'));
-    assert.equal((await create(at)).ok, false, 'a decorative page must not be called a web version');
+    const made = await create(at);
+    assert.equal(made.ok, true, 'an isolated browser entry should become a real static target');
+    assert.equal((await analyze(at)).web.category, 'WEB_SAFE');
+  });
+
+  test('a browser-safe React and TSX surface becomes a buildable target with its real dependency versions', async () => {
+    const at = await fixture('react-desktop', {
+      'package.json': JSON.stringify({
+        scripts: { desktop: 'electron .' },
+        dependencies: { react: '18.3.1', 'react-dom': '18.3.1' },
+        devDependencies: { electron: '30.0.0', vite: '5.4.0', typescript: '5.6.2' },
+      }),
+      'desktop/main.mjs': "import { app } from 'electron'; import { readFile } from 'node:fs/promises';",
+      'src/main.tsx': "import React from 'react'; import { createRoot } from 'react-dom/client'; import { App } from './App'; createRoot(document.getElementById('root')!).render(<App/>);",
+      'src/App.tsx': "import React from 'react'; import './style.css'; export const App = () => <h1>Real app</h1>;",
+      'src/style.css': 'h1 { color: rebeccapurple; }',
+    });
+    const report = await analyze(at);
+    assert.equal(report.web.category, 'ADAPTER_REQUIRED');
+    const made = await create(at);
+    assert.equal(made.ok, true);
+    const pkg = JSON.parse(await readFile(join(at, 'web', 'package.json'), 'utf8'));
+    assert.equal(pkg.dependencies.react, '18.3.1');
+    assert.equal(pkg.devDependencies.vite, '5.4.0');
+    assert.match(await readFile(join(at, 'web', 'index.html'), 'utf8'), /src\/src\/main\.tsx/);
+    assert.match(await readFile(join(at, 'web', 'viberant-companion.js'), 'utf8'), /web-companion\/pair/);
   });
 });
-

@@ -32,8 +32,8 @@
 
 import { randomBytes } from 'node:crypto';
 
-import * as members from './members.mjs';
 import * as device from './device.mjs';
+import * as services from './services.mjs';
 
 /** How long a device counts as being about after its last word. */
 export const STILL_HERE = 90 * 1000;
@@ -48,18 +48,47 @@ export const SAY_HELLO_EVERY = 30 * 1000;
  * real implementation of the real interface, and the only thing a hosted one
  * adds is being reachable from somewhere else.
  */
-export function here() {
+export function here({ invitations: seededInvitations = [], onInvitationsChanged = null } = {}) {
   const about = new Map();
-  const tickets = new Map();
+  const pending = new Map();
+  const waiters = new Map();
+  const invitations = new Map(seededInvitations
+    .filter((one) => one?.mark && Number(one.expiresAt) > Date.now())
+    .map((one) => [one.mark, one]));
+  const invitationsChanged = () => onInvitationsChanged?.(
+    [...invitations.values()].filter((one) => Number(one.expiresAt) > Date.now()),
+  );
+
+  const takeTicket = (deviceId, workspace) => {
+    const mine = pending.get(deviceId) ?? [];
+    const at = mine.findIndex((one) => one.workspace === workspace && Date.now() - one.at < STILL_HERE);
+    if (at < 0) return null;
+    const [ticket] = mine.splice(at, 1);
+    if (mine.length) pending.set(deviceId, mine); else pending.delete(deviceId);
+    return ticket;
+  };
+
+  const deliver = (to, ticket) => {
+    const waiting = waiters.get(to) ?? [];
+    const one = waiting.findIndex((waiter) => waiter.workspace === ticket.workspace);
+    if (one >= 0) {
+      const [waiter] = waiting.splice(one, 1);
+      if (waiting.length) waiters.set(to, waiting); else waiters.delete(to);
+      clearTimeout(waiter.timer);
+      waiter.done({ ok: true, ticket });
+      return;
+    }
+    pending.set(to, [...(pending.get(to) ?? []), ticket].slice(-8));
+  };
 
   return {
     kind: 'here',
     reachable: true,
 
-    async announce({ workspace, card, addresses = [], directPort = null }) {
+    async announce({ workspace, card, addresses = [], directPort = null, direct = [] }) {
       const at = Date.now();
       about.set(card.deviceId, {
-        workspace, card, addresses, directPort, at,
+        workspace, card, addresses, directPort, direct, at,
       });
       return { ok: true, at };
     },
@@ -74,6 +103,7 @@ export function here() {
           ...one.card,
           addresses: one.addresses,
           directPort: one.directPort,
+          direct: one.direct,
           hereNow: now - one.at < STILL_HERE,
           lastHere: one.at,
         });
@@ -81,13 +111,69 @@ export function here() {
       return { ok: true, devices: out };
     },
 
-    async ticketFor({ workspace, from, to }) {
+    async ticketFor({ workspace, from, to, relay }) {
       const id = randomBytes(24).toString('hex');
-      tickets.set(id, { workspace, from, to, at: Date.now() });
+      deliver(to, { ticket: id, workspace, from, to, relay, at: Date.now() });
       return { ok: true, ticket: id };
     },
 
-    async forget(deviceId) { about.delete(deviceId); return { ok: true }; },
+    async waitForTicket({ workspace, deviceId, within = 20_000 }) {
+      const ready = takeTicket(deviceId, workspace);
+      if (ready) return { ok: true, ticket: ready };
+      return new Promise((done) => {
+        const waiter = { workspace, done, timer: null };
+        waiter.timer = setTimeout(() => {
+          const mine = (waiters.get(deviceId) ?? []).filter((one) => one !== waiter);
+          if (mine.length) waiters.set(deviceId, mine); else waiters.delete(deviceId);
+          done({ ok: true, ticket: null });
+        }, Math.max(100, Math.min(25_000, Number(within) || 20_000)));
+        waiter.timer.unref?.();
+        waiters.set(deviceId, [...(waiters.get(deviceId) ?? []), waiter]);
+      });
+    },
+
+    async offerInvitation({ workspace, mark, expiresAt, owner, relay }) {
+      invitations.set(mark, { workspace, mark, expiresAt, owner, relay });
+      invitationsChanged();
+      return { ok: true };
+    },
+
+    async findInvitation({ mark }) {
+      const one = invitations.get(mark);
+      if (!one || Date.now() >= one.expiresAt) {
+        invitations.delete(mark);
+        invitationsChanged();
+        return { ok: false };
+      }
+      return { ok: true, invitation: one };
+    },
+
+    async ticketToJoin({ mark, from }) {
+      const found = await this.findInvitation({ mark });
+      if (!found.ok) return found;
+      const one = found.invitation;
+      // A public introduction is deliberately one-use. The workspace's own
+      // invitation record remains the final authority and can be re-advertised
+      // if this relay attempt never reaches the owner.
+      invitations.delete(mark);
+      invitationsChanged();
+      const id = randomBytes(24).toString('hex');
+      deliver(one.owner.deviceId, {
+        kind: 'join', ticket: id, workspace: one.workspace, mark,
+        from: from.deviceId, card: from, to: one.owner.deviceId,
+        relay: one.relay, at: Date.now(),
+      });
+      return { ok: true, ticket: id, owner: one.owner, relay: one.relay };
+    },
+
+    async forget(which) {
+      about.delete(typeof which === 'object' ? which.deviceId : which);
+      return { ok: true };
+    },
+
+    durableState() {
+      return { invitations: [...invitations.values()] };
+    },
   };
 }
 
@@ -101,8 +187,16 @@ export function here() {
  */
 export function over(address, { within = 6000 } = {}) {
   const at = String(address ?? '').replace(/\/+$/, '');
+  let allowed = false;
+  try {
+    const url = new URL(at);
+    allowed = url.protocol === 'https:'
+      || ['127.0.0.1', 'localhost', '::1'].includes(url.hostname)
+      || process.env.VIBERANT_ALLOW_INSECURE_WORKSPACE_SERVICE === '1';
+  } catch { allowed = false; }
 
-  const ask = async (what, body) => {
+  const ask = async (what, body, timeout = within) => {
+    if (!allowed) return { ok: false, reachable: false };
     try {
       const me = await device.card();
       const when = Date.now();
@@ -113,7 +207,7 @@ export function over(address, { within = 6000 } = {}) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ said, proof, from: me }),
-        signal: AbortSignal.timeout(within),
+        signal: AbortSignal.timeout(timeout),
       });
       if (!answer.ok) return { ok: false, reachable: true };
       return { ...(await answer.json()), reachable: true };
@@ -131,7 +225,11 @@ export function over(address, { within = 6000 } = {}) {
     announce: (what) => ask('announce', what),
     whoIsAbout: (what) => ask('who-is-about', what),
     ticketFor: (what) => ask('ticket', what),
-    forget: (deviceId) => ask('forget', { deviceId }),
+    waitForTicket: (what) => ask('wait-for-ticket', what, Math.max(within, 25_000)),
+    offerInvitation: (what) => ask('offer-invite', what),
+    findInvitation: (what) => ask('find-invite', what),
+    ticketToJoin: (what) => ask('join-ticket', what),
+    forget: (what) => ask('forget', typeof what === 'object' ? what : { deviceId: what }),
   };
 }
 
@@ -175,7 +273,7 @@ let chosen = null;
 export async function plane() {
   if (chosen) return chosen;
   const settings = await import('./settings.mjs');
-  const address = await settings.get('workspaceService');
+  const address = String((await settings.get('workspaceService')) || await services.workspaceService()).trim();
   chosen = address ? over(address) : here();
   return chosen;
 }

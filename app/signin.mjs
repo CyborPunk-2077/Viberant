@@ -54,7 +54,12 @@ function power(script, input) {
 
 async function protect(value) {
   if (!WINDOWS) return `plain:${Buffer.from(value, 'utf8').toString('base64')}`;
-  const script = "$v=[Console]::In.ReadToEnd();$b=[Text.Encoding]::UTF8.GetBytes($v);$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
+  // Windows PowerShell 5 does not load System.Security merely because the
+  // ProtectedData type exists on the machine. Without the explicit load the
+  // browser authorization succeeds, token protection fails, and the Viberant
+  // page waits before ending in a generic failure. This was the real
+  // post-browser GitHub sign-in fault.
+  const script = "Add-Type -AssemblyName System.Security;$v=[Console]::In.ReadToEnd();$b=[Text.Encoding]::UTF8.GetBytes($v);$p=[Security.Cryptography.ProtectedData]::Protect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Convert]::ToBase64String($p))";
   const held = await power(script, value);
   return held ? `dpapi:${held}` : null;
 }
@@ -63,7 +68,7 @@ async function unprotect(value) {
   const text = String(value ?? '');
   if (text.startsWith('plain:')) return Buffer.from(text.slice(6), 'base64').toString('utf8');
   if (!WINDOWS || !text.startsWith('dpapi:')) return null;
-  const script = "$v=[Console]::In.ReadToEnd();$b=[Convert]::FromBase64String($v);$p=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Text.Encoding]::UTF8.GetString($p))";
+  const script = "Add-Type -AssemblyName System.Security;$v=[Console]::In.ReadToEnd();$b=[Convert]::FromBase64String($v);$p=[Security.Cryptography.ProtectedData]::Unprotect($b,$null,[Security.Cryptography.DataProtectionScope]::CurrentUser);[Console]::Out.Write([Text.Encoding]::UTF8.GetString($p))";
   return power(script, text.slice(6));
 }
 
@@ -203,8 +208,12 @@ async function start(mine) {
   mine.code = asked.user_code;
   mine.deviceCode = asked.device_code;
   mine.at = asked.verification_uri ?? mine.at;
-  const every = Math.max(5, Number(asked.interval) || 5) * 1000;
+  const testingEvery = Number(process.env.VIBERANT_OAUTH_POLL_MS);
+  const every = Number.isFinite(testingEvery) && testingEvery >= 10
+    ? testingEvery
+    : Math.max(5, Number(asked.interval) || 5) * 1000;
   const until = Date.now() + (Number(asked.expires_in) || 900) * 1000;
+  let networkFailures = 0;
 
   const poll = async (wait = every) => {
     if (mine.stopped || going !== mine || mine.finished !== null) return;
@@ -217,6 +226,18 @@ async function start(mine) {
       device_code: mine.deviceCode,
       grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
     });
+    if (!got) {
+      networkFailures += 1;
+      if (networkFailures >= 3) return settle(mine, {
+        ok: false,
+        sentence: 'GitHub sign-in lost its network connection.',
+        action: 'Check the connection and start the sign-in again.',
+      });
+      setTimeout(() => poll(wait), wait).unref?.();
+      return;
+    }
+    networkFailures = 0;
+
     if (got?.access_token) {
       const person = await requestWith(got.access_token, '/user');
       if (!person?.login) return settle(mine, {
@@ -229,13 +250,19 @@ async function start(mine) {
     }
 
     if (got?.error && got.error !== 'authorization_pending' && got.error !== 'slow_down') {
+      const words = got.error === 'access_denied'
+        ? ['That GitHub sign-in was declined.', 'Start again if you still want to connect this account.']
+        : got.error === 'expired_token'
+          ? ['That GitHub sign-in code expired.', 'Start again for a new code.']
+          : ['GitHub did not finish the sign-in.', 'Try again.'];
       return settle(mine, {
         ok: false,
-        sentence: got.error === 'access_denied' ? 'That GitHub sign-in was declined.' : 'GitHub did not finish the sign-in.',
-        action: 'Try again.',
+        sentence: words[0],
+        action: words[1],
       });
     }
-    setTimeout(() => poll(got?.error === 'slow_down' ? wait + 5000 : wait), wait).unref?.();
+    const nextWait = got?.error === 'slow_down' ? wait + 5000 : wait;
+    setTimeout(() => poll(nextWait), nextWait).unref?.();
   };
   setTimeout(() => poll(), every).unref?.();
 }

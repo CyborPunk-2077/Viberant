@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/cloudflare/workers-sdk/main/packages/wrangler/config-schema.json",
+  "name": "viberant-workspace",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-08-01",
+  "durable_objects": {
+    "bindings": [
+      { "name": "WORKSPACE_PLANE", "class_name": "WorkspacePlane" },
+      { "name": "RELAY_PAIR", "class_name": "RelayPair" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["WorkspacePlane", "RelayPair"]
+    }
+  ],
+  "observability": { "enabled": true }
+}
