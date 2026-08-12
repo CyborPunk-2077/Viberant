@@ -1,4 +1,10 @@
-# Viberant
+## 🎬 Product Demo
+
+Watch Viberant in action — from managing local development projects to launching tools and handling project/GitHub workflows from one workspace.
+
+**[▶ Watch the Viberant Demo](https://abhishek-project-demos1.vercel.app/viberant.html)**
+
+> The demo focuses on the product experience. Implementation details and local setup are documented below.
 
 One place to open your project, then start whichever AI app you feel like — already pointed at that folder. No adding the folder again in each app. No signing out and back in to switch accounts. One button to save your work and send it to GitHub.
 
