@@ -6,61 +6,79 @@ Watch Viberant in action — from managing local development projects to launchi
 
 > The demo focuses on the product experience. Implementation details and local setup are documented below.
 
-One place to open your project, then start whichever AI app you feel like — already pointed at that folder. No adding the folder again in each app. No signing out and back in to switch accounts. One button to save your work and send it to GitHub.
+Viberant is a Windows desktop manager for AI-augmented developers. It acts as a central control panel that lets you open a project once, and instantly launch whichever AI coding app you need—already pointed at that folder. 
+
+No more manually adding folders to each app. No more signing out and back in to switch tool accounts. One button to save your work, send it to GitHub, or share it securely peer-to-peer with your team.
 
 ---
 
-## Run it
+## 🚀 Getting Started
 
-You need Node 22 or newer. Nothing to install.
+You need **Node 22** or newer. There are zero npm dependencies in the core application. Nothing else to install.
 
-```
+To start the app in headless/dev mode:
+```bash
 node app/server.mjs
 ```
+Then open `http://localhost:7777` in your browser.
 
-Then open `http://localhost:7777`.
+To start the Electron desktop shell (if built):
+```bash
+npm run desktop
+```
 
-Everything it remembers lives in `%USERPROFILE%\.viberant`. Delete that folder and it is as if this never ran.
+Everything Viberant remembers (settings, accounts, logs) lives securely in `%USERPROFILE%\.viberant` on your machine. Delete that folder, and it is as if the app never ran.
 
 ---
 
-## What it does
+## ✨ Core Features
 
-**Pick a project once.** Type a folder path, or point it at the folder that holds all your projects and it will find them. It remembers the ones you use, so next time it is one click.
-
-**Start any AI app in that folder.** Claude Code, Codex, Gemini, Aider, Cursor, Windsurf, Antigravity, VS Code — whichever are installed. Command-line ones open in a terminal already in the folder. Desktop ones open with the folder loaded. You never add the folder by hand again.
-
-**Keep more than one account per app, and switch without signing out.** Click `accounts` next to an app. Save the account you are signed in to under a name. Switch to another one whenever. Under the hood it swaps the folder each tool keeps your sign-in in — the same idea as browser profiles.
-
-Two things it refuses to do, on purpose: it will not swap an account while that app is open (you would be signed out mid-sentence), and it will not throw away the account you are using.
-
-**Save and send in one press.** Type what you did, press the button. It saves everything and sends it to GitHub. If the project has never been on GitHub it offers to put it there, so you never leave to make a repository by hand.
-
-If GitHub cannot be reached, your work is still saved on your computer and it says so — it will never tell you something is sent when it is not.
+* **Project Context Management**: Pick a project once. Start any AI app (Claude Code, Cursor, Windsurf, Codex, etc.) or terminal directly in that folder.
+* **Multi-Account Profiles**: Keep more than one account per AI app (e.g., Work and Personal). Switch between them instantly without signing out.
+* **Zero-Setup Version Control**: Type what you did in plain English and press "Save and Send." Viberant handles git commits and pushes. If the project isn't on GitHub, it automatically creates a private repo for you.
+* **Peer-to-Peer Workspace**: Collaborate securely. Connect multiple computers via LAN or relay. Share projects, see real-time presence, send live notes, and incrementally sync files with conflict resolution—no central database required.
+* **AI Diagnostics ("Ask")**: Use Claude, OpenAI, or Gemini directly within Viberant to ask questions about your local code, diagnose issues, or review changes.
+* **One-Click Deploy**: Send your web projects live to Vercel instantly from the "Ship" tab.
 
 ---
 
-## What is in here
+## 📚 Documentation
 
-```
-app/          the thing you run
-core/         the record of what happened, and the rules about it
-experiments/  questions answered by measuring rather than arguing
-STATUS.md     what is done and what is left, in plain language
-00_DECISIONS.md   every decision, why, and what else was considered
+For a complete understanding of the project, its features, and how it is built, please read the following documentation:
+
+* **[Product Requirements Document (PRD)](./docs/PRD.md)**: The product vision, target audience, core features, and technical constraints. Start here for a high-level product overview.
+* **[User Workflows](./docs/WORKFLOWS.md)**: A step-by-step guide to the primary user journeys, including setting up profiles, saving to GitHub, and using the P2P Workspace.
+* **[Architecture Map for Developers](./docs/CODEX_PROJECT_MAP.md)**: The definitive guide to the codebase. It details the runtime architecture, HTTP server, frontend design (no-framework Vanilla JS), data persistence, and the peer-to-peer networking layer.
+* **[Design Decisions & History](./00_DECISIONS.md)**: A running log of every major architectural decision made on the project, why it was made, and alternatives considered.
+* **[Agent & Contributor Rules](./AGENTS.md)**: Strict rules for contributing to the codebase, maintaining zero dependencies, and respecting the plain-language UI constraints.
+
+---
+
+## 🛠️ Repository Structure
+
+```text
+app/          The main application (Vanilla JS UI + Node HTTP server)
+core/         Event-sourcing engine and reference implementations
+docs/         Comprehensive project documentation (PRDs, workflows, architecture)
+experiments/  Historical point-in-time measurements that drove architecture decisions
+desktop/      The Electron shell wrapper
+dist/         Packaged application output
 ```
 
-Run the tests:
+## 🧪 Running Tests
 
+The test suite ensures the integrity of the cross-computer sync, server routing, and UI wording constraints.
+
+Run the entire suite (what CI expects):
+```bash
+npm test
 ```
+Or run them individually:
+```bash
 node --test "core/reference/test/*.test.mjs"
 node --test "app/test/*.test.mjs"
 ```
 
 ---
 
-## A note about accounts
-
-This exists so someone with a work account and a personal account stops signing in and out all day. That is what it is for and that is what it is good at.
-
-Using it to get past what one account is allowed to do is against most AI providers' terms, and the person doing it risks losing the accounts. Worth knowing before relying on it.
+*Viberant is built with strict adherence to simplicity, longevity, and local-first principles. It relies on standard web technologies and built-in Node modules to ensure it will continue to run for years to come.*

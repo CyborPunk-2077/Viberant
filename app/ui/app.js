@@ -3926,64 +3926,112 @@ function wireAskPanel() {
  * whole of the difference between a feature and a feature somebody uses.
  */
 SCREENS.ask = async () => {
-  const p = await get('/project');
+  const [p, projectsState, who] = await Promise.all([get('/project'), get('/projects'), get('/ai')]);
+  const projects = projectsState.projects ?? [];
+  const providers = who.models ?? [];
+  const providerName = who.ok ? (who.insteadOf ? `${who.name}, not ${who.insteadOf}` : who.name) : 'Not connected';
+  const modelName = who.ok ? modelNamed(who, who.using) : 'Choose a provider';
+  const projectChoices = projects.slice(0, 4).map((one) => `
+    <button class="ref-assistant-project ${one.path === p.dir ? 'on' : ''}" data-assistant-open="${esc(one.path)}">
+      <span class="project-mini-mark">${KIND_MARK.project}</span>
+      <span class="grow"><b>${esc(one.name)}</b><small>${esc(shortPath(one.path))}</small></span>
+      ${one.path === p.dir ? '<span class="check">✓</span>' : ''}
+    </button>`).join('');
+  const providerChoices = providers.map((provider) => `
+    <section class="ref-model-group ${provider.id === who.model?.id ? 'on' : ''}">
+      <button class="ref-model-provider" data-ai-provider="${esc(provider.id)}">
+        <span class="provider-monogram">${esc(provider.name.slice(0, 2).toUpperCase())}</span>
+        <span class="grow"><b>${esc(provider.name)}</b><small>${provider.ready ? 'Connected' : 'Needs a key'}</small></span>
+        <span>⌄</span>
+      </button>
+      <div class="ref-model-list">
+        ${(provider.models ?? []).map((model) => `<button data-ai-model="${esc(provider.id)}|${esc(model.id)}" class="${provider.id === who.model?.id && model.id === who.using ? 'on' : ''}" ${provider.ready ? '' : 'disabled'}><span>${esc(model.name)}</span>${model.free ? '<small>Included</small>' : ''}</button>`).join('')}
+      </div>
+    </section>`).join('');
 
   view.innerHTML = `
-    <div class="pagehead command-head">
-      <div class="grow">
-        <span class="eyebrow">Focused on the open project</span>
-        <h1>AI Assistant</h1>
-        <p class="sub">Understand the code, review your work, and prepare changes with the project already in context.</p>
-      </div>
-      <div class="acts"><button class="quiet" id="ai-pick">Provider and model…</button></div>
-    </div>
+    <div class="ref-assistant-page">
+    <header class="ref-assistant-head">
+      <div class="grow"><h1>AI Assistant</h1><p>Your project-aware coding partner. Context stays visible and every proposed change waits for review.</p></div>
+      <div class="acts"><button id="ask-change-project">Change project</button><button class="go" id="assistant-new">＋ New question</button></div>
+    </header>
     ${saidHtml()}
 
     ${p?.name ? `
-      <div class="intelligence-shell-v2">
-        <aside class="intelligence-rail-v2">
-          <div class="intelligence-project-v2">
-            <span class="project-badge">${KIND_MARK.project}</span>
-            <span class="grow"><small>Thinking with</small><b>${esc(p.name)}</b><span>${esc(p.dir)}</span></span>
-            ${stateChip(p.mark)}
-          </div>
-          <button class="quiet assistant-change-project" id="ask-change-project">Change project…</button>
-          <div class="context-panel-v2">
-            <div class="panel-title"><b>Context in use</b><span>Scoped</span></div>
-            <div class="context-item"><span>Project</span><b>${esc(p.name)}</b></div>
-            <div class="context-item"><span>Files</span><b>Only what the question needs</b></div>
-            <div class="context-item"><span>Sensitive values</span><b>Removed before sending</b></div>
-          </div>
-          <div class="context-panel-v2">
-            <div class="panel-title"><b>Before files change</b></div>
-            <p>Every proposed file is shown for review. Nothing is written until you approve it.</p>
-          </div>
+      <div class="ref-assistant-shell">
+        <aside class="ref-assistant-rail">
+          <section class="ref-assistant-chooser">
+            <div class="ref-side-title"><span><b>1</b> Project</span><button class="quiet icon" id="assistant-all-projects" aria-label="Choose another project">⌄</button></div>
+            <div class="ref-current-project"><span class="project-badge">${KIND_MARK.project}</span><span class="grow"><b>${esc(p.name)}</b><small>${esc(shortPath(p.dir))}</small></span><span>⌃</span></div>
+            <span class="ref-side-label">From Projects</span>
+            <div class="ref-assistant-projects">${projectChoices}</div>
+            <button class="quiet wide small" id="assistant-view-projects">View all projects →</button>
+          </section>
+          <section class="ref-assistant-chooser model-chooser">
+            <div class="ref-side-title"><span><b>2</b> AI provider & model</span><button class="quiet icon" id="ai-pick" aria-label="Set up AI">⌄</button></div>
+            <div class="ref-current-model"><span class="provider-monogram">AI</span><span class="grow"><b>${esc(providerName)}</b><small>${esc(modelName)}</small></span></div>
+            <div class="ref-provider-groups">${providerChoices}</div>
+            <button class="quiet wide small" id="assistant-model-details">Provider settings →</button>
+          </section>
         </aside>
-        <div class="intelligence-main-v2">${askPanel(p, { heading: `Ask about ${p.name}`, expanded: true })}</div>
-        <aside class="intelligence-facts-v2">
+
+        <main class="ref-assistant-main">${askPanel(p, { heading: `${providerName} with ${p.name}`, expanded: true })}</main>
+
+        <aside class="ref-assistant-facts">
           <section><div class="panel-title"><b>Project facts</b><span>Live</span></div>
             <div class="context-item"><span>Name</span><b>${esc(p.name)}</b></div>
-            <div class="context-item"><span>Kind</span><b>${esc(p.kind ?? 'Project')}</b></div>
+            <div class="context-item"><span>Path</span><b title="${esc(p.dir)}">${esc(shortPath(p.dir))}</b></div>
+            <div class="context-item"><span>Type</span><b>${esc(p.kind ?? 'Project')}</b></div>
             <div class="context-item"><span>Last saved</span><b>${esc(p.saved ?? 'Not yet')}</b></div>
             <div class="context-item"><span>Changes here</span><b>${p.situation?.unsaved ?? 0}</b></div>
-            <button class="quiet wide small" id="assistant-reindex">Inspect project files</button>
+            <button class="wide" id="assistant-reindex">Inspect project files</button>
           </section>
-          <section><div class="panel-title"><b>Suggested tasks</b></div>
-            <button data-ai-prompt="Review the recent changes and identify the most important risk.">Review recent changes <span>→</span></button>
-            <button data-ai-prompt="Explain the architecture and the boundaries between its main parts.">Map the architecture <span>→</span></button>
-            <button data-ai-prompt="What should I do next in this project, and why?">Plan what comes next <span>→</span></button>
+          <section><div class="panel-title"><b>AI settings</b><span>${esc(providerName)}</span></div>
+            <div class="context-item"><span>Model</span><b>${esc(modelName)}</b></div>
+            <div class="context-item"><span>Project context</span><b>On</b></div>
+            <div class="context-item"><span>File changes</span><b>Approval required</b></div>
+            <button class="wide" id="assistant-ai-settings">Change provider or model</button>
           </section>
-          <section class="assistant-trust"><span class="eyebrow">Before anything changes</span><p>Suggestions remain a review. Files change only after you approve the exact proposal.</p></section>
+          <section class="ref-suggested-tasks"><div class="panel-title"><b>Suggested tasks</b></div>
+            <button data-ai-prompt="Review the recent changes and identify the most important risk."><span>⌁</span><span><b>Review recent changes</b><small>Find important risks</small></span></button>
+            <button data-ai-prompt="Explain the architecture and the boundaries between its main parts."><span>◇</span><span><b>Map the architecture</b><small>Understand the project</small></span></button>
+            <button data-ai-prompt="What should I do next in this project, and why?"><span>↗</span><span><b>Plan what comes next</b><small>Choose the next useful step</small></span></button>
+          </section>
+          <section class="ref-assistant-promo"><span class="eyebrow">AI apps</span><h3>Keep building in your favorite coding app.</h3><p>Open the current project with the same context.</p><button class="go" id="assistant-open-apps">Explore AI apps →</button></section>
         </aside>
       </div>`
     : `<div class="empty"><b>Nothing is open yet.</b>
         These questions are about a project, so there has to be one.
-        <span class="acts"><button class="go" id="ask-pick">Choose a project\u2026</button></span></div>`}`;
+        <span class="acts"><button class="go" id="ask-pick">Choose a project\u2026</button></span></div>`}
+    </div>`;
   said = null;
 
   $('#ask-pick')?.addEventListener('click', chooseProjectForAssistant);
   $('#ask-change-project')?.addEventListener('click', chooseProjectForAssistant);
-  $('#ai-pick').onclick = () => setUpAi();
+  $('#assistant-all-projects')?.addEventListener('click', chooseProjectForAssistant);
+  $('#assistant-view-projects')?.addEventListener('click', chooseProjectForAssistant);
+  $('#ai-pick')?.addEventListener('click', () => setUpAi());
+  $('#assistant-model-details')?.addEventListener('click', () => setUpAi());
+  $('#assistant-ai-settings')?.addEventListener('click', () => setUpAi());
+  $('#assistant-open-apps')?.addEventListener('click', () => go('apps'));
+  $('#assistant-new')?.addEventListener('click', () => {
+    const out = $('#ai-out');
+    if (out) out.innerHTML = '';
+    $('.assistant-panel')?.classList.remove('has-output');
+    if ($('#ai-q')) { $('#ai-q').value = ''; $('#ai-q').focus(); }
+  });
+  for (const button of document.querySelectorAll('[data-assistant-open]')) button.onclick = async () => {
+    const opened = await post('/open', { path: button.dataset.assistantOpen });
+    if (!opened.ok) return say(opened) && draw();
+    await refreshMe();
+    draw();
+  };
+  for (const button of document.querySelectorAll('[data-ai-provider]')) button.onclick = () => setUpAi();
+  for (const button of document.querySelectorAll('[data-ai-model]')) button.onclick = async () => {
+    const [provider, model] = button.dataset.aiModel.split('|');
+    say(await post('/ai/choose', { provider, model }));
+    draw();
+  };
   if (p?.name) {
     wireAskPanel();
     $('#assistant-reindex').onclick = () => statusSheet(p.dir);
@@ -4744,60 +4792,65 @@ SCREENS.apps = async () => {
   // the fact this page exists to make true and never said out loud.
   const signedInto = here.filter((x) => (chosen.account[x.id] ?? x.active)).length;
 
+  const context = whereFor(null, p);
+  const accountRows = here.map((x) => `<div><span class="provider-monogram">${esc((x.made ?? x.name).slice(0, 1))}</span><span class="grow"><b>${esc(x.made ?? x.name)}</b><small>${esc(chosen.account[x.id] ?? x.active ?? (x.signedIn ? 'Signed in inside the app' : 'No account selected'))}</small></span><span class="chip ${chosen.account[x.id] || x.active || x.signedIn ? 'live' : ''}">${chosen.account[x.id] || x.active || x.signedIn ? 'Ready' : 'App managed'}</span></div>`).join('');
+
   view.innerHTML = `
-    <div class="pagehead command-head">
-      <div class="grow">
-        <span class="eyebrow">Developer tools</span>
-        <h1>AI apps</h1>
-        <p class="sub">Launch the right coding app, account, and project context in one step.</p>
-      </div>
-      <div class="acts">${whereBar(p)}</div>
-    </div>
-    ${saidHtml()}
+    <div class="ref-apps-page">
+      <header class="ref-apps-head"><div class="grow"><h1>AI apps</h1><p>Launch your coding tools with the right project and account context.</p></div><button id="apps-refresh">↻ Refresh</button></header>
+      ${saidHtml()}
 
-    <section class="tool-summary-strip">
-      <span><span class="summary-mark">${APP_MARK}</span><b>${here.length}</b><small>Apps ready</small></span>
-      <span><span class="summary-mark person">◎</span><b>${signedInto} / ${here.length}</b><small>Accounts selected</small></span>
-      <span><span class="summary-mark context">▣</span><b>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'Choose project')}</b><small>Launch context</small></span>
-      <span class="summary-project"><span class="summary-mark folder">□</span><b>${esc(whereFor(null, p) ?? 'No working folder chosen')}</b><small>${whereFor(null, p) ? 'Ready to launch' : 'Choose a project or folder first'}</small></span>
-    </section>
+      <div class="ref-apps-layout">
+        <main>
+          <section class="ref-apps-summary">
+            <span><i>${APP_MARK}</i><b>${here.length}</b><small>Apps ready</small></span>
+            <span><i>◎</i><b>${signedInto} / ${here.length}</b><small>Accounts selected</small></span>
+            <span><i>◇</i><b>${away.length}</b><small>Available to add</small></span>
+            <span><i>↗</i><b>${esc(context ? tail(context) : 'Choose project')}</b><small>Launch context</small></span>
+          </section>
 
-    <div class="tool-orchestrator-v2">
-      <div class="tool-orchestrator-main">
-    ${here.length ? `
-      <div class="section-rubric">
-        <span><b>Ready to launch</b><small>Apps found on this computer</small></span><span class="count">${here.length}</span>
-      </div>
-      <div class="tool-launch-table">
-        <div class="tool-launch-head"><span>AI app</span><span>Provider / account</span><span>Signed in</span><span>Browser login</span><span>Launch mode</span><span>Actions</span></div>
-        ${here.map((x) => appRow(x, p, t)).join('')}
-      </div>` : `
-      <div class="empty"><b>None of the AI apps were found here.</b>
-        Any of the ones below installs from this page.</div>`}
+          <section class="ref-apps-toolbar">
+            <label class="find"><span>⌕</span><input id="apps-search" placeholder="Search AI apps…"></label>
+            <div class="ref-app-filters"><button class="on" data-app-filter="all">All <span>${t.tools.length}</span></button><button data-app-filter="ready">Ready <span>${here.length}</span></button><button data-app-filter="account">Needs account <span>${Math.max(0, here.length - signedInto)}</span></button><button data-app-filter="away">Not installed <span>${away.length}</span></button></div>
+          </section>
 
-    ${away.length ? `
-      <div class="section-rubric tool-catalog-head">
-        <span><b>Available to add</b><small>More coding tools for this workstation</small></span><span class="count">${away.length}</span>
-      </div>
-      <div class="tool-catalog-v2">
-        ${away.map((x) => appRow(x, p, t)).join('')}
-      </div>` : ''}
-      </div>
-      <aside class="tool-orchestrator-rail">
-        <span class="eyebrow">Orchestration</span>
-        <h3>One press, correct context.</h3>
-        <p>The app opens directly in the selected folder. Account choice stays with each app on this computer.</p>
-        <div class="context-item"><span>Working folder</span><b>${esc(whereFor(null, p) ? tail(whereFor(null, p)) : 'None chosen')}</b></div>
-        <div class="context-item"><span>Apps online</span><b>${here.length}</b></div>
-        <div class="context-item"><span>Accounts ready</span><b>${signedInto}</b></div>
-      </aside>
-    </div>
+          ${here.length ? `<section class="ref-apps-section" data-app-section="ready"><div class="ref-app-section-title"><span><i class="dot live"></i><b>Installed & ready</b></span><small>${here.length}</small></div><div class="tool-launch-table"><div class="tool-launch-head"><span>AI app</span><span>Provider / account</span><span>Signed in</span><span>Browser login</span><span>Launch mode</span><span>Actions</span></div>${here.map((x) => appRow(x, p, t)).join('')}</div></section>` : `<div class="empty"><b>None of the AI apps were found here.</b>Choose one below to install it.</div>`}
 
-    <div id="job"></div>`;
+          ${away.length ? `<section class="ref-apps-section" data-app-section="away"><div class="ref-app-section-title"><span><i class="dot off"></i><b>Not installed</b></span><small>${away.length}</small></div><div class="tool-catalog-v2">${away.map((x) => appRow(x, p, t)).join('')}</div></section>` : ''}
+          <p class="ref-apps-tip">✦ Apps open with the selected project. Viberant never invents an account state an app has not reported.</p>
+        </main>
+
+        <aside class="ref-apps-inspector">
+          <div class="ref-apps-inspector-head"><b>Launch context</b><span>ⓘ</span></div>
+          <section><span class="eyebrow">Project folder</span><div class="ref-launch-folder"><span>□</span><span class="grow"><b>${esc(context ? tail(context) : 'No project selected')}</b><small>${esc(context ?? 'Choose a project or folder')}</small></span></div><button class="wide" id="where-all">Change project</button>${chosen.folder.all ? '<button class="quiet wide small" id="where-clear">Use the open project</button>' : ''}</section>
+          <section><span class="eyebrow">Account selection</span><p>Accounts are kept per app and only shown when the app reports them.</p><div class="ref-account-list">${accountRows || '<p>No installed AI apps were found.</p>'}</div><button class="wide" id="apps-manage-accounts">Manage accounts</button></section>
+          <section class="ref-browser-truth"><span class="eyebrow">Launch behavior</span><div><span class="dot live"></span><span><b>Project-aware context</b><small>The selected folder opens with the app.</small></span></div><div><span class="dot live"></span><span><b>No extra command window</b><small>Desktop apps open in their own window.</small></span></div><div><span class="dot live"></span><span><b>Truthful sign-in state</b><small>App-managed accounts stay labeled as such.</small></span></div></section>
+        </aside>
+      </div>
+      <div id="job"></div>
+    </div>`;
   said = null;
 
   wireWhereBar();
   wireAppCards(t, p);
+  $('#apps-refresh').onclick = () => draw();
+  $('#apps-manage-accounts').onclick = () => go('settings');
+  const filterApps = () => {
+    const wanted = $('#apps-search').value.trim().toLowerCase();
+    const mode = document.querySelector('[data-app-filter].on')?.dataset.appFilter ?? 'all';
+    for (const row of document.querySelectorAll('.tool-launch-row,.tool-missing-row')) {
+      const isAway = row.classList.contains('tool-missing-row');
+      const needsAccount = !isAway && /Not selected|No account selected/.test(row.textContent);
+      const inMode = mode === 'all' || (mode === 'away' && isAway) || (mode === 'ready' && !isAway) || (mode === 'account' && needsAccount);
+      row.hidden = !inMode || (!!wanted && !row.textContent.toLowerCase().includes(wanted));
+    }
+    for (const section of document.querySelectorAll('[data-app-section]')) section.hidden = ![...section.querySelectorAll('.tool-launch-row,.tool-missing-row')].some((row) => !row.hidden);
+  };
+  $('#apps-search').oninput = filterApps;
+  for (const button of document.querySelectorAll('[data-app-filter]')) button.onclick = () => {
+    for (const other of document.querySelectorAll('[data-app-filter]')) other.classList.toggle('on', other === button);
+    filterApps();
+  };
   // Redraw the errand once, without starting a second loop watching it.
   if (watching) paintJob({ again: !jobTimer });
 };
@@ -9757,6 +9810,7 @@ async function signInToGitHub({ inGate = false } = {}) {
   let currentCode = null;
   let openAt = 'https://github.com/login/device';
   let stopping = false;
+  let detached = false;
 
   const stop = async ({ giveUp = false, backToWelcome = false } = {}) => {
     stopping = true;
@@ -9801,13 +9855,13 @@ async function signInToGitHub({ inGate = false } = {}) {
           </div><div class="auth-waiting" id="github-device-wait" ${code ? '' : 'hidden'}><span class="spin"></span><span><b>Waiting for authorization</b><small id="github-device-host">${esc(String(openAt).replace(/^https:\/\//, ''))}</small></span></div>`,
       foot: '<button class="quiet" id="in-cancel">Never mind</button>',
       onOpen: () => {
-        // Dismissing this any other way — the corner, the darkened background
-        // — used to leave the asking running for as long as the app was open,
-        // and then have it announce a sign-in over whatever screen you had moved
-        // on to. Whichever way it goes, it stops.
+        // Closing the sheet is not cancelling the browser authorization. The
+        // attempt belongs to the app, not to this particular rendering of the
+        // sheet: GitHub may finish after somebody navigates elsewhere. Keep the
+        // quiet watcher alive, update the account everywhere, and only stop the
+        // server-side attempt when the explicit Never mind button is pressed.
         whenLayerCloses(() => {
-          clearInterval(watching);
-          if (!stopping) post('/github/signin/stop');
+          if (!stopping) detached = true;
         });
         $('#in-again')?.addEventListener('click', () => post('/open/page', { at: openAt }));
         $('#in-copy')?.addEventListener('click', async () => {
@@ -9840,7 +9894,11 @@ async function signInToGitHub({ inGate = false } = {}) {
     const changed = r.github && r.github !== before;
 
     if (finished || changed) {
-      await stop();
+      clearInterval(watching);
+      if (!detached) {
+        stopping = true;
+        closeLayer();
+      }
       await post('/settings', { id: 'welcomed', value: true });
       await refreshMe();
       say({
@@ -9855,9 +9913,12 @@ async function signInToGitHub({ inGate = false } = {}) {
 
     if (r.signin && !r.signin.running && r.signin.ok === false) {
       clearInterval(watching);
-      closeLayer();
+      if (!detached) {
+        stopping = true;
+        closeLayer();
+      }
       await refreshMe();
-      if (inGate) return showGate({ trouble: r.signin });
+      if (inGate && !detached) return showGate({ trouble: r.signin });
       say(r.signin);
       draw();
       return;

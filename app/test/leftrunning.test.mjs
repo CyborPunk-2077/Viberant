@@ -83,7 +83,6 @@ describe('a layer takes what it started away with it', () => {
 
 describe('nothing asks forever', () => {
   const shouldStop = [
-    ['signing in to GitHub', 'async function signInToGitHub', '/github/signin/stop'],
     ['signing in to Google', 'async function signInToGoogle', '/google/signin/stop'],
   ];
 
@@ -97,6 +96,17 @@ describe('nothing asks forever', () => {
         `${what} closes its window but leaves the server-side attempt running`);
     });
   }
+
+  test('GitHub browser authorization survives a sheet redraw or close', () => {
+    const body = bodyOf(page, 'async function signInToGitHub');
+    const closed = body.slice(body.indexOf('whenLayerCloses'), body.indexOf("$('#in-again')"));
+    assert.doesNotMatch(closed, /clearInterval\(watching\)|github\/signin\/stop/,
+      'closing the GitHub sheet silently cancels an authorization already happening in the browser');
+    assert.match(body, /giveUp[\s\S]*?github\/signin\/stop/,
+      'the explicit Never mind action no longer cancels GitHub authorization');
+    assert.match(body, /await refreshMe\(\)/,
+      'a completed browser authorization does not refresh the account shown throughout Viberant');
+  });
 
   test('every clock the page starts is handed to something that clears it', () => {
     // Counted rather than named, so a new one that nobody clears fails here
