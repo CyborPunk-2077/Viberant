@@ -100,52 +100,6 @@ describe('what is going on in a project, in plain words', () => {
   });
 });
 
-describe('saving and sending in one go', () => {
-  test('everything is saved and sent to the shared copy', async () => {
-    const { publish } = await import('../projects.mjs');
-    const dir = await project('sending');
-    const shared = join(root, 'shared.git');
-    await run('git', ['init', '--quiet', '--bare', '-b', 'main', shared]);
-    await run('git', ['remote', 'add', 'origin', shared], { cwd: dir });
-
-    await writeFile(join(dir, 'new.js'), 'export const a = 1\n');
-    const r = await publish(dir, { message: 'Work from today' });
-
-    assert.equal(r.ok, true, r.sentence);
-    assert.equal(r.sent, true);
-    const { stdout } = await run('git', ['log', '--format=%s'], { cwd: shared });
-    assert.equal(stdout.trim().split('\n')[0], 'Work from today');
-  });
-
-  test('a folder with no history at all is set up first', async () => {
-    const { publish, situation } = await import('../projects.mjs');
-    const dir = await project('untracked', { withHistory: false });
-    await run('git', ['config', '--global', 'user.email', 'd@l']).catch(() => {});
-    await run('git', ['config', '--global', 'user.name', 'D']).catch(() => {});
-
-    const r = await publish(dir, { message: 'First save', makeIfMissing: false });
-    assert.equal(r.ok, true, r.sentence);
-    assert.equal(r.saved, true);
-    assert.equal(r.sent, false);
-    assert.match(r.sentence, /no copy on GitHub yet|not signed in to GitHub/);
-    assert.equal((await situation(dir)).tracked, true);
-  });
-
-  test('an unreachable shared copy still saves your work, and says so', async () => {
-    const { publish } = await import('../projects.mjs');
-    const dir = await project('offline');
-    await run('git', ['remote', 'add', 'origin', join(root, 'nowhere.git')], { cwd: dir });
-    await writeFile(join(dir, 'x.js'), 'x\n');
-
-    const r = await publish(dir, { message: 'Saved anyway' });
-    assert.equal(r.ok, false);
-    assert.match(r.sentence, /Saved here, but GitHub could not be reached/);
-    assert.ok(r.action);
-    const { stdout } = await run('git', ['log', '--format=%s'], { cwd: dir });
-    assert.equal(stdout.trim().split('\n')[0], 'Saved anyway', 'the work is safe regardless');
-  });
-});
-
 describe('launching a tool in your project', () => {
   test('a tool that is not installed is declined plainly', async () => {
     const { launch } = await import('../tools.mjs');

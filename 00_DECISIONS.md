@@ -2385,6 +2385,32 @@ A thing is not shipped because it exists and is reachable. It is shipped when it
 
 ---
 
+### D-220 `[DECIDED]` — Installing Aider means Aider is there afterwards, and this computer can see it
+
+**Decision.** The Aider errand runs `python -m aider_install.main`, not `python -m aider_install`, and `~/.local/bin` is added to the places this manager looks for the apps it opens — on Windows as well as everywhere else.
+
+**Why.** Both halves were broken, and each on its own was enough to make Install do nothing. The package named by the second step holds no way to be run as itself, so it answered *cannot be directly executed* and the errand failed identically every time it was tried again; the module inside it is the one that runs. Then, with that fixed, the installer put `aider` in `~/.local/bin` and said out loud that the folder is not on the PATH — which on Windows stays true for every process already running. So the errand ended saying "Aider is installed" while the same page went on offering to install it. Verified end to end on the founder's own computer: the errand ends `ok`, and the page then reports Aider as here.
+
+**What else was considered.** Running the command the installer writes rather than the module. Rejected: it lands in the folder that is not being looked in, which is the second half of this same fault.
+
+---
+
+### D-221 `[DECIDED]` — A route the server asks itself must be answerable with nothing
+
+**Decision.** Any route reached by `routes['…']()` from inside the server takes its argument with a default. Held by a test that finds every such call and checks the route it names.
+
+**Why.** Preview needs to know where the web target is, and that answer is already a route, so it asks it directly — with no address, no body, nobody asking. The route took its address apart on the way in and threw before doing anything, so pressing Preview did nothing and the failure never reached a sentence. That is the worst shape a fault can take here: nothing happens, and nothing says why.
+
+---
+
+### D-222 `[DECIDED]` — One way to save and send, not two
+
+**Decision.** `projects.publish` is removed, with the three tests that were its only callers. `github.saveAndSend` is the one way.
+
+**Why.** It was an earlier version of the same errand, left behind and wired to nothing. It pushed to whatever `origin` said, with no check on who the copy belongs to — the exact fault `github.saveAndSend` exists to prevent. A cloned project keeps the previous owner's address, and the danger of keeping a second implementation is that somebody wires the wrong one back in. Nothing shipped changed; a way to get it wrong went away.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

@@ -7,7 +7,7 @@
  * remains the only thing that publishes a site.
  */
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, rmdir, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, posix, relative, resolve } from 'node:path';
 import * as providers from './providers.mjs';
 import * as webcompanion from './webcompanion.mjs';
@@ -151,20 +151,21 @@ completePairing();
 `;
 }
 
-async function writeManifest(target, root, report, source = null) {
+async function writeManifest(target, root, report, source = null, architecture = null) {
   const id = webcompanion.projectId(root);
+  const wants = architecture ?? (report.blockers.length ? 'WEB_COMPANION' : 'STANDALONE_WEB');
   await writeFile(join(target, 'viberant-web-target.json'), JSON.stringify({
     version: 2, createdAt: new Date().toISOString(), source,
     desktopProject: '..', projectId: id,
-    recommendation: report.blockers.length ? 'WEB_COMPANION' : 'STANDALONE_WEB',
+    recommendation: wants,
     isolatedCapabilities: report.blockers.map((one) => one.id),
-    companionAdapters: report.blockers.length ? ['project.status', 'files.list', 'files.read'] : [],
+    companionAdapters: wants === 'WEB_COMPANION' ? ['project.status', 'files.list', 'files.read'] : [],
   }, null, 2), 'utf8');
-  if (report.blockers.length) await writeFile(join(target, 'viberant-companion.js'), companionClient(id), 'utf8');
+  if (wants === 'WEB_COMPANION') await writeFile(join(target, 'viberant-companion.js'), companionClient(id), 'utf8');
   return id;
 }
 
-async function makeReactTarget(root, target, entry, source, report) {
+async function makeReactTarget(root, target, entry, source, report, architecture = null) {
   const closure = sourceClosure(entry, source.files);
   if (matches(closure.files).length) return null;
   const pkg = await packageAt(root);
@@ -195,17 +196,27 @@ async function makeReactTarget(root, target, entry, source, report) {
     scripts: { dev: 'vite', build: 'vite build', preview: 'vite preview' }, dependencies, devDependencies,
   }, null, 2)}\n`, 'utf8');
   const mount = entry.text.match(/getElementById\(['"]([^'"]+)/)?.[1] || 'root';
-  const companion = report.blockers.length ? '  <script type="module" src="/viberant-companion.js"></script>\n' : '';
+  const wantsCompanion = architecture === 'WEB_COMPANION' || (!architecture && report.blockers.length);
+  const companion = wantsCompanion ? '  <script type="module" src="/viberant-companion.js"></script>\n' : '';
   await writeFile(join(target, 'index.html'), `<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${basename(root).replace(/[<&]/g, '')}</title></head><body><div id="${mount}"></div>\n${companion}  <script type="module" src="/src/${entry.name}"></script>\n</body></html>\n`, 'utf8');
-  await writeManifest(target, root, report, entry.name);
+  await writeManifest(target, root, report, entry.name, architecture);
   return target;
 }
 
 async function makeCompanionShell(root, target, report) {
-  const id = await writeManifest(target, root, report, null);
+  const id = await writeManifest(target, root, report, null, 'WEB_COMPANION');
   await writeFile(join(target, 'index.html'), `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${basename(root).replace(/[<&]/g, '')} Web Companion</title><style>body{font:16px system-ui;background:#090c14;color:#eef0ff;margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(42rem,calc(100% - 3rem));padding:2rem;border:1px solid #30364b;border-radius:16px;background:#111522}button{padding:.7rem 1rem;border:0;border-radius:8px;background:#7048e8;color:white}pre{white-space:pre-wrap;color:#b8c0d2}</style><main><small>WEB COMPANION</small><h1>${basename(root).replace(/[<&]/g, '')}</h1><p>This project relies on desktop capabilities. Its web version connects to Viberant for the explicitly approved adapters and leaves native work on your computer.</p><button id="connect">Connect to Viberant</button><button id="inspect">Check connection</button><pre id="status">Not connected.</pre></main><script type="module" src="./viberant-companion.js"></script><script type="module" src="./app.js"></script>`, 'utf8');
   await writeFile(join(target, 'app.js'), `const status = document.querySelector('#status'); document.querySelector('#connect').onclick = async () => { status.textContent = 'Waiting for approval…'; const out = await ViberantCompanion.connect(); status.textContent = out?.ok ? 'Connected.' : (out?.sentence || 'Connection was not completed.'); }; document.querySelector('#inspect').onclick = async () => { const out = await ViberantCompanion.call('project.status'); status.textContent = out.ok ? JSON.stringify(out, null, 2) : out.sentence; };\n`, 'utf8');
   return { target, id };
+}
+
+/** What an existing target says it is, read from its own manifest. */
+async function recordedArchitecture(targetRoot) {
+  try {
+    const manifest = JSON.parse(await readFile(join(targetRoot, 'viberant-web-target.json'), 'utf8'));
+    return manifest?.recommendation === 'WEB_COMPANION' || manifest?.recommendation === 'STANDALONE_WEB'
+      ? manifest.recommendation : null;
+  } catch { return null; }
 }
 
 /** Inspect one project without writing to it or starting anything. */
@@ -237,6 +248,7 @@ export async function analyze(dir) {
         root: web.root,
         inside: web.inside ?? null,
         at: deployed?.url ?? null,
+        architecture: await recordedArchitecture(web.root),
         says: web.inside
           ? `A web target already exists in ${web.inside}.`
           : 'This project already has a browser-safe target.',
@@ -277,8 +289,13 @@ export async function analyze(dir) {
  * Existing browser targets need no generated files. Native projects stop with
  * the exact adapter work still required; producing a decorative page and
  * calling it a version would be a false success.
+ *
+ * `architecture` is the person's explicit choice between the two shapes a web
+ * version can take, and it is honoured or refused with the reason — never
+ * quietly replaced with the other one.
  */
-export async function create(dir) {
+export async function create(dir, { architecture = null } = {}) {
+  const choice = architecture === 'WEB_COMPANION' || architecture === 'STANDALONE_WEB' ? architecture : null;
   const report = await analyze(dir);
   if (report.web.category === 'WEB_SAFE') {
     return {
@@ -298,6 +315,38 @@ export async function create(dir) {
    */
   const root = resolve(dir);
   const source = await sources(root);
+
+  const reactEntries = source.files.filter((one) => /\.(?:jsx|tsx)$/i.test(one.name)
+    && /createRoot\s*\(|ReactDOM\.(?:render|createRoot)\s*\(/.test(one.text))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const candidates = source.files.filter((one) => /\.(?:m?js)$/i.test(one.name)
+    && /document\.|window\.|customElements/.test(one.text)
+    && !/^\s*(?:import|export)\s/m.test(one.text)
+    && !/\brequire\s*\(/.test(one.text)
+    && matches([one]).length === 0)
+    .sort((a, b) => {
+      const rank = (name) => /(?:^|\/)(?:renderer|ui|client|app)(?:\.|\/)/i.test(name) ? 0 : 1;
+      return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
+    });
+
+  // A choice that cannot work is refused before anything is written, with the
+  // reason, so nothing half-made is left behind to block the next attempt.
+  if (choice === 'STANDALONE_WEB' && report.web.category === 'DESKTOP_ONLY') {
+    return {
+      ok: false, report,
+      sentence: 'No browser surface was found here, so a standalone web version has nothing to show.',
+      action: 'Add browser interface files first, or choose the Web Companion instead.',
+    };
+  }
+  if (choice === 'STANDALONE_WEB' && !reactEntries[0] && !candidates[0]) {
+    return {
+      ok: false, report,
+      sentence: 'No part of this project can stand alone in a browser yet — every browser-facing file still reaches computer-only capabilities.',
+      action: 'Separate the browser interface from the native work, or choose the Web Companion instead.',
+    };
+  }
+
   const target = join(root, 'web');
   if (existsSync(target)) {
     return {
@@ -309,17 +358,23 @@ export async function create(dir) {
   }
   await mkdir(target, { recursive: false });
 
-  const reactEntries = source.files.filter((one) => /\.(?:jsx|tsx)$/i.test(one.name)
-    && /createRoot\s*\(|ReactDOM\.(?:render|createRoot)\s*\(/.test(one.text))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  if (choice === 'WEB_COMPANION') {
+    await makeCompanionShell(root, target, report);
+    return {
+      ok: true, report: await analyze(root), root: target,
+      sentence: 'A Web Companion target was created, as chosen.',
+      action: 'Preview it and approve the connection to Viberant. Native-only capabilities remain on the desktop computer.',
+    };
+  }
+
   const react = reactEntries[0]
-    ? await makeReactTarget(root, target, reactEntries[0], source, report)
+    ? await makeReactTarget(root, target, reactEntries[0], source, report, choice)
     : null;
   if (react) {
     return {
       ok: true, report: await analyze(root), root: target,
       sentence: 'A React web version was created from the browser-safe project surface.',
-      action: report.blockers.length
+      action: report.blockers.length && choice !== 'STANDALONE_WEB'
         ? 'Install its existing web dependencies, preview it, and connect the desktop companion for approved native adapters.'
         : 'Install its existing web dependencies, preview it, then use Deploy when it looks right.',
     };
@@ -334,16 +389,6 @@ export async function create(dir) {
     };
   }
 
-  const candidates = source.files.filter((one) => /\.(?:m?js)$/i.test(one.name)
-    && /document\.|window\.|customElements/.test(one.text)
-    && !/^\s*(?:import|export)\s/m.test(one.text)
-    && !/\brequire\s*\(/.test(one.text)
-    && matches([one]).length === 0)
-    .sort((a, b) => {
-      const rank = (name) => /(?:^|\/)(?:renderer|ui|client|app)(?:\.|\/)/i.test(name) ? 0 : 1;
-      return rank(a.name) - rank(b.name) || a.name.localeCompare(b.name);
-    });
-
   const entry = candidates[0] ?? null;
   if (entry) {
     await copyFile(join(root, ...entry.name.split('/')), join(target, 'app.js'));
@@ -357,7 +402,8 @@ export async function create(dir) {
     }
 
     const styles = css.map((_one, i) => `<link rel="stylesheet" href="./style${i || ''}.css">`).join('\n  ');
-    const companion = report.blockers.length ? '  <script type="module" src="./viberant-companion.js"></script>\n' : '';
+    const wantsCompanion = !choice && report.blockers.length;
+    const companion = wantsCompanion ? '  <script type="module" src="./viberant-companion.js"></script>\n' : '';
     await writeFile(join(target, 'index.html'), `<!doctype html>
 <html lang="en">
 <head>
@@ -372,7 +418,7 @@ ${companion}
   <script src="./app.js"></script>
 </body>
 </html>\n`, 'utf8');
-    await writeManifest(target, root, report, entry.name);
+    await writeManifest(target, root, report, entry.name, choice);
 
     const ready = await analyze(root);
     return {
@@ -381,6 +427,18 @@ ${companion}
       root: target,
       sentence: 'A browser-safe web version was created in the web folder.',
       action: 'Preview it, then use Deploy when it looks right.',
+    };
+  }
+
+  if (choice === 'STANDALONE_WEB') {
+    // The isolated entry the earlier check saw could not be carried across
+    // whole. Nothing useful was written, so the empty folder goes too —
+    // leaving it would block the next attempt with a sentence about itself.
+    await rmdir(target).catch(() => null);
+    return {
+      ok: false, report,
+      sentence: 'No part of this project could be carried into a standalone web version whole.',
+      action: 'Separate the browser interface from the native work, or choose the Web Companion instead.',
     };
   }
 

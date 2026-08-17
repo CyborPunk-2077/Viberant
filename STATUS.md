@@ -1155,6 +1155,44 @@ Three real faults, all of which would have hit you first:
 
 ---
 
+## Four things that said they worked and did not
+
+A finishing pass over the web, Aider and test work already in the folder. Nothing
+of it was undone; what follows is what was still wrong underneath it.
+
+**Preview never ran.** The errand that shows a web target asks another route
+where that target is, and asks it from inside — no address, no body, nobody
+asking. The route took an address apart on the way in and stopped before doing
+anything, so *Preview in your browser* and *Open web target* on the Deploy page
+both did nothing at all, without a sentence. Every route the manager asks itself
+now has to be answerable with nothing, and a test finds them and checks. D-221.
+
+**Installing Aider left no Aider.** Two faults, either one enough. The second
+step named a package that has no way to be run as itself, so it answered
+*cannot be directly executed* and failed the same way however many times it was
+tried. With that fixed, the installer put `aider` in `~/.local/bin` and said out
+loud that the folder is not being looked in — which on Windows stays true for
+everything already running, so the errand ended saying Aider was installed while
+the same page went on offering to install it. Both fixed and run end to end on
+this computer: the errand ends well, and the page then says Aider is here. D-220.
+
+**Two ways to save and send.** An earlier version of the errand was still in the
+folder, wired to nothing and kept alive only by its own tests. It sent to
+whatever address the folder already carried, without asking who the copy belongs
+to — which is the whole fault the one in use exists to prevent, and a copy taken
+from somebody else keeps their address. Removed, with its three tests. D-222.
+
+**Five tests were failing before any of this.** None of them were about the code
+they named. Two sliced one function out of a file by looking for a line that is
+only its closing brace, which is never found here, so they searched the whole
+rest of the file instead. One built a path out of an address and kept `%20`,
+because this folder has a space in its name. Two more held a page and a sign-in
+to shapes that had deliberately been replaced — including one that would have
+had closing the sign-in sheet cancel an authorization nobody cancelled. The
+tests were wrong, not the app. All 771 now pass.
+
+---
+
 ## What is left
 
 **The installer has to be built again.** `npm run build`. The worst fault fixed

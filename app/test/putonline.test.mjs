@@ -23,6 +23,15 @@ import { fileURLToPath } from 'node:url';
 
 import { whatVercelSaid } from '../providers.mjs';
 
+/*
+ * The end of a function is found below by looking for a line that is only its
+ * closing brace. On a computer whose files carry a carriage return as well,
+ * that line is never found and the slice becomes the whole rest of the file —
+ * so a check that this one function never does something quietly becomes a
+ * search of everything after it. Made the same first.
+ */
+const sameLines = (text) => text.replaceAll('\r\n', '\n');
+
 const here = dirname(fileURLToPath(import.meta.url));
 
 /** Exactly what the command printed, on the day this was written. */
@@ -62,7 +71,7 @@ Completing…
 }`;
 
 let source;
-before(async () => { source = await readFile(join(here, '..', 'providers.mjs'), 'utf8'); });
+before(async () => { source = sameLines(await readFile(join(here, '..', 'providers.mjs'), 'utf8')); });
 
 describe('reading what the command printed', () => {
   test('the address is the short one, and nothing is stuck to the end of it', async () => {

@@ -2542,6 +2542,13 @@ function placeFloating(panel) {
   panel.style.position = 'fixed';
   panel.style.left = '0px';
   panel.style.top = '0px';
+  // Never taller than the window it floats in. On a short window a menu with
+  // plenty in it — several accounts, two services, a name — grew past the
+  // bottom edge and its last rows sat over whatever was under them, out of
+  // reach. Clamped before measuring, so the placement below sees the real
+  // height, and what does not fit scrolls inside the menu instead.
+  panel.style.maxHeight = `${innerHeight - 16}px`;
+  panel.style.overflowY = 'auto';
   const mine = panel.getBoundingClientRect();
 
   const left = Math.min(Math.max(8, from.left), Math.max(8, innerWidth - mine.width - 8));
@@ -4125,6 +4132,41 @@ async function drawOpenProject() {
     ['Deploy', webLive],
   ];
 
+  /*
+   * The two shapes a web version can take, as real choices rather than
+   * decoration. One that cannot work here is shown with the reason it cannot,
+   * instead of quietly not responding — and once a target exists, the cards
+   * state which shape it actually is.
+   */
+  const category = platforms.web?.category ?? null;
+  const recommended = platforms.recommendation === 'WEB_COMPANION' ? 'WEB_COMPANION' : 'STANDALONE_WEB';
+  const existingArch = platforms.web?.architecture ?? (webExists ? 'STANDALONE_WEB' : null);
+  const architectures = [
+    { id: 'STANDALONE_WEB', name: 'Standalone Web',
+      why: 'The browser target runs on its own, with nothing reaching back to this computer.',
+      cannot: category === 'DESKTOP_ONLY' ? 'No browser surface was found in this project.' : null },
+    { id: 'WEB_COMPANION', name: 'Web Companion',
+      why: 'A browser interface connects securely to the desktop capabilities it needs.',
+      cannot: category === 'WEB_SAFE' ? 'Nothing here needs the desktop computer, so there is nothing for a companion to connect.' : null },
+  ];
+  let chosenArchitecture = existingArch
+    ?? architectures.find((one) => one.id === recommended && !one.cannot)?.id
+    ?? architectures.find((one) => !one.cannot)?.id
+    ?? null;
+  const archCard = (one) => {
+    if (webExists) {
+      const isIt = existingArch === one.id;
+      return `<div class="architecture-choice ${isIt ? 'on' : 'cannot'}"><span class="choice-dot"></span>
+        <span><b>${esc(one.name)}</b><small>${isIt ? 'This is the shape of the created target.' : esc(one.why)}</small></span></div>`;
+    }
+    if (one.cannot) {
+      return `<div class="architecture-choice cannot"><span class="choice-dot"></span>
+        <span><b>${esc(one.name)}</b><small>${esc(one.cannot)}</small></span></div>`;
+    }
+    return `<button class="architecture-choice ${chosenArchitecture === one.id ? 'on' : ''}" data-arch="${one.id}"><span class="choice-dot"></span>
+      <span><b>${esc(one.name)}</b><small>${esc(one.why)}</small></span></button>`;
+  };
+
   view.innerHTML = `
     <div class="ref-project-detail">
       <div class="ref-project-crumbs"><button class="backlink" id="back">Projects</button><span>›</span><span>${esc(p.name)}</span><span>›</span><b>Platforms</b></div>
@@ -4149,7 +4191,7 @@ async function drawOpenProject() {
             <div class="ref-platform-analysis">
               <section><span class="eyebrow">Project analysis</span><div class="ref-analysis-list"><div><span class="dot live"></span><b>${platforms.scanned ?? 0} source files inspected</b><small>Complete</small></div><div><span class="dot ${(platforms.browserFiles ?? []).length ? 'live' : 'off'}"></span><b>Browser surface</b><small>${(platforms.browserFiles ?? []).length ? `${platforms.browserFiles.length} files found` : 'Not found'}</small></div>${(platforms.blockers ?? []).slice(0,4).map((one) => `<button data-platform-blocker="${esc(one.id)}"><span class="dot attention"></span><b>${esc(one.says)}</b><small>${one.count}</small></button>`).join('')}</div><button class="wide" id="platform-analyze">Re-run analysis</button></section>
               <section class="ref-compatibility"><span class="eyebrow">Compatibility report</span><div class="compatibility-orbit ${webReady ? 'ready' : ''}"><b>${webReady ? 'Ready' : esc(platforms.web?.category?.replaceAll('_',' ') ?? 'Unknown')}</b><small>Web compatibility</small></div><div class="ref-compat-facts"><span><i class="dot live"></i><b>Desktop remains intact</b></span><span><i class="dot ${(platforms.blockers ?? []).length ? 'attention' : 'live'}"></i><b>${(platforms.blockers ?? []).length} adapter group${(platforms.blockers ?? []).length === 1 ? '' : 's'}</b></span></div></section>
-              <section class="ref-architecture"><div class="section-rubric"><span><span class="eyebrow">Architecture recommendation</span><b>${platforms.recommendation === 'WEB_COMPANION' ? 'Web Companion' : platforms.recommendation === 'STANDALONE_WEB' ? 'Standalone Web' : 'Desktop only'}</b></span><span class="good">Recommended</span></div><div class="architecture-choice on"><span class="choice-dot"></span><span><b>${platforms.recommendation === 'WEB_COMPANION' ? 'Web Companion' : 'Standalone Web'}</b><small>${platforms.recommendation === 'WEB_COMPANION' ? 'A browser interface connects securely to the desktop capabilities it needs.' : 'The browser target can run independently.'}</small></span></div><div class="architecture-choice"><span class="choice-dot"></span><span><b>${platforms.recommendation === 'WEB_COMPANION' ? 'Standalone Web' : 'Web Companion'}</b><small>${platforms.recommendation === 'WEB_COMPANION' ? 'Requires isolating every native capability first.' : 'Available when native features need the desktop agent.'}</small></span></div><div class="ref-platform-actions">${platforms.web?.at ? '<button class="go" id="platform-open-web">Open Web</button>' : ''}${webExists ? '<button id="platform-open-root">Open web target</button>' : '<button class="go" id="platform-create-inline">Create Web Version</button>'}${webReady ? '<button id="platform-deploy">Deploy</button>' : ''}</div></section>
+              <section class="ref-architecture"><div class="section-rubric"><span><span class="eyebrow">Architecture</span><b>${architectures.find((one) => one.id === recommended)?.name ?? 'Desktop only'}</b></span><span class="good">Recommended</span></div>${architectures.map(archCard).join('')}<div class="ref-platform-actions">${platforms.web?.at ? '<button class="go" id="platform-open-web">Open Web</button>' : ''}${webExists ? '<button class="go" id="platform-preview">Preview in your browser</button><button id="platform-open-root">Show the files</button>' : '<button class="go" id="platform-create-inline">Create Web Version</button>'}${webReady ? '<button id="platform-deploy">Deploy</button>' : ''}</div></section>
             </div>
             <div class="ref-platform-lower"><section><span class="eyebrow">Shared browser logic</span><p>${(platforms.browserFiles ?? []).length ? `${platforms.browserFiles.length} browser-facing files can be reused.` : 'No isolated browser-facing files were identified yet.'}</p></section><section><span class="eyebrow">Desktop-only capabilities</span><p>${(platforms.blockers ?? []).map((one) => esc(one.says)).slice(0,3).join(' · ') || 'None detected'}</p></section><section><span class="eyebrow">What happens next</span><p>${webExists ? 'Preview the generated target, review it, then deploy.' : 'Create a separate web target; the desktop project remains untouched.'}</p></section></div>
           </section>
@@ -4232,12 +4274,30 @@ async function drawOpenProject() {
   for (const b of document.querySelectorAll('[data-project-scroll]')) b.onclick = () => {
     document.getElementById(b.dataset.projectScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
-  $('#platform-analyze').onclick = () => draw();
+  $('#platform-analyze').onclick = async () => { await get('/project/platforms?fresh=1'); draw(); };
   $('#platform-deploy')?.addEventListener('click', () => go('ship'));
   $('#platform-open-web')?.addEventListener('click', () => post('/open-outside', { url: platforms.web.at }));
   $('#platform-open-root')?.addEventListener('click', () => post('/reveal', { path: platforms.web.root }));
+  for (const b of document.querySelectorAll('[data-arch]')) b.onclick = () => {
+    chosenArchitecture = b.dataset.arch;
+    for (const other of document.querySelectorAll('[data-arch]')) other.classList.toggle('on', other === b);
+  };
+  /*
+   * One press, one tab. The button is held down while the manager answers, so
+   * a double click cannot start two of anything — and the server reuses a
+   * preview already running rather than starting another.
+   */
+  $('#platform-preview')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    if (b.disabled) return;
+    b.disabled = true;
+    const out = await post('/project/platforms/preview', {});
+    b.disabled = false;
+    say(out);
+    draw();
+  });
   const createWebTarget = async () => {
-    const made = await post('/project/platforms/create', {});
+    const made = await post('/project/platforms/create', { architecture: chosenArchitecture });
     say(made);
     if (made.ok) draw(); else {
       inspect({
@@ -5581,7 +5641,7 @@ function deployReferenceMarkup({ d, platforms, site, app, bind }) {
                 <h3>${platforms.recommendation === 'WEB_COMPANION' ? 'Standalone Web + Web Companion' : 'Standalone Web'}</h3>
                 <p>${esc(platforms.web?.says ?? 'Prepare a browser-safe surface before deploying.')}</p>
                 <ul><li>Reuse browser-safe interface logic</li><li>Keep computer-only modules private</li><li>Connect only when native access is needed</li><li>Review every blocking capability</li></ul>
-                <button class="go" id="deploy-adapt">${webReady ? 'Open web target' : 'Configure web target'}</button></article>
+                <button class="go" id="deploy-adapt">${platforms.web?.root ? 'Open web target' : 'Configure web target'}</button></article>
             </div>
             <div class="ref-adaptation"><div class="ref-adapt-title"><b>Adaptation plan</b><span>what is included and what still needs work</span></div>
               <div class="ref-adapt-steps">${adaptation.length ? adaptation.map((item, index) => `<div><span class="summary-mark">${index + 1}</span><span><b>${esc(item.says)}</b><small>${item.count} ${item.count === 1 ? 'place' : 'places'} found</small></span><em>${index < 2 ? 'Needs adapter' : 'Keep on desktop'}</em></div>`).join('') : '<p>No browser blockers were found.</p>'}</div>
@@ -5634,109 +5694,6 @@ SCREENS.ship = async () => {
   const { site, app } = d;
 
   const bind = d.binding ?? {};
-
-  view.innerHTML = `
-    <div class="pagehead command-head">
-      <div class="grow">
-        <span class="eyebrow">Release center</span>
-        <h1>Deploy</h1>
-        <p class="sub">Publish a website or produce a downloadable application from the open project.</p>
-      </div>
-    </div>
-    ${saidHtml()}
-
-    <section class="release-readiness-v2">
-      <div class="release-orbit ${d.deployedTo?.url ? 'live' : ''}">${SUM_MARK.world}</div>
-      <div class="release-identity"><span class="eyebrow">Release readiness</span>
-        <h2>${esc(d.name ?? '')}</h2>
-        <p>${d.deployedTo?.url ? `Online at ${esc(String(d.deployedTo.url).replace(/^https?:\/\//, ''))}` : 'Nothing from this project is online yet.'}</p></div>
-      <div class="release-signals">
-        <div><span>Build system</span><b>${esc(d.look?.framework ?? (d.look?.hasPackage ? 'No framework' : 'Plain files'))}</b></div>
-        <div><span>GitHub</span><b>${bind.bound ? `${esc(bind.owner)}/${esc(bind.repo)}` : 'Not connected'}</b></div>
-        <div><span>Unsaved</span><b class="${d.project?.unsaved ? 'warn' : ''}">${d.project?.unsaved ?? 'None'}</b></div>
-        <div><span>Web target</span><b>${esc(String(platforms.web?.status ?? 'UNKNOWN').replaceAll('_', ' '))}</b></div>
-      </div>
-    </section>
-
-    ${d.deployedTo?.url ? `
-      <div class="said good">
-        <b>${esc(d.name)} is live.</b>
-        <span class="mono">${esc(d.deployedTo.url)}</span>
-        <span class="acts">
-          <button class="small" data-open-live="${esc(d.deployedTo.url)}">Open site</button>
-          <button class="quiet small" data-copy-live="${esc(d.deployedTo.url)}">Copy URL</button>
-        </span>
-      </div>` : ''}
-
-    ${d.project?.shared ? '' : `
-      <div class="said">
-        <b>This project has no copy on GitHub yet.</b>
-        <span>Both errands below need one. It is a single question.</span>
-        <span class="acts"><button class="go small" id="dep-publish">Put it on GitHub…</button></span>
-      </div>`}
-
-    <div class="release-workflows-v2 deploy-grid">
-      <section class="deploy-lane">
-        <div class="deploy-lane-head"><span class="release-step">01</span><span class="kindmark">${SITE_MARK}</span><span class="grow"><b>Website release</b><span>Put the current website online</span></span></div>
-        ${platforms.web?.category !== 'WEB_SAFE' ? `<div class="deploy-adaptation-v2">
-          <div><span class="eyebrow">${esc(platforms.web?.category?.replaceAll('_', ' ') ?? 'Web analysis')}</span>
-            <h3>${platforms.recommendation === 'WEB_COMPANION' ? 'Web Companion recommended' : 'A browser surface is needed'}</h3>
-            <p>${esc(platforms.web?.says ?? 'Analyze this project before deploying it as a website.')}</p></div>
-          <div class="adaptation-pills">${(platforms.blockers ?? []).slice(0, 4).map((one) => `<span>${esc(one.says)} · ${one.count}</span>`).join('')}</div>
-          <button class="quiet" id="dep-platforms">Open compatibility report →</button>
-        </div>` : ''}
-        <div class="sheetlist term-cols">
-      ${vercelRow(d)}
-      ${site.places.filter((pl) => pl.id !== 'vercel').map((pl) => `
-        <div class="trow">
-          <span class="kindmark" aria-hidden="true">${SITE_MARK}</span>
-          <span class="tname">
-            <b>${esc(pl.name)}</b>
-            <span class="where">${esc(pl.ready ? pl.blurb : pl.missing ?? pl.blurb)}</span>
-          </span>
-          <span class="tacts">
-            <span class="state ${pl.ready ? 'finished' : 'notStarted'}">
-              <span class="pip"></span>${pl.ready ? 'Ready' : 'Not ready'}</span>
-            <button class="small" data-site="${esc(pl.id)}" ${pl.ready ? '' : 'disabled'}>Deploy website</button>
-          </span>
-        </div>`).join('')}
-        </div>
-      </section>
-
-      <section class="deploy-lane">
-        <div class="deploy-lane-head"><span class="release-step">02</span><span class="kindmark">${KIND_MARK.file}</span><span class="grow"><b>Application build</b><span>${app.packStep
-    ? `builds with this project’s own “${esc(app.packStep)}” step`
-    : app.manager === 'cargo' ? 'builds with cargo' : 'No build step yet'}</span></span></div>
-    ${app.installers.length ? `
-      <div class="sheetlist term-cols">
-        ${app.installers.map((f) => `
-          <div class="trow">
-            <span class="kindmark" aria-hidden="true">${KIND_MARK.file}</span>
-            <span class="tname">
-              <b>${esc(f.name)}</b>
-              <span class="where">${esc(size(f.size))} · already built, in ${esc(f.where)}</span>
-            </span>
-            <span class="tacts">
-              <button class="quiet small" data-show-built="${esc(f.path)}">Show in Explorer</button>
-            </span>
-          </div>`).join('')}
-      </div>` : `
-      <div class="empty"><b>Nothing built yet.</b>
-        ${app.packStep || app.manager === 'cargo'
-    ? 'Build an installer and it appears here with where it went.'
-    : 'This project does not say how to build itself into something installable yet.'}</div>`}
-
-    <div class="bar" style="margin-top:.8rem">
-      <button class="go small" id="app-build" ${app.packStep || app.manager === 'cargo' ? '' : 'disabled'}>Build installer</button>
-      <button class="small" id="app-out"
-        ${app.canRelease && (app.packStep || app.installers.length) ? '' : 'disabled'}
-        data-tip="${app.canRelease ? 'Builds it, then puts the file on GitHub under a version anybody can download'
-    : 'Needs a copy of this project on GitHub, and you signed in to it'}">Build &amp; publish</button>
-        </div>
-      </section>
-    </div>
-
-    <div id="job"></div>`;
   view.innerHTML = deployReferenceMarkup({ d, platforms, site, app, bind });
   said = null;
 
@@ -5756,9 +5713,25 @@ SCREENS.ship = async () => {
     await go('projects');
     setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
   });
-  $('#deploy-settings')?.addEventListener('click', () => go('settings'));
+  // Deployment settings are who every deploy and release acts as — the
+  // accounts part of Settings — not the general list of preferences.
+  $('#deploy-settings')?.addEventListener('click', () => { settingsPlace = 'accounts'; go('settings'); });
   $('#deploy-new')?.addEventListener('click', () => document.getElementById('deploy-websites')?.scrollIntoView({ behavior: 'smooth' }));
-  $('#deploy-adapt')?.addEventListener('click', async () => {
+  /*
+   * "Open web target" opens the web target — running, in the browser, once
+   * per press. Only when there is nothing to open yet does it go to the
+   * Projects panel where one is configured.
+   */
+  $('#deploy-adapt')?.addEventListener('click', async (e) => {
+    if (platforms.web?.root) {
+      const b = e.currentTarget;
+      if (b.disabled) return;
+      b.disabled = true;
+      const out = await post('/project/platforms/preview', {});
+      b.disabled = false;
+      say(out);
+      return draw();
+    }
     await go('projects');
     setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
   });

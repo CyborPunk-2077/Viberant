@@ -65,6 +65,7 @@ import * as activity from './activity.mjs';
 import * as keybinds from './keybinds.mjs';
 import * as webtarget from './webtarget.mjs';
 import * as webcompanion from './webcompanion.mjs';
+import * as webpreview from './webpreview.mjs';
 import { widenPath, stopPassingOnOurOwnSurroundings } from './findtools.mjs';
 
 // Before anything asks whether a command exists. A window started from the
@@ -113,6 +114,20 @@ function letGoOf(child) {
   return child;
 }
 
+/**
+ * Open an address in the browser this computer uses — once per call.
+ *
+ * The one place this happens, so "one deliberate press opens one tab" is a
+ * property of the code rather than a discipline every caller has to keep.
+ */
+function openInBrowser(url) {
+  letGoOf(spawn(
+    process.platform === 'win32' ? 'cmd' : 'open',
+    process.platform === 'win32' ? ['/c', 'start', '', url] : [url],
+    { detached: true, stdio: 'ignore', windowsHide: true },
+  ));
+}
+
 // ---------------------------------------------------------------------------
 // This computer
 // ---------------------------------------------------------------------------
@@ -131,6 +146,9 @@ const myName = async () => (await settings.get('machineName')) || hostname();
 
 /** Everything to do with one project, made once and kept. */
 const opened = new Map();
+
+/** The web analysis per project, remembered for a few seconds (see the route). */
+const platformReports = new Map();
 async function open(path) {
   const dir = resolve(path);
   if (opened.has(dir)) return opened.get(dir);
@@ -799,14 +817,57 @@ const routes = {
     };
   },
 
-  async 'GET /project/platforms'() {
+  /*
+   * The web analysis reads up to seven hundred source files, and the pages
+   * that show it redraw on a timer. Asked fresh every time, that scan is what
+   * made switching to Projects or Deploy replace the screen with its outline
+   * for seconds (the D-78 shape, not the D-63 one: this is a fact about the
+   * source on disk, remembered briefly, and cleared by the one act that
+   * changes it here — creating a target).
+   */
+  // Asked for from inside as well as over the wire, and from inside there is
+  // no address to read a question off, so there has to be something to unpack.
+  async 'GET /project/platforms'({ url } = {}) {
     if (!current) return noProject;
-    return webtarget.analyze(current.dir);
+    const dir = current.dir;
+    const kept = platformReports.get(dir);
+    if (kept && !url?.searchParams.get('fresh') && Date.now() - kept.at < 8000) return kept.report;
+    const report = await webtarget.analyze(dir);
+    platformReports.set(dir, { at: Date.now(), report });
+    return report;
   },
 
-  async 'POST /project/platforms/create'() {
+  async 'POST /project/platforms/create'({ body }) {
     if (!current) return noProject;
-    return webtarget.create(current.dir);
+    platformReports.delete(current.dir);
+    const made = await webtarget.create(current.dir, { architecture: body?.architecture ?? null });
+    platformReports.delete(current.dir);
+    return made;
+  },
+
+  /**
+   * See the web target running, here, before it goes anywhere.
+   *
+   * The server that shows it is found again rather than doubled, and the
+   * browser is opened exactly once per press, at the end, after everything
+   * else worked — never from anything that redraws.
+   */
+  async 'POST /project/platforms/preview'() {
+    if (!current) return noProject;
+    const report = await routes['GET /project/platforms']();
+    const root = report?.web?.root;
+    if (!root) {
+      return { ok: false, sentence: 'There is no web target to preview yet.', action: 'Create the web version first.' };
+    }
+    const shown = await webpreview.open({ root });
+    if (!shown.ok) return shown;
+    openInBrowser(shown.at);
+    return {
+      ok: true,
+      at: shown.at,
+      sentence: `The web target is being shown at ${shown.at}, on this computer only.`,
+      action: 'It opens in your browser. Nothing has been put online.',
+    };
   },
 
   /** Begin an explicit, loopback-only Web Companion pairing. */
@@ -1034,6 +1095,69 @@ const routes = {
 
     const job = jobs.begin({ what: `Installing ${tool.name}`, where: HOUSE, kind: 'other' });
     (async () => {
+      /*
+       * Aider is a Python thing, and "a Python exists" does not mean "pip
+       * exists" — a bare interpreter put on the PATH by some other tool
+       * answers to `python` and has no pip in it, which used to surface here
+       * as a failure sentence about Python in general. So what is actually
+       * on this computer is checked first, in the open, and the sentence at
+       * the end names the real gap. Two steps because aider-install is only
+       * the installer: it has to be run to put Aider itself in place.
+       */
+      if (tool.id === 'aider') {
+        jobs.step(job, 'Checking what this computer has.');
+        let python = null;
+        for (const candidate of ['py', 'python']) {
+          const check = await jobs.runInto(job, { file: candidate, args: ['-m', 'pip', '--version'], cwd: HOUSE, timeout: 60_000 });
+          if (check.ok) { python = candidate; break; }
+        }
+        if (!python) {
+          const bare = await jobs.runInto(job, { file: 'python', args: ['--version'], cwd: HOUSE, timeout: 60_000 });
+          return jobs.end(job, {
+            ok: false,
+            sentence: bare.ok
+              ? 'The Python this computer offers has no pip in it, so it cannot install anything.'
+              : 'This needs Python, and there is none on this computer.',
+            action: bare.ok
+              ? 'Install Python from python.org — pip comes with it — then press Install again. The lines above show exactly what was tried.'
+              : 'Install Python from python.org, then press Install again.',
+          });
+        }
+        jobs.step(job, `Running ${python} -m pip install --upgrade aider-install.`);
+        const fetched = await jobs.runInto(job, { file: python, args: ['-m', 'pip', 'install', '--upgrade', 'aider-install'], cwd: HOUSE });
+        if (!fetched.ok) {
+          return jobs.end(job, {
+            ok: false,
+            sentence: `${tool.name} could not be installed.`,
+            action: 'The lines above say what pip did not like.',
+          });
+        }
+        /*
+         * `aider_install.main`, not `aider_install`. The package holds the
+         * step that puts Aider in place but has no way to be run as itself, so
+         * naming the package got "cannot be directly executed" and an errand
+         * that failed the same way every time it was tried again. The module
+         * inside it is the one that runs. Named this way rather than by the
+         * command the install writes, because that command lands in a folder
+         * this computer may not be looking in yet.
+         */
+        jobs.step(job, `Running ${python} -m aider_install.main, which puts Aider itself in place.`);
+        const placed = await jobs.runInto(job, { file: python, args: ['-m', 'aider_install.main'], cwd: HOUSE });
+        if (!placed.ok) {
+          return jobs.end(job, {
+            ok: false,
+            sentence: 'The aider-install step did not finish.',
+            action: 'The lines above say where it stopped. Press Install to try again.',
+          });
+        }
+        tools.forgetWhatIsHere();
+        return jobs.end(job, {
+          ok: true,
+          sentence: `${tool.name} is installed.`,
+          action: 'It appears as available on this page in a moment. If it does not, open a new terminal so the computer notices it.',
+        });
+      }
+
       jobs.step(job, `Running ${what.what}. This takes a minute or two.`);
       const out = await jobs.runInto(job, { file: what.file, args: what.args, cwd: HOUSE });
       if (!out.ok) {
@@ -2314,12 +2438,15 @@ const routes = {
 
   /** Why did something fail. The most useful question there is. */
   async 'POST /ai/explain'({ body }) {
-    if (!current) return noProject;
     const job = jobs.get(body?.job);
     if (!job) return { ok: false, sentence: 'That errand is no longer being kept.', action: 'Run it again.' };
+    // An errand like installing a tool belongs to no project, and a question
+    // about why it failed deserves an answer anyway.
     return assistant.explainFailure({
-      dir: current.dir,
+      dir: current?.dir ?? null,
       what: job.what ?? 'Something',
+      command: job.command ?? null,
+      code: job.code ?? null,
       lines: job.lines ?? [],
     });
   },
@@ -3050,11 +3177,7 @@ data: ${JSON.stringify(one)}
     if (!/^https?:\/\//i.test(url)) {
       return { ok: false, sentence: 'That is not an address this computer can open.', action: 'Copy it instead.' };
     }
-    letGoOf(spawn(
-      process.platform === 'win32' ? 'cmd' : 'open',
-      process.platform === 'win32' ? ['/c', 'start', '', url] : [url],
-      { detached: true, stdio: 'ignore', windowsHide: true },
-    ));
+    openInBrowser(url);
     return { ok: true };
   },
 

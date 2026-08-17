@@ -45,6 +45,11 @@ function snapshot(job) {
     inspect: job.inspect ?? null,
     made: job.made ?? null,
     release: job.release ?? null,
+    // The last command this errand ran and how it ended, so the thing that
+    // explains a failure can be told what actually happened rather than
+    // guessing it back out of the output.
+    command: job.command ?? null,
+    code: job.code ?? null,
     lines: job.lines,
     steps: job.steps,
   };
@@ -150,6 +155,8 @@ export function end(job, {
 export function runInto(job, { file, args = [], cwd, env = {}, timeout = 20 * 60 * 1000 }) {
   return new Promise((resolve) => {
     job.lines.push(`> ${file} ${args.join(' ')}`);
+    job.command = `${file} ${args.join(' ')}`.trim();
+    job.code = null;
 
     let child;
     try {
@@ -178,6 +185,7 @@ export function runInto(job, { file, args = [], cwd, env = {}, timeout = 20 * 60
     });
     child.on('close', (code) => {
       clearTimeout(timer);
+      job.code = code;
       resolve({ ok: code === 0, code });
     });
   });

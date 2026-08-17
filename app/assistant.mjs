@@ -1138,18 +1138,34 @@ export function whatThatMeant(set, out) {
  * the highest-value thing here: a build log is four hundred lines and the
  * useful part is one of them.
  */
-export async function explainFailure({ dir, what, lines = [] }) {
-  const context = await contextFor(dir);
+export async function explainFailure({ dir, what, lines = [], command = null, code = null }) {
+  const context = dir ? await contextFor(dir) : null;
   // The end of a log is where the reason is. The start is setup.
   const tail = withoutSecrets(lines.slice(-120).join('\n')).slice(-8000);
+
+  /*
+   * The facts of the failure itself, stated rather than left to be guessed
+   * back out of the output: the exact command, how it ended, and what this
+   * computer is. "pip is missing, install pip" is what a model says when it
+   * only sees the words; given that the command was `python -m pip` on this
+   * machine, it can say which Python has no pip and what actually fixes it.
+   */
+  const facts = [
+    command ? `The exact command was: ${command}` : null,
+    code !== null && code !== undefined ? `It ended with exit code ${code}.` : null,
+    `The computer runs ${process.platform === 'win32' ? 'Windows' : process.platform}.`,
+  ].filter(Boolean);
 
   return askModel({
     system: VOICE,
     mostTokens: 900,
     message: [
-      `${what} failed in this project. Say what most likely caused it and what to change.`,
+      `${what} failed${dir ? ' in this project' : ' on this computer'}. Say what most likely caused it and what to change.`,
+      'Ground the answer in the command and environment below — name the actual thing that is wrong on this computer, not general advice.',
       '',
-      asPrompt(context),
+      facts.join('\n'),
+      '',
+      context ? asPrompt(context) : '',
       '',
       '--- what it printed ---',
       tail,

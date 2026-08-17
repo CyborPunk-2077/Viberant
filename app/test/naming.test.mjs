@@ -19,6 +19,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/*
+ * The end of a function is found below by looking for a line that is only its
+ * closing brace. On a computer whose files carry a carriage return as well,
+ * that line is never found and the slice becomes the whole rest of the file —
+ * so a check that this one function never does something quietly becomes a
+ * search of everything after it. Made the same first.
+ */
+const sameLines = (text) => text.replaceAll('\r\n', '\n');
+
 const here = dirname(fileURLToPath(import.meta.url));
 let root, providers;
 
@@ -85,7 +94,7 @@ describe('a folder name becomes a name Vercel will take', () => {
 
   test('nothing here renames a folder', async () => {
     // The fear that would stop anybody trusting this, answered by reading it.
-    const source = await readFile(join(here, '..', 'providers.mjs'), 'utf8');
+    const source = sameLines(await readFile(join(here, '..', 'providers.mjs'), 'utf8'));
     for (const never of [/\brename\(/, /\brenameSync/, /fs\.rename/]) {
       assert.equal(never.test(source), false, `putting a site online can ${never}`);
     }
@@ -197,7 +206,7 @@ describe('what a deploy would do, worked out before it starts', () => {
   });
 
   test('the deploy runs in the website folder it worked out, never anywhere else', async () => {
-    const source = await readFile(join(here, '..', 'providers.mjs'), 'utf8');
+    const source = sameLines(await readFile(join(here, '..', 'providers.mjs'), 'utf8'));
     const body = source.slice(source.indexOf('async deploy(job, jobs'));
     const mine = body.slice(0, body.indexOf('\n  },'));
 
@@ -206,7 +215,7 @@ describe('what a deploy would do, worked out before it starts', () => {
   });
 
   test('and everything worth writing down comes back with it', async () => {
-    const source = await readFile(join(here, '..', 'providers.mjs'), 'utf8');
+    const source = sameLines(await readFile(join(here, '..', 'providers.mjs'), 'utf8'));
     const body = source.slice(source.indexOf('async deploy(job, jobs'));
     const mine = body.slice(0, body.indexOf('\n  },'));
 

@@ -49,6 +49,11 @@ function likelyPlaces() {
     join(roaming, 'npm'),
     join(local, 'Programs', 'Python', 'Python312', 'Scripts'),
     join(local, 'Microsoft', 'WindowsApps'),
+    // Where Aider lands. Its installer puts the command in this folder and says
+    // out loud that the folder is not on the PATH, which on Windows stays true
+    // for everything already running — so without this, installing Aider ends
+    // by saying it is installed while this page goes on saying it is missing.
+    join(home, '.local', 'bin'),
     join(home, '.bun', 'bin'),
     join(home, 'scoop', 'shims'),
     join(local, 'Programs', 'cursor', 'resources', 'app', 'bin'),

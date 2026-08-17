@@ -18,6 +18,15 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/*
+ * The end of a function is found below by looking for a line that is only its
+ * closing brace. On a computer whose files carry a carriage return as well,
+ * that line is never found and the slice becomes the whole rest of the file —
+ * so a check that this one function never does something quietly becomes a
+ * search of everything after it. Made the same first.
+ */
+const sameLines = (text) => text.replaceAll('\r\n', '\n');
+
 const here = dirname(fileURLToPath(import.meta.url));
 let root, assistant, settings;
 
@@ -149,7 +158,7 @@ describe('a key is checked before it is kept', () => {
   test('checking one never writes it down', async () => {
     // The check happens before anybody has agreed to keep the key. A check that
     // saved it would keep a key that turned out not to work.
-    const source = await readFile(join(here, '..', 'assistant.mjs'), 'utf8');
+    const source = sameLines(await readFile(join(here, '..', 'assistant.mjs'), 'utf8'));
     const body = source.slice(source.indexOf('export async function checkKey'));
     const mine = body.slice(0, body.indexOf('\n}\n') + 2);
 
@@ -159,7 +168,7 @@ describe('a key is checked before it is kept', () => {
   });
 
   test('and the one that is checked is a real model, not a made-up name', async () => {
-    const source = await readFile(join(here, '..', 'assistant.mjs'), 'utf8');
+    const source = sameLines(await readFile(join(here, '..', 'assistant.mjs'), 'utf8'));
     const body = source.slice(source.indexOf('export async function checkKey'));
     assert.match(body.slice(0, 1400), /CATALOGUE\[m\.id\]\?\.default/,
       'the check sends a model name of its own, which can go out of date on its own');

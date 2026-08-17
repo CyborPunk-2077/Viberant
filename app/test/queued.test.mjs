@@ -265,7 +265,13 @@ describe('how long they asked for is read from where they put it', () => {
    * question goes to whoever was named, once, and nothing is written down.
    */
   test('the page is offered somebody else, and never switched for you', async () => {
-    const page = await readFile(join(here, '..', 'ui', 'app.js'), 'utf8');
+    // Line endings made the same first: the end of the function is found by
+    // looking for a line that is only its closing brace, and on a computer
+    // whose files carry a carriage return too that line is never found — what
+    // gets searched is then the whole rest of the page rather than this one
+    // function, and a check that nothing here does something fails because
+    // something else, far below, does.
+    const page = (await readFile(join(here, '..', 'ui', 'app.js'), 'utf8')).replaceAll('\r\n', '\n');
     const at = page.indexOf('function whenItWouldNot(');
     assert.notEqual(at, -1, 'the refusal is no longer drawn as its own thing');
 

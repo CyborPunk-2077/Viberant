@@ -22,10 +22,19 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+/*
+ * The end of a function is found below by looking for a line that is only its
+ * closing brace. On a computer whose files carry a carriage return as well,
+ * that line is never found and the slice becomes the whole rest of the file —
+ * so a check that this one function never does something quietly becomes a
+ * search of everything after it. Made the same first.
+ */
+const sameLines = (text) => text.replaceAll('\r\n', '\n');
+
 const here = dirname(fileURLToPath(import.meta.url));
 let source;
 
-before(async () => { source = await readFile(join(here, '..', 'sync.mjs'), 'utf8'); });
+before(async () => { source = sameLines(await readFile(join(here, '..', 'sync.mjs'), 'utf8')); });
 
 const bringing = () => {
   const at = source.indexOf('export async function bring(');

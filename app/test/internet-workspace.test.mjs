@@ -2,6 +2,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,7 +11,10 @@ import { request } from 'node:http';
 import { start as startPlane } from '../plane-service.mjs';
 import { start as startRelay } from '../relay.mjs';
 
-const SERVER = new URL('../server.mjs', import.meta.url).pathname.replace(/^\/(.:)/, '$1');
+// Decoded, not sliced off the address by hand: a folder with a space in its
+// name arrives here as %20, and the copy that gets started is then a file that
+// is not there.
+const SERVER = fileURLToPath(new URL('../server.mjs', import.meta.url));
 const run = promisify(execFile);
 let root;
 let plane;

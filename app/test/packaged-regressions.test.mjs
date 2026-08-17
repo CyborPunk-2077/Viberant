@@ -2,8 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const page = await readFile(new URL('../ui/app.js', import.meta.url), 'utf8');
-const style = await readFile(new URL('../ui/style.css', import.meta.url), 'utf8');
+// Line endings made the same, so what is checked is what is written rather
+// than what this particular computer happened to check the files out as.
+const asWritten = async (at) => (await readFile(new URL(at, import.meta.url), 'utf8')).replaceAll('\r\n', '\n');
+const page = await asWritten('../ui/app.js');
+const style = await asWritten('../ui/style.css');
 const pkg = JSON.parse(await readFile(new URL('../../package.json', import.meta.url), 'utf8'));
 const releaseCheck = await readFile(new URL('../../build/require-oauth.mjs', import.meta.url), 'utf8');
 
@@ -12,9 +15,19 @@ test('Home project commands land in Project Detail from any Home row', () => {
   assert.match(open, /at\.tab = 'projects'/);
   assert.match(open, /at\.inside = true/);
   assert.match(open, /drawNav\(\)/);
-  assert.match(page, /class="home-featured-copy" data-home-open=/);
+
+  // Both places Home shows a project carry a way in: the card in recent work,
+  // and the row opened out in the directory below it.
+  assert.match(page, /class="home-work-card[\s\S]{0,700}?data-home-open=/,
+    'a project card on Home offers no way to open it');
+  assert.match(page, /class="home-directory-row[\s\S]{0,1600}?data-home-open=/,
+    'a project row on Home offers no way to open it');
   assert.match(page, /for \(const row of document\.querySelectorAll\('\[data-home-open\]'\)\)/);
-  assert.match(style, /\.home-project-line:focus-visible/);
+
+  // Every one of them is a real button, so it can be reached without a mouse.
+  assert.match(page, /<button[^>]*data-home-open=/);
+  assert.equal(/<(?!button)[a-z-]+[^>]*\sdata-home-open=/.test(page), false,
+    'something other than a button is a way into a project, so it cannot be tabbed to');
 });
 
 test('the AI picker mounts before stale provider discovery begins', () => {
@@ -51,8 +64,24 @@ test('device authorization keeps watching when the code arrives', () => {
   const githubWayIn = page.slice(page.indexOf('async function signInToGitHub'), page.indexOf('async function signInToGoogle'));
   assert.match(githubWayIn, /const existing = \$\('#github-device-code'\)/);
   assert.match(githubWayIn, /existing\.textContent = code/);
-  assert.match(githubWayIn, /whenLayerCloses\(\(\) => \{[\s\S]*clearInterval\(watching\)/);
-  assert.match(githubWayIn, /if \(!stopping\) post\('\/github\/signin\/stop'\)/);
+  /*
+   * And keeps watching after the sheet is gone. GitHub finishes when the person
+   * finishes with it in their browser, which may be after they have navigated
+   * somewhere else here — closing the sheet is not the same act as giving up,
+   * so it steps aside and lets the attempt run rather than cancelling it.
+   */
+  const whenClosed = githubWayIn.slice(githubWayIn.indexOf('whenLayerCloses('));
+  const closing = whenClosed.slice(0, whenClosed.indexOf('});') + 3);
+  assert.match(closing, /if \(!stopping\) detached = true;/,
+    'closing the sheet does not step aside, so what happens next is decided by a sheet nobody is looking at');
+  assert.equal(/clearInterval/.test(closing), false,
+    'closing the sheet stops watching, so an authorization finished in the browser is never noticed');
+  assert.equal(/signin\/stop/.test(closing), false,
+    'closing the sheet tells GitHub to give up on a sign-in nobody cancelled');
+
+  // Only saying so does that.
+  assert.match(githubWayIn, /if \(giveUp\) await post\('\/github\/signin\/stop'\)/);
+  assert.match(githubWayIn, /\$\('#in-cancel'\)\.onclick = async \(\) => \{\s*await stop\(\{ giveUp: true/);
 });
 
 test('production packaging requires public Google Desktop OAuth and rejects a secret', () => {

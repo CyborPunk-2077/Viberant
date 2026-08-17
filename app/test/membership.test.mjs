@@ -22,6 +22,19 @@ import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 let root, members, anywhere;
 
+/*
+ * One function's worth of source, as it is written down.
+ *
+ * The end of a function is found below by looking for a line that is only its
+ * closing brace. On a computer whose files end their lines with a carriage
+ * return as well, that line is never found, and what gets read instead is the
+ * whole rest of the file: "this function does not do that" quietly becomes a
+ * search of everything after it, and passes or fails for the wrong reason.
+ * Line endings are made the same first, so what is checked is the function
+ * that was named.
+ */
+const sourceOf = async (name) => (await readFile(join(here, '..', name), 'utf8')).replaceAll('\r\n', '\n');
+
 const aDevice = (id, name, person = 'danni') => ({
   deviceId: id, signPublic: `s-${id}`, agreePublic: `a-${id}`, displayName: name, person,
 });
@@ -254,7 +267,7 @@ describe('members recognise each other without GitHub in the middle', () => {
   });
 
   test('and it is made of nothing secret', async () => {
-    const source = await readFile(join(here, '..', 'members.mjs'), 'utf8');
+    const source = await sourceOf('members.mjs');
     const body = source.slice(source.indexOf('export function beaconKey'));
     const mine = body.slice(0, body.indexOf('\n}\n'));
 
@@ -276,7 +289,7 @@ describe('what the workspace shows is what the workspace holds', () => {
     // The one line that decides. Read from the source, because the fault being
     // held here is the kind that arrives when somebody folds a second list of
     // computers into this one for convenience.
-    const source = await readFile(join(here, '..', 'anywhere.mjs'), 'utf8');
+    const source = await sourceOf('anywhere.mjs');
     const body = source.slice(source.indexOf('export async function around'));
     const mine = body.slice(0, body.indexOf('\n}\n'));
 
@@ -287,7 +300,7 @@ describe('what the workspace shows is what the workspace holds', () => {
   });
 
   test('being on this network only says how somebody is reached, never whether they are in', async () => {
-    const source = await readFile(join(here, '..', 'anywhere.mjs'), 'utf8');
+    const source = await sourceOf('anywhere.mjs');
     const body = source.slice(source.indexOf('export async function around'));
     const mine = body.slice(0, body.indexOf('\n}\n'));
 

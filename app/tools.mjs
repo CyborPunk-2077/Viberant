@@ -722,7 +722,14 @@ const INSTALLS = {
 
 export function installCommand(tool) {
   const one = INSTALLS[tool?.id];
-  return one ? { file: one[0], args: one.slice(1), what: one.join(' ') } : null;
+  if (!one) return null;
+  // Aider installs in two steps — the package above is only the installer,
+  // and it has to be run afterwards to put Aider itself in place. Said here
+  // so the card shows what will actually happen (D-74).
+  if (tool.id === 'aider') {
+    return { file: one[0], args: one.slice(1), what: `${one.join(' ')}, then python -m aider_install.main` };
+  }
+  return { file: one[0], args: one.slice(1), what: one.join(' ') };
 }
 
 /** A path with a space in it is one thing, not two. */
