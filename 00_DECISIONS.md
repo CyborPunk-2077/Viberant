@@ -2411,6 +2411,56 @@ A thing is not shipped because it exists and is reachable. It is shipped when it
 
 ---
 
+### D-223 `[LOCKED]` — The one button is called Git Push
+
+**Decision.** The button, the panel it sits in and the entry in the search are all called **Git Push**. It is added to the small list of names the vocabulary audit allows, alongside GitHub and Git Bash. Every sentence around it still has to pass, which is what keeps the exception one name wide.
+
+**Why.** Founder decision. The rule it bends is real and stays: nothing on any screen describes a person's own work in borrowed words. A name is a different thing from a description — this one says which errand the button runs, in the words the person already searched for when they went looking for it. The test now proves both halves: `Afterwards, Git Push is the only button you need.` passes, and `This branch was pushed.` still fails on both words.
+
+**What it does not license.** No sentence anywhere gains permission to say *push*, *commit*, *branch* or *repository*. Two sentences that used to say "Save and send it to GitHub first" now name the button instead, which is the only place the phrase belongs.
+
+---
+
+### D-224 `[DECIDED]` — Where work goes is one decision, made in one place, before anything moves
+
+**Decision.** `github.destinationFor` returns exactly one of three plans and everything else obeys it.
+
+| Plan | When | What happens |
+|---|---|---|
+| `refuse` | the workspace's own folder, no runtime, nobody signed in | a sentence and something to do about it |
+| `direct` | the address in the project is one the account in use may write to | one press, no question |
+| `name` | anything else — no history, no address, or an address belonging to another account | the person is asked what it should be called on their account |
+
+`saveAndSend` reads that plan and does nothing else. **When a name is needed and none has been given, nothing at all is changed** — no history is started, no address is written, nothing is saved. So moving between accounts never rewrites a project by itself; an account is chosen, not applied.
+
+**The four faults this replaces, all of them the same fault.**
+
+*A project taken from somebody else was aimed at them.* The old path only diverted when the account in use could not write to the other owner's project. Anyone who happened to have write access — an organisation member, a collaborator — pushed their work at the other account without being asked.
+
+*A name already in use was quietly turned into a second name.* Where the chosen name held unrelated work, the old path silently tried `<name>-from-<owner>` instead. Somebody's project then appeared under a name they were never shown and could not predict. It is now refused, with the refusal carrying a way onward: another name, asked for again.
+
+*The name was never asked for at all.* A folder with no address went to GitHub under whatever the folder happened to be called on disk. It is now asked, once, at the moment of pressing.
+
+*An account it belonged to and an account this app was told to use read the same.* They are not the same. When Viberant points a project somewhere on purpose — a person named it, or a shared workspace agreed on it — that intent is written into the project as `viberant.destination`. **An address alone is where work came from; the mark is where somebody said it should go.** Only the mark, and only while the account in use may still write there, makes another account's project a destination. It is what keeps a shared workspace project one press while a copied one is always asked about.
+
+**Alternatives considered.** *Divert whenever the owner differs.* Rejected: it breaks every shared workspace project, which is a real arrangement people set up deliberately. *Keep asking through a separate Connect screen.* Rejected: it is the same question twice, and it left somebody holding a button that would not do what it said.
+
+---
+
+### D-225 `[DECIDED]` — A key that cannot be produced is nobody, never this computer's password store
+
+**Decision.** Two rules, both about the same silence.
+
+**The store is taken out of the decision whenever Viberant holds an account at all**, not only when a key could be unsealed. It was the second half that was missing: unsealing fails rarely, and when it did, the operation fell straight back to whatever Windows had saved — which is the wrong-account send the protection exists to prevent, wearing the clothes of a rare failure. Now the send is refused by GitHub and the person is told to sign in again, which is true. Somebody with no account connected here keeps their own arrangement untouched.
+
+**An account chosen but not present is nobody, never the next one along.** `signin` resolved the account in use as "the one named, or else the first in the list". A book left in an odd state therefore sent somebody's work as a different account, silently, while the screen named the one that was gone. One function now answers who is in use, and both the screen and the send read it.
+
+**And a held answer cannot outlive the account it is about.** Who GitHub says you are was kept for five seconds against the clock alone. Any change to the book of accounts — connecting, switching, disconnecting — now moves a count that the held answer carries, so a switch followed immediately by a send can never use the account before it.
+
+**How it is proved without a network.** `git-runtime.invocation` decides the arguments and environment for one operation without touching the disk, so the three cases are three assertions. Behaviour is held as well: a project carrying `credential.helper=manager` is run through the real runtime and the last helper Git sees is empty, and the small program that answers Git's question is executed and hands back the key for the account named here.
+
+---
+
 ## Part II — Amendments
 
 **Headline finding: the Constitution survives all four founder decisions unchanged.** I previously said three of the four punched holes in constitutional non-negotiables. That was an overstatement and I am correcting it. Checked individually, all eight non-negotiables hold. What actually broke is over-strong *phrasing* in the Architecture and MVP documents — downstream documents that claimed more absoluteness than the constitution ever required.

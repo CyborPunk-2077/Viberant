@@ -35,7 +35,7 @@ Everything Viberant remembers (settings, accounts, logs) lives securely in `%USE
 
 * **Project Context Management**: Pick a project once. Start any AI app (Claude Code, Cursor, Windsurf, Codex, etc.) or terminal directly in that folder.
 * **Multi-Account Profiles**: Keep more than one account per AI app (e.g., Work and Personal). Switch between them instantly without signing out.
-* **Zero-Setup Version Control**: Type what you did in plain English and press "Save and Send." Viberant handles git commits and pushes. If the project isn't on GitHub, it automatically creates a private repo for you.
+* **Zero-Setup Version Control**: Type what you did in plain English and press "Git Push." Viberant handles git commits and pushes. If the project isn't on GitHub, it automatically creates a private repo for you.
 * **Peer-to-Peer Workspace**: Collaborate securely. Connect multiple computers via LAN or relay. Share projects, see real-time presence, send live notes, and incrementally sync files with conflict resolution—no central database required.
 * **AI Diagnostics ("Ask")**: Use Claude, OpenAI, or Gemini directly within Viberant to ask questions about your local code, diagnose issues, or review changes.
 * **One-Click Deploy**: Send your web projects live to Vercel instantly from the "Ship" tab.

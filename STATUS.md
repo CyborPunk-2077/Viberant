@@ -2,8 +2,8 @@
 
 *What is done and what is left, in plain language. Updated every session.*
 
-**Last updated:** 10 August 2026
-**Tests:** 628 in the app and 107 in core — 735 in all — passing on Windows. The
+**Last updated:** 19 August 2026
+**Tests:** 698 in the app and 107 in core — 805 in all — passing on Windows. The
 whole workspace errand is driven **both ways** against two copies of the app
 that are actually running; it has now found twelve faults that every other test
 passed straight over.
@@ -1190,6 +1190,69 @@ because this folder has a space in its name. Two more held a page and a sign-in
 to shapes that had deliberately been replaced — including one that would have
 had closing the sign-in sheet cancel an authorization nobody cancelled. The
 tests were wrong, not the app. All 771 now pass.
+
+---
+
+## Git Push is one decision now, and the account you picked makes it
+
+**The button is called Git Push.** The panel, the button and the search entry all
+say it, and it is the one name the vocabulary audit allows past. Every sentence
+around it still has to pass. D-223.
+
+**Where work goes is decided in one place, and everything obeys it.** There are
+three answers and no others: refuse with a sentence, go straight there, or ask
+what it should be called on the account in use. `saveAndSend` reads that answer
+and does nothing else, so a folder with no history, a project taken from
+somebody else and a project of your own cannot drift into behaving differently.
+D-224.
+
+**Four ways the account you picked was not the account it sent as, all fixed.**
+
+*A project taken from somebody else was aimed back at them* whenever the account
+in use happened to have write access there — an organisation member, a
+collaborator. Now the address a project arrived with is never a destination on
+its own.
+
+*A name already in use was quietly turned into a second name.* It tried
+`<name>-from-<owner>` and said nothing, so somebody's project appeared under a
+name they were never shown. It is refused now, and another name is asked for.
+
+*The name was never asked for.* A folder with no address went up under whatever
+it happened to be called on disk. It is asked, once, at the moment of pressing —
+and until it is answered **nothing is changed at all**: no history started, no
+address written, nothing saved. That is what makes moving between accounts safe.
+
+*An address a project came from and a destination this app was told to use read
+the same.* They are two different things. When Viberant points a project
+somewhere on purpose — you named it, or a shared workspace agreed on it — that
+is written into the project, and only that makes another account's project a
+destination. So a shared workspace project stays one press, and a copied one is
+always asked about.
+
+**And two silences underneath it.** A key that could not be unsealed fell
+straight back to whatever Windows had saved, which is the wrong-account send the
+protection exists to prevent. And an account named as in use but no longer here
+resolved to the next one in the list — silently, while the screen named the one
+that was gone. Both are refusals now. A held answer about who you are also
+carries a count of every change to the book of accounts, so a switch followed
+immediately by a send can never use the account before it. D-225.
+
+**Twenty-two tests hold the whole matrix, with no network and nothing to clean
+up.** GitHub is stood in for by real repositories on disk and one function
+answering the asks — carrying the wrong account's key answers as the wrong
+account, exactly as the real one does. Held: your own project goes straight
+there; a copied one asks and then goes to your account with where it came from
+kept; one brought down from the explorer behaves the same; a plain folder asks
+first and leaves what its own `.gitignore` says to leave; a project with no
+address asks; switching accounts rewrites nothing; a name holding unrelated work
+is refused without a mark on what was there; a shared workspace project stays
+one press until the moment write access goes; and this computer's own password
+store is taken out of every operation, proved by running one against a project
+carrying `credential.helper=manager`.
+
+**What has still never been pressed for real:** all of the above against real
+GitHub, from the installed copy. The deciding is proved; the far end is a
+stand-in.
 
 ---
 

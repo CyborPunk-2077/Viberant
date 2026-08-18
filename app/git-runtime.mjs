@@ -54,6 +54,56 @@ export async function state() {
   };
 }
 
+/** Where the small program that answers "who is this" lives. */
+export const askpassFile = () => join(here, WINDOWS ? 'git-askpass.cmd' : 'git-askpass.sh');
+
+/**
+ * What one Git operation runs with — arguments and environment, decided
+ * without touching the disk so it can be held against a test.
+ *
+ * **Ask us who this is, not the computer's password store.**
+ *
+ * This is the whole of the "it made the project on GitHub and then sent nothing
+ * to it" fault, and nothing about it is visible from the outside. A password
+ * store is asked *before* the way we offer a key, and it answers — with whoever
+ * was last signed in to it, which on the computer where this was found was a
+ * different person entirely. GitHub then says the project is not there, because
+ * that is what it tells somebody asking for one they cannot see, and the new
+ * project stayed empty while the words on the screen talked about the network.
+ *
+ * Two things follow, and the second one is newer:
+ *
+ *   The store is taken out of the decision for the length of one command,
+ *   never beyond it. Nothing on the computer changes and no other folder is
+ *   touched.
+ *
+ *   It is taken out **whenever Viberant holds an account at all** — not only
+ *   when a key could be produced. A key that cannot be unsealed used to fall
+ *   straight back to the store, which is the same wrong-account send wearing
+ *   the clothes of a rare failure. Now the operation is refused by GitHub and
+ *   the person is told to sign in again, which is true.
+ *
+ * Somebody with no account connected here keeps their own arrangement exactly
+ * as it is.
+ */
+export function invocation({ args, token = null, askpass = null, connected = false }) {
+  const ours = !!token && !!askpass;
+  const hush = ours || connected;
+  return {
+    ours,
+    hush,
+    args: hush ? ['-c', 'credential.helper=', ...args] : [...args],
+    env: {
+      GIT_TERMINAL_PROMPT: '0',
+      ...(ours ? {
+        GIT_ASKPASS: askpass,
+        VIBERANT_GITHUB_TOKEN: token,
+        VIBERANT_GITHUB_USER: 'x-access-token',
+      } : {}),
+    },
+  };
+}
+
 export async function run(dir, ...args) {
   const file = await executable();
   if (!file) {
@@ -62,36 +112,24 @@ export async function run(dir, ...args) {
     throw error;
   }
 
-  const token = await signin.activeToken();
-  const askpass = join(here, WINDOWS ? 'git-askpass.cmd' : 'git-askpass.sh');
-  const ours = !!token && existsSync(askpass);
-  const env = {
-    ...process.env,
-    GIT_TERMINAL_PROMPT: '0',
-    ...(ours ? {
-      GIT_ASKPASS: askpass,
-      VIBERANT_GITHUB_TOKEN: token,
-      VIBERANT_GITHUB_USER: 'x-access-token',
-    } : {}),
-  };
+  const account = await signin.activeAccount();
+  const askpass = askpassFile();
+  const how = invocation({
+    args,
+    token: account?.token ?? null,
+    askpass: existsSync(askpass) ? askpass : null,
+    connected: !!account,
+  });
 
-  /*
-   * Ask us who this is, not the computer's password store.
-   *
-   * This is the whole of the "it made the project on GitHub and then sent
-   * nothing to it" fault, and nothing about it is visible from here. A password
-   * store is asked *before* the way we offer a token, and it answers — with
-   * whoever was last signed in to it, which on this computer was a different
-   * person entirely. GitHub then says *Repository not found*, because that is
-   * what it tells somebody asking for a project they cannot see, and the new
-   * project stayed empty while the words on the screen talked about the network.
-   *
-   * Cleared for the length of one command, and only when we have a token of our
-   * own to offer instead. Nothing on the computer changes, no other folder is
-   * touched, and anybody not signed in to Viberant keeps their usual helper.
-   */
-  const how = ours ? ['-c', 'credential.helper='] : [];
-  return execute(file, [...how, ...args], { cwd: dir || undefined, env, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+  const env = { ...process.env, ...how.env };
+  // An account is connected but no key of ours could be offered. Whatever this
+  // computer would otherwise have answered with is not allowed to stand in.
+  if (how.hush && !how.ours) {
+    delete env.GIT_ASKPASS;
+    delete env.SSH_ASKPASS;
+  }
+
+  return execute(file, how.args, { cwd: dir || undefined, env, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
 }
 
 export async function global(...args) {

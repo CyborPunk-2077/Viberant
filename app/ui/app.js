@@ -2038,8 +2038,8 @@ function everything() {
       where: 'projects', run: () => go('projects'),
     });
     out.push({
-      group: 'This project', glyph: '↑', what: 'Save and send',
-      run: async () => { await go('projects'); $('#save')?.click(); },
+      group: 'This project', glyph: '↑', what: 'Git Push',
+      run: async () => { await go('projects'); $('#pub')?.click(); },
     });
 
     /**
@@ -2496,7 +2496,7 @@ async function drawOnce({ quietly = false } = {}) {
      *
      * This is the whole of "everything vanishes for five seconds". Anything
      * slower than a tenth of a second replaced the screen with its own outline
-     * — and pressing Deploy, or Save and send, or anything that talks to GitHub
+     * — and pressing Deploy, or Git Push, or anything that talks to GitHub
      * or to another computer, is *always* slower than that. So the reward for
      * pressing a button was watching the page you were reading disappear, wait,
      * and come back. The work was never the problem; showing nothing while it
@@ -4276,7 +4276,7 @@ async function drawOpenProject() {
 
           <section class="ref-project-overview">
             <div class="section-rubric"><span><b>Project overview</b><small>${esc(p.says || 'Ready to work')}</small></span><div class="acts"><button data-project-look="1">Inspect files</button><button data-project-jump="ask">AI Assistant</button></div></div>
-            <div class="ref-project-work"><div>${askPanel(p,{heading:'Project intelligence'})}</div><div class="save-console-v2"><div class="panel-title"><b>Save and send</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div><label class="field" for="msg">What did you do?</label><textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea><button class="go wide" id="pub">Save and send</button><div id="going" class="going"></div></div></div>
+            <div class="ref-project-work"><div>${askPanel(p,{heading:'Project intelligence'})}</div><div class="save-console-v2"><div class="panel-title"><b>Git Push</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div><label class="field" for="msg">What did you do?</label><textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea><button class="go wide" id="pub">Git Push</button><div id="going" class="going"></div></div></div>
           </section>
 
           <section class="project-sessions-v2 ref-project-sessions">
@@ -4505,38 +4505,27 @@ async function showWhereItGoes() {
     box.innerHTML = `<b>${esc(d.sentence)}</b><span>${esc(d.action)}</span>`;
     return;
   }
-  if (d.mismatch) {
-    /*
-     * Where it came from, and where it is going — said, not asked.
-     *
-     * This used to hold sending back and ask whether to connect a copy under
-     * the account in use. But pressing Save and send is that answer already,
-     * and asking it again left somebody holding a button that would not do what
-     * it said. Sending now puts the work on the account Viberant is signed in
-     * to, keeps where it came from inside the project, and never sends anything
-     * to the other account. So this says what will happen, and gets out of the
-     * way.
-     */
-    box.className = 'going';
-    box.innerHTML = `
-      <span>This came from <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>, which belongs to somebody else.</span>
-      <span>Sending puts it on your own account, as
-        <b class="mono">${esc(d.session.login)}/${esc(d.binding.repo)}</b>. Where it came from is kept in the project.</span>
-      <span class="acts">
-        <button class="quiet small" id="going-connect">Choose a different destination…</button>
-      </span>`;
-    $('#going-connect').onclick = () => connectProjectSheet(d);
-    return;
-  }
-  if (d.needsRepo) {
-    box.className = 'going';
-    box.innerHTML = `<span>Not on GitHub yet. Sending makes a copy on
-      <b>${esc(d.session.login)}</b>, private, called <b>${esc(tail(d.binding.localRoot))}</b>.</span>`;
-    return;
-  }
-  if (!d.ok) {
+  if (d.plan === 'refuse' || d.ok === false) {
     box.className = 'going';
     box.innerHTML = `<span>${esc(d.sentence ?? '')}</span>`;
+    return;
+  }
+  if (d.plan === 'name') {
+    /*
+     * Where it came from, and where it would go — said before anything is
+     * pressed, and asked rather than assumed.
+     *
+     * An address a project arrived with belongs to whoever it came from. The
+     * account in use here decides where work goes, so this says which account
+     * that is, and the one press asks what the destination should be called.
+     * Nothing in the project changes until that question is answered.
+     */
+    box.className = 'going';
+    box.innerHTML = d.reason === 'another-account'
+      ? `<span>This came from <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>, which belongs to another account.</span>
+         <span>Sending puts it on <b>${esc(d.session.login)}</b>, under a name you choose. Where it came from is kept in the project.</span>`
+      : `<span>Not on GitHub yet. Sending makes a copy on
+         <b>${esc(d.session.login)}</b>, private, under a name you choose.</span>`;
     return;
   }
 
@@ -4548,113 +4537,55 @@ async function showWhereItGoes() {
 }
 
 /**
- * Point this project at a repository on the account you are actually using.
+ * What this project should be called on the account in use.
  *
- * The old address is kept, under another name, rather than replaced. Nothing
- * about somebody's history is thrown away to make a send work: if this turns
- * out to be the wrong idea, the thing it used to point at is still written down
- * in the project, and putting it back is one line.
+ * Asked at the moment of pressing, rather than as a separate errand somebody
+ * has to find first. Nothing in the project has been changed when this appears,
+ * and nothing is changed if it is dismissed — which is what makes moving
+ * between accounts safe: an account is chosen, not applied.
  */
-function connectProjectSheet(d) {
-  const suggested = d.binding.repo ?? tail(d.binding.localRoot);
-
-  sheet({
-    title: `Connect ${tail(d.binding.localRoot)} to ${d.session.login}`,
-    narrow: true,
-    body: `
-      <p class="sub">This project sends to
-        <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>, which belongs to
-        another account. Connecting it makes a copy of its own on
-        <b>${esc(d.session.login)}</b> and sends there from now on.</p>
-      <label class="field">What should it be called there?</label>
-      <input id="conn-name" style="width:100%" value="${esc(suggested)}">
-      <p class="sub" style="margin-top:1rem">
-        Everything in the project stays exactly as it is, and the address it uses now is
-        kept under another name rather than thrown away.</p>`,
-    foot: `<span class="left">Nothing is sent until you press Save and send.</span>
-      <button class="quiet" id="conn-no">Never mind</button>
-      <button class="go" id="conn-yes">Connect it</button>`,
-    onOpen: () => {
-      $('#conn-no').onclick = closeLayer;
-      $('#conn-yes').onclick = async () => {
-        const name = $('#conn-name').value.trim();
-        if (!name) return;
-
-        const out = await post('/project/connect', { name });
-
-        /**
-         * One of that name is already there, holding different work.
-         *
-         * Not an error and not a thing to decide for somebody: two projects
-         * that share a name and nothing else. Nothing has changed at this
-         * point, so the choice is offered with all three answers named for what
-         * they actually do.
-         */
-        if (out.needsChoice) return whichOneToKeep(name, out);
-
-        closeLayer();
-        say(out);
-        await refreshMe();
-        draw();
-      };
-    },
+function askDestinationName({ login, suggested, from = null, sentence = null, action = null }) {
+  return new Promise((resolve) => {
+    sheet({
+      title: `Send it to ${login}`,
+      narrow: true,
+      body: `
+        ${sentence ? `<div class="said bad"><b>${esc(sentence)}</b>${action ? `<span>${esc(action)}</span>` : ''}</div>` : ''}
+        <p class="sub">${from
+    ? `This came from <b class="mono">${esc(from)}</b>, which belongs to another account.
+         Your work goes to <b>${esc(login)}</b> instead, and where it came from is kept in the project.`
+    : `A place for this on <b>${esc(login)}</b> is made as you send it, and only you will be able to see it.`}</p>
+        <label class="field">What should it be called there?</label>
+        <input id="dest-name" style="width:100%" value="${esc(suggested ?? '')}">
+        <p class="sub" style="margin-top:1rem">Letters, numbers, dots and dashes. Anything already
+          on that account under another name is left exactly as it is.</p>`,
+      foot: `<button class="quiet" id="dest-no">Never mind</button>
+             <button class="go" id="dest-yes">Send it</button>`,
+      onOpen: () => {
+        const input = $('#dest-name');
+        input.focus();
+        input.select();
+        const done = (v) => { closeLayer(); resolve(v); };
+        $('#dest-yes').onclick = () => done(input.value.trim() || null);
+        $('#dest-no').onclick = () => done(null);
+        input.onkeydown = (e) => {
+          if (e.key === 'Enter') done(input.value.trim() || null);
+          if (e.key === 'Escape') done(null);
+        };
+      },
+    });
   });
 }
 
 /**
- * Two projects with the same name and nothing in common.
+ * The one button, and the only question it ever asks.
  *
- * Every answer here loses something, which is exactly why none of them happens
- * without being pressed. The wording says what goes rather than what stays,
- * because "keep mine" reads as safe and is not.
+ * A project of your own goes in one press. Anything that needs somewhere on
+ * your account to go is asked what it should be called, once, and then goes. A
+ * name already holding different work is refused and asked again — nothing on
+ * GitHub is written over to make a send succeed, and no second name is chosen
+ * on somebody's behalf.
  */
-function whichOneToKeep(name, out) {
-  sheet({
-    title: 'That name is already taken',
-    narrow: true,
-    body: `
-      <div class="said bad"><b>${esc(out.sentence)}</b>
-        <span>${esc(out.action ?? '')}</span></div>
-      <p class="sub">The one on GitHub and the one in this folder have no shared
-        history — they are two different projects that happen to have the same name.</p>
-      <div class="menu">
-        <button class="pick" data-keep="other"><b>Use a different name</b>
-          <span>Nothing is touched. This project gets a copy of its own.</span></button>
-        <button class="pick" data-keep="theirs"><b>Keep what is on GitHub</b>
-          <span>This folder starts sending there. Nothing in the folder is changed,
-            and you would need to get the latest before sending.</span></button>
-      </div>
-      <p class="sub" style="margin-top:1rem;color:var(--faint)">Replacing what is on
-        GitHub with this folder is not offered here. If that is what you want, delete
-        that project on GitHub first — deliberately, where you can see it.</p>`,
-    foot: '<button class="quiet" id="keep-no">Never mind</button>',
-    onOpen: () => {
-      $('#keep-no').onclick = closeLayer;
-
-      $('[data-keep="other"]').onclick = async () => {
-        const another = await ask({
-          title: 'A different name',
-          label: 'What should it be called on GitHub?',
-          value: `${name}-2`,
-          confirm: 'Connect it',
-        });
-        if (!another) return;
-        closeLayer();
-        say(await post('/project/connect', { name: another }));
-        await refreshMe();
-        draw();
-      };
-
-      $('[data-keep="theirs"]').onclick = async () => {
-        closeLayer();
-        say(await post('/project/connect', { name, useExisting: 'theirs' }));
-        await refreshMe();
-        draw();
-      };
-    },
-  });
-}
-
 async function saveAndSend() {
   const button = $('#pub');
   button.disabled = true;
@@ -4666,7 +4597,31 @@ async function saveAndSend() {
   const expect = goingTo?.binding?.bound
     ? `${goingTo.binding.owner}/${goingTo.binding.repo}` : null;
 
-  say(await post('/publish', { message: $('#msg').value.trim(), expect }));
+  const message = $('#msg').value.trim();
+  let out = await post('/publish', { message, expect });
+
+  // A handful of tries, because each refusal is a real answer from GitHub about
+  // that one name and the person is choosing the next one.
+  for (let asked = 0; out.needsName && asked < 5; asked += 1) {
+    const where = out.destination?.bound
+      ? `${out.destination.owner}/${out.destination.repo}` : null;
+    const name = await askDestinationName({
+      login: out.session?.login ?? goingTo?.session?.login ?? 'your account',
+      suggested: out.suggested,
+      from: where,
+      sentence: out.nameTaken ? out.sentence : null,
+      action: out.nameTaken ? out.action : null,
+    });
+
+    if (!name) {
+      // Honest about what did happen. A refused name still saved the work here.
+      say(out.saved ? out : { ok: true, sentence: 'Nothing was sent, and nothing was changed.' });
+      return draw();
+    }
+    out = await post('/publish', { message, expect, name });
+  }
+
+  say(out);
   draw();
 }
 
@@ -4884,7 +4839,7 @@ async function firstTimeSheet() {
           Anything you already wrote is left exactly as it is.</p>` : `
         <p class="note" style="color:var(--quiet);margin-top:1rem">
           This project already has everything it needs. Nothing will be written.</p>`}`,
-    foot: `<span class="left">Afterwards, Save and send is the only button you need.</span>
+    foot: `<span class="left">Afterwards, Git Push is the only button you need.</span>
            <button class="quiet" id="fp-no">Never mind</button>
            <button class="go" id="fp-yes">Put it on GitHub</button>`,
     onOpen: (body) => {

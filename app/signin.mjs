@@ -77,25 +77,66 @@ async function book() {
   return await quiet(async () => JSON.parse(await readFile(TOKENS, 'utf8')), { accounts: [], active: null });
 }
 
+/**
+ * How many times the book of accounts has changed on this run.
+ *
+ * Anything that keeps an answer about who this computer is reads this as well
+ * as the clock. Connecting, switching and disconnecting all move it, so a held
+ * answer from a moment ago can never outlive the account it was about — which
+ * is the whole of "the app names one account and sends as another".
+ */
+let changes = 0;
+export const generation = () => changes;
+
 async function keep(value) {
   await mkdir(HOUSE, { recursive: true });
   await writeFile(TOKENS, JSON.stringify(value, null, 2), 'utf8');
   await quiet(() => chmod(TOKENS, 0o600));
+  changes += 1;
+}
+
+/**
+ * The one account in use, worked out in exactly one place.
+ *
+ * Everything — what a screen names, which key an ask to GitHub carries, and who
+ * a send authenticates as — comes through here, so there is no arrangement in
+ * which two of them can be different accounts.
+ *
+ * **A chosen account that is not here is nobody, never the next one along.**
+ * Falling back to the first in the list is how a book left in an odd state
+ * quietly sends somebody's work to an account they did not pick.
+ */
+function chosen(held) {
+  const list = held.accounts ?? [];
+  if (!list.length) return null;
+  if (!held.active) return list[0];
+  return list.find((one) => one.name === held.active) ?? null;
 }
 
 export async function accounts() {
   const held = await book();
+  const using = chosen(held);
   return {
     here: true,
-    active: held.active ?? null,
-    accounts: (held.accounts ?? []).map((one) => ({ name: one.name, active: one.name === held.active })),
+    active: using?.name ?? null,
+    accounts: (held.accounts ?? []).map((one) => ({ name: one.name, active: one.name === using?.name })),
   };
 }
 
+/** Whether any account at all is connected here, without unsealing anything. */
+export async function anyConnected() {
+  return ((await book()).accounts ?? []).length > 0;
+}
+
+/** The account in use and its key, together, so the two can never disagree. */
+export async function activeAccount() {
+  const one = chosen(await book());
+  if (!one) return null;
+  return { name: one.name, token: await unprotect(one.token) };
+}
+
 export async function activeToken() {
-  const held = await book();
-  const one = held.accounts?.find((account) => account.name === held.active) ?? held.accounts?.[0];
-  return one ? unprotect(one.token) : null;
+  return (await activeAccount())?.token ?? null;
 }
 
 export async function switchTo(name) {
@@ -113,7 +154,7 @@ export async function signOut(name = null) {
   const gone = name || held.active;
   held.accounts = (held.accounts ?? []).filter((one) => one.name !== gone);
   held.active = held.accounts[0]?.name ?? null;
-  if (!held.accounts.length) await rm(TOKENS, { force: true }); else await keep(held);
+  if (!held.accounts.length) { await rm(TOKENS, { force: true }); changes += 1; } else await keep(held);
   return { ok: true, sentence: gone ? `${gone} is disconnected from this computer.` : 'GitHub is disconnected from this computer.' };
 }
 

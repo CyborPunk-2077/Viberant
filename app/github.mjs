@@ -1,7 +1,7 @@
 /**
  * GitHub, for someone who has never heard of any of this.
  *
- * There is exactly one button most days — save and send. Everything else in
+ * There is exactly one button most days — Git Push. Everything else in
  * here sits behind it, and every one of these carries its own plain sentence
  * saying what it does and what it will cost you, because the reason people are
  * frightened of this is that the words are borrowed from somewhere else and
@@ -107,8 +107,16 @@ export async function who({ fresh = false } = {}) {
  * asked has its own answer.**
  */
 async function whoReally({ fresh = false } = {}) {
-  if (!fresh && lastKnown && Date.now() - lastKnown.at < WORTH_KEEPING_FOR) {
-    return { login: lastKnown.name, reachable: true, id: lastKnown.id ?? null };
+  // Held answers are about one account, and are dropped the moment the book of
+  // accounts moves — connected, switched or disconnected. Time alone was not
+  // enough: a switch followed immediately by a send read the old name for as
+  // long as five seconds, which is exactly long enough to send somewhere
+  // nobody chose.
+  const era = signin.generation();
+  const held = lastKnown?.era === era ? lastKnown : null;
+
+  if (!fresh && held && Date.now() - held.at < WORTH_KEEPING_FOR) {
+    return { login: held.name, reachable: true, id: held.id ?? null };
   }
 
   if (!(await signin.activeToken())) return { login: null, reachable: true, id: null };
@@ -117,12 +125,12 @@ async function whoReally({ fresh = false } = {}) {
   if (!out.ok) {
     // Could not ask. Anything confirmed earlier is still the best thing known,
     // and is offered as such rather than replaced with a guess.
-    return { login: lastKnown?.name ?? null, reachable: false, id: lastKnown?.id ?? null, stale: !!lastKnown };
+    return { login: held?.name ?? null, reachable: false, id: held?.id ?? null, stale: !!held };
   }
 
   const login = out.data?.login ?? null;
   const id = out.data?.id ?? null;
-  lastKnown = { at: Date.now(), name: login, id };
+  lastKnown = { at: Date.now(), era, name: login, id };
   return { login, reachable: true, id };
 }
 
@@ -237,62 +245,116 @@ export async function bindingOf(dir) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// The destination Viberant itself chose
+//
+// An address written in a project says where the work *came from*. It does not
+// say that anybody here meant it to go back there, and treating those two as
+// the same thing is how a project taken from somebody else ends up being sent
+// at its original owner.
+//
+// So when Viberant points a project somewhere on purpose — because a person
+// named it, or because a shared workspace agreed on it — that intent is written
+// down next to the address. It is the only thing that lets a send to another
+// account's project happen without asking, and it belongs to the project rather
+// than to any setting on this computer.
+// ---------------------------------------------------------------------------
+
+const MARK = 'viberant.destination';
+
+/** A name GitHub will accept, out of whatever a folder happens to be called. */
+export const tidyName = (raw) => String(raw ?? '')
+  .replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 90);
+
+async function chosenDestination(gitRoot) {
+  const said = await quiet(() => git(gitRoot, 'config', '--get', MARK));
+  const text = said?.stdout.trim() ?? '';
+  const parts = text.split('/');
+  return parts.length === 2 && parts[0] && parts[1] ? { owner: parts[0], repo: parts[1] } : null;
+}
+
+async function rememberDestination(gitRoot, owner, name) {
+  if (!gitRoot || !owner || !name) return;
+  await quiet(() => git(gitRoot, 'config', MARK, `${owner}/${name}`));
+}
+
+const sameAddress = (a, b) => !!a && !!b
+  && a.owner.toLowerCase() === b.owner.toLowerCase()
+  && a.repo.toLowerCase() === b.repo.toLowerCase();
+
 /**
- * Where sending this project would go, and whether that is somewhere the
- * account Viberant is signed in as actually owns.
+ * Where sending this project would go — the one decision, made once.
  *
- * Called before anything leaves the computer. It never picks for you: when the
- * project belongs to one account and Viberant is signed in as another, that is
- * a fact to be shown, not a thing to resolve quietly in either direction.
- * Silently sending somebody's work to an account they were not thinking about
- * is the worst outcome available here, and it is the one that happens if this
- * function decides to be helpful.
+ * Every press of the send button, and the line on screen above it, come from
+ * here. There are exactly three answers:
+ *
+ *   `refuse`  nothing may go anywhere yet, and there is a sentence saying why.
+ *   `direct`  the address in the project is a destination the account in use
+ *             may write to, so one press is the whole errand.
+ *   `name`    it needs a destination on the account in use, and the person is
+ *             asked what it should be called. **Nothing is changed until they
+ *             answer**, so switching accounts never rewrites a project.
+ *
+ * The account Viberant is signed in as decides, always. An address a project
+ * arrived with belongs to whoever it came from and is never a reason to send
+ * somebody's work back at them. The single exception is an address Viberant
+ * itself chose for this project — a shared workspace project, or one somebody
+ * named here — and only while the account in use may actually write to it.
  */
-export async function destinationFor(dir) {
-  const [now, binding] = await Promise.all([session(), bindingOf(dir)]);
+export async function destinationFor(dir, { fresh = false } = {}) {
+  const [now, binding] = await Promise.all([session({ fresh }), bindingOf(dir)]);
+  const suggested = tidyName(binding.repo ?? basename(binding.localRoot));
+  const base = { session: now, binding, suggested };
 
   if (binding.isWorkspace) {
     return {
-      ok: false, session: now, binding,
+      ok: false, plan: 'refuse', ...base,
       sentence: 'That folder is the one this manager uses to let your computers find each other, not a project.',
       action: 'Pick the folder your work is actually in.',
     };
   }
 
-  if (!binding.gitRoot) {
-    return {
-      ok: false, session: now, binding,
-      sentence: 'This folder does not keep a history yet, so there is nothing to send.',
-      action: 'Save it once first.',
-    };
-  }
-
   // A local or self-hosted shared copy can be sent to by Git itself. It has no
   // GitHub owner and must not be turned into a GitHub sign-in requirement.
-  if (binding.remote && !binding.owner) {
-    return { ok: true, localRemote: true, session: now, binding };
+  if (binding.gitRoot && binding.remote && !binding.owner) {
+    return { ok: true, plan: 'direct', localRemote: true, ...base };
   }
 
-  if (!now.tool) return { ok: false, ...notSetUp, session: now, binding };
-  if (!now.signedIn) return { ok: false, ...notSignedIn, session: now, binding };
+  if (!now.tool) return { ok: false, plan: 'refuse', ...notSetUp, ...base };
+  if (!now.signedIn) return { ok: false, plan: 'refuse', ...notSignedIn, ...base };
+
+  // Nothing kept here yet. That is not a refusal — it is the first press, and
+  // all it needs is a name to go under.
+  if (!binding.gitRoot) {
+    return { ok: true, plan: 'name', reason: 'no-history', needsName: true, needsRepo: true, ...base };
+  }
 
   if (!binding.bound && !binding.remote) {
-    return { ok: true, needsRepo: true, session: now, binding };
+    return { ok: true, plan: 'name', reason: 'no-destination', needsName: true, needsRepo: true, ...base };
   }
 
-  const anotherOwner = binding.owner.toLowerCase() !== now.login.toLowerCase();
-  const access = anotherOwner ? await repoThere(binding.owner, binding.repo) : null;
-  const mismatch = anotherOwner && (!access?.exists || !access.canWrite);
+  const here = { owner: binding.owner, repo: binding.repo };
+  if (binding.owner.toLowerCase() === now.login.toLowerCase()) {
+    return { ok: true, plan: 'direct', ...base };
+  }
+
+  // Somebody else's address. Only an address this app chose for this project
+  // counts as a destination, and only while this account may write to it.
+  const meant = sameAddress(await chosenDestination(binding.gitRoot), here);
+  const access = meant ? await repoThere(binding.owner, binding.repo) : null;
+  if (meant && access?.exists && access.canWrite) {
+    return { ok: true, plan: 'direct', sharedAccess: true, ...base };
+  }
+
   return {
-    ok: !mismatch,
-    mismatch,
-    sharedAccess: anotherOwner && access?.canWrite === true,
-    session: now,
-    binding,
-    ...(mismatch ? {
-      sentence: `This project belongs to ${binding.owner} on GitHub, and ${now.login} does not have permission to send to it.`,
-      action: 'Ask the owner for access, connect an account that has it, or make a separate copy.',
-    } : {}),
+    ok: true,
+    plan: 'name',
+    reason: 'another-account',
+    needsName: true,
+    mismatch: true,
+    ...base,
+    sentence: `This came from ${binding.owner}/${binding.repo}, which belongs to another account.`,
+    action: `Sending puts it on ${now.login}. Choose what it should be called there.`,
   };
 }
 
@@ -465,11 +527,12 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
     }
 
     if (old) {
-      await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
-      await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
+      await quiet(() => git(gitRoot, 'remote', 'remove', 'upstream'));
+      await quiet(() => git(gitRoot, 'remote', 'add', 'upstream', old));
     }
     await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
       || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+    await rememberDestination(gitRoot, there.owner, there.name);
     await useOwnCredentials(gitRoot);
 
     return {
@@ -484,7 +547,7 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
       action: how.behind
         ? `That copy has ${how.behind} saved change${how.behind === 1 ? '' : 's'} you do not have yet. Get the latest before you send.`
         : (old
-          ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
+          ? 'Where it used to go is still written down in the project, next to where it goes now.'
           : 'Send your work whenever you are ready.'),
     };
   }
@@ -506,11 +569,12 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
   }
 
   if (old) {
-    await quiet(() => git(gitRoot, 'remote', 'remove', 'where-it-used-to-go'));
-    await quiet(() => git(gitRoot, 'remote', 'add', 'where-it-used-to-go', old));
+    await quiet(() => git(gitRoot, 'remote', 'remove', 'upstream'));
+    await quiet(() => git(gitRoot, 'remote', 'add', 'upstream', old));
   }
   await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
     || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+  await rememberDestination(gitRoot, now.login, name);
   await useOwnCredentials(gitRoot);
 
   return {
@@ -520,7 +584,7 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
     name,
     sentence: `This project now sends to ${now.login}/${name}.`,
     action: old
-      ? 'Where it used to go is kept in the project, under the name where-it-used-to-go.'
+      ? 'Where it used to go is still written down in the project, next to where it goes now.'
       : 'Send your work whenever you are ready.',
   };
 }
@@ -580,14 +644,18 @@ export async function connectExisting(gitRoot, { owner, repo }) {
 
   const old = await originAddress(at);
   if (old?.stdout.trim() && old.stdout.trim() !== remote) {
-    await quiet(() => git(at, 'remote', 'remove', 'where-it-used-to-go'));
-    await quiet(() => git(at, 'remote', 'add', 'where-it-used-to-go', old.stdout.trim()));
+    await quiet(() => git(at, 'remote', 'remove', 'upstream'));
+    await quiet(() => git(at, 'remote', 'add', 'upstream', old.stdout.trim()));
   }
   const changed = await quiet(() => git(at, 'remote', 'set-url', 'origin', remote))
     || await quiet(() => git(at, 'remote', 'add', 'origin', remote));
   if (!changed) {
     return { ok: false, sentence: 'This copy could not be connected to the shared GitHub project.', action: 'Try again.' };
   }
+  // Written down as chosen, not merely arrived at. This is what later lets a
+  // send to a project another member owns happen in one press, while a project
+  // that was only ever copied from somebody still goes to your own account.
+  await rememberDestination(at, owner, repo);
   await useOwnCredentials(at);
   return {
     ok: true,
@@ -926,60 +994,96 @@ function whyItWouldNotGo(said, what, binding) {
 }
 
 /**
- * Save and send through the bundled runtime.
+ * Git Push through the bundled runtime — the whole errand, one path.
  *
- * The shared copy is fetched first. A simple move forward is accepted; two
- * independently changed histories stop with choices instead of overwriting
- * either side. No force option exists in this path.
+ * Every case goes the same way round: work out where this would go, save,
+ * settle the destination if one is still needed, then send and check it
+ * arrived. There is one place that decides and one place that sends, so a
+ * project with no history, a project taken from somebody else and a project of
+ * your own cannot drift into behaving differently from each other.
+ *
+ * **Asking is not doing.** When a destination is needed and no name has been
+ * given, this changes nothing at all and says what it needs. That is what makes
+ * switching accounts safe: nothing is repointed behind anybody's back.
+ *
+ * The copy on GitHub is read before anything is sent. A simple move forward is
+ * accepted; two independently changed histories stop with choices instead of
+ * overwriting either side. No force option exists in this path.
  */
-export async function saveAndSend(dir, { message, makeIfMissing = true, private: isPrivate = true } = {}) {
+export async function saveAndSend(dir, {
+  message, makeIfMissing = true, private: isPrivate = true, name = null,
+} = {}) {
+  const wanted = tidyName(name);
+
+  // Asked fresh: the account in use can have changed since a screen was drawn,
+  // and this is the last moment before somebody's work moves.
+  let going = await destinationFor(dir, { fresh: true });
+  if (going.plan === 'refuse') return { ...going, ok: false, saved: false, sent: false };
+
+  // A caller that has said it will not make anything — the shared workspace
+  // send — never creates a project on the member's own account.
+  if (going.plan === 'name' && !makeIfMissing) {
+    const only = await saveOnly(dir, message);
+    if (!only.ok) return only;
+    return { ok: true, saved: true, sent: false, sentence: 'Saved here. This project has no copy on GitHub yet.' };
+  }
+
+  // Nothing has been touched yet, and nothing will be until there is a name.
+  if (going.plan === 'name' && !wanted) {
+    return {
+      ok: true,
+      saved: false,
+      sent: false,
+      needsName: true,
+      reason: going.reason,
+      suggested: going.suggested,
+      session: going.session,
+      binding: going.binding,
+      sentence: going.sentence
+        ?? `This is not on GitHub yet, so sending it needs somewhere on ${going.session.login} to go.`,
+      action: going.action ?? 'Choose what it should be called there.',
+    };
+  }
+
   const saved = await saveOnly(dir, message);
   if (!saved.ok) return saved;
 
-  let binding = await bindingOf(dir);
-  if (!binding.bound && !binding.remote) {
-    if (!makeIfMissing) {
-      return { ok: true, saved: true, sent: false, sentence: 'Saved here. This project has no copy on GitHub yet.' };
-    }
-    const made = await makeCopy(dir, { visibility: isPrivate ? 'private' : 'public' });
-    if (!made.ok) return { ...made, saved: true, sent: false };
-    binding = await bindingOf(dir);
-  }
-
-  const now = binding.owner ? await session({ fresh: true }) : { signedIn: true, login: null };
-  if (binding.owner && !now.signedIn) return { ...notSignedIn, saved: true, sent: false };
-  const access = binding.owner ? await repoThere(binding.owner, binding.repo) : null;
+  // The first save gives a folder a history, so the answer above can have
+  // changed underneath us. Asked again rather than assumed.
+  if (going.plan === 'name') going = await destinationFor(dir);
+  if (going.plan === 'refuse') return { ...going, ok: false, saved: true, sent: false };
 
   /*
-   * Somebody else's address, and a decision that has already been made.
+   * A destination on the account in use, made or reused under the name the
+   * person gave. Where the work came from is kept in the project rather than
+   * thrown away, and nothing is ever sent to the account it came from.
    *
-   * A project taken from anywhere keeps the address it came from, and that
-   * address belongs to whoever it came from. This used to stop here and ask
-   * whether to connect a copy under the account in use — but pressing Save and
-   * send *is* that answer. Asking again is asking the same question twice, and
-   * the person is left holding a button that does not do what it says.
-   *
-   * So the work goes to the account Viberant is signed in to, made or reused
-   * under the same name, and where it came from is kept in the project rather
-   * than thrown away. Nothing is ever sent to the other account.
+   * A name already holding unrelated work is refused, not worked around. The
+   * old shape picked a second name on its own, which put somebody's project
+   * somewhere they had not been told about and could not predict.
    */
   let movedTo = null;
-  if (binding.owner && binding.owner.toLowerCase() !== now.login.toLowerCase() && !access?.canWrite) {
-    const from = `${binding.owner}/${binding.repo}`;
-    let mine = await connectTo(dir, { name: binding.repo, session: now, private: isPrivate });
-
-    // One of that name already there holding unrelated work. Rather than ask a
-    // question with no good answer, a second name is chosen from where this one
-    // came from, which is both obvious to read and the same every time.
-    if (!mine.ok && mine.needsChoice) {
-      const other = `${binding.repo}-from-${binding.owner}`.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 90);
-      mine = await connectTo(dir, { name: other, session: now, private: isPrivate });
+  if (going.plan === 'name') {
+    const from = going.binding.bound ? `${going.binding.owner}/${going.binding.repo}` : null;
+    const mine = await connectTo(going.binding.gitRoot ?? dir, {
+      name: wanted, session: going.session, private: isPrivate,
+    });
+    if (!mine.ok) {
+      return {
+        ...mine,
+        saved: true,
+        sent: false,
+        // A name problem has an answer the person can give; a lost network
+        // does not, and must not be dressed up as one.
+        ...(mine.exists ? { needsName: true, nameTaken: true, suggested: tidyName(`${wanted}-2`) } : {}),
+      };
     }
-    if (!mine.ok) return { ...mine, saved: true, sent: false };
 
-    binding = await bindingOf(dir);
-    movedTo = { owner: mine.owner ?? now.login, repo: mine.name ?? binding.repo, from };
+    going = await destinationFor(dir);
+    if (from) movedTo = { owner: mine.owner ?? going.session.login, repo: mine.name ?? wanted, from };
   }
+
+  const binding = going.binding;
 
   const fetched = await tried(() => git(dir, 'fetch', '--quiet', 'origin'));
   if (!fetched.ok) {
@@ -1170,10 +1274,17 @@ export async function getLatest(dir) {
   };
 }
 
-/** Put a copy of this project on GitHub for the first time. */
-export async function makeCopy(dir, { visibility = 'private' } = {}) {
-  const owner = await who();
-  if (!owner) return notSignedIn;
+/**
+ * Put a copy of this project on GitHub for the first time.
+ *
+ * Made through the same one function everything else uses, so a project made
+ * here and a project made by pressing send are the same project in the same
+ * state — looked up before it is created, kept rather than overwritten, and
+ * written down as the destination this app chose.
+ */
+export async function makeCopy(dir, { visibility = 'private', name = null } = {}) {
+  const now = await session();
+  if (!now.signedIn) return notSignedIn;
 
   const p = await picture(dir);
   if (p.shared) {
@@ -1188,24 +1299,14 @@ export async function makeCopy(dir, { visibility = 'private' } = {}) {
     if (!first.ok) return first;
   }
 
-  const name = basename(dir);
-  const made = await signin.request('/user/repos', {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, private: visibility !== 'public' }),
+  const called = tidyName(name || basename(dir));
+  const out = await connectTo((await bindingOf(dir)).gitRoot ?? dir, {
+    name: called, session: now, private: visibility !== 'public',
   });
-  if (!made.ok) {
-    return {
-      ok: false,
-      sentence: 'A copy on GitHub could not be made.',
-      action: 'A project of that name may already be on your account — pick another name for the folder.',
-    };
-  }
-  const remote = made.data?.clone_url ?? `https://github.com/${owner}/${name}.git`;
-  await quiet(() => git(dir, 'remote', 'add', 'origin', remote))
-    || await quiet(() => git(dir, 'remote', 'set-url', 'origin', remote));
-  await useOwnCredentials(dir);
+  if (!out.ok) return out;
+
   return {
-    ok: true,
+    ...out,
     sentence: visibility === 'public'
       ? 'This project now has a copy on GitHub that anyone can see.'
       : 'This project now has a copy on GitHub that only you can see.',

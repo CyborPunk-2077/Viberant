@@ -274,7 +274,7 @@ async function toPages(job, dir) {
     return jobs.end(job, {
       ok: false,
       sentence: 'This project does not have a GitHub destination to publish Pages from.',
-      action: 'Save and send it to GitHub first, then try again.',
+      action: 'Use Git Push to put it on GitHub first, then try again.',
     });
   }
   const pagePath = at === '/' ? '/' : '/docs';
@@ -473,7 +473,7 @@ async function runApp(job, { dir, alsoGiveOut, version, notes }) {
     return jobs.end(job, {
       ok: false,
       sentence: `It built, but version ${tag} has no GitHub destination.`,
-      action: 'Save and send this project to GitHub first, then publish the release again.',
+      action: 'Use Git Push to put this project on GitHub first, then publish the release again.',
     });
   }
   const releaseRoute = `/repos/${encodeURIComponent(binding.owner)}/${encodeURIComponent(binding.repo)}/releases`;

@@ -2394,7 +2394,7 @@ const routes = {
   async 'POST /project/connect'({ body }) {
     if (!current) return noProject;
 
-    const going = await github.destinationFor(current.dir);
+    const going = await github.destinationFor(current.dir, { fresh: true });
     if (!going.session?.signedIn) return going;
     if (going.binding?.isWorkspace) return going;
 
@@ -2692,16 +2692,19 @@ const routes = {
     return { ...bound, health: well };
   },
 
+  /**
+   * The one button. Everything about where the work goes is decided in one
+   * place inside the manager, and this route only carries the answer across.
+   *
+   * A destination the account in use does not own is not a failure and not a
+   * guess: the page is told a name is needed and asks for one, and until it
+   * comes back nothing in the project has been touched.
+   */
   async 'POST /publish'({ body }) {
     if (!current) return noProject;
 
-    // Nothing leaves until it is known where it is going. A project that
-    // belongs to one account while this app is signed in as another is a fact
-    // to be shown, never a thing to be resolved by guessing — and the guess
-    // that used to happen was made by the computer's credential store, which
-    // has no idea what anybody intended.
-    const going = await github.destinationFor(current.dir);
-    if (going.mismatch || going.binding?.isWorkspace) {
+    const going = await github.destinationFor(current.dir, { fresh: true });
+    if (going.plan === 'refuse') {
       return { ...going, ok: false, ...(await routes['GET /project']()) };
     }
     if (body.expect && going.binding?.bound
@@ -2714,7 +2717,24 @@ const routes = {
       };
     }
 
-    const r = await github.saveAndSend(current.dir, { message: body.message, private: body.private !== false });
+    // A name, only where one is needed, and only in the shape GitHub accepts.
+    const asked = String(body?.name ?? '').trim();
+    if (asked && !/^[\w.-]+$/.test(asked)) {
+      return {
+        ok: false,
+        needsName: true,
+        suggested: github.tidyName(asked),
+        sentence: 'That name has characters GitHub will not accept.',
+        action: 'Letters, numbers, dots and dashes.',
+        ...(await routes['GET /project']()),
+      };
+    }
+
+    const r = await github.saveAndSend(current.dir, {
+      message: body.message,
+      name: asked || null,
+      private: body.private !== false,
+    });
     projects.forgetSituations();
     return { ...r, destination: going.binding, ...(await routes['GET /project']()) };
   },
@@ -3449,7 +3469,7 @@ async function firstTimeOnGitHub(job, { dir, name, description, licence, visibil
       ok: true,
       at: where?.url ?? null,
       sentence: where?.url ? `${name} is on GitHub, at ${where.url}` : `${name} is on GitHub.`,
-      action: 'From now on, Save and send is the only button you need — it sends what changed and nothing else.',
+      action: 'From now on, Git Push is the only button you need — it sends what changed and nothing else.',
     });
   } catch (e) {
     jobs.write(job, String(e));

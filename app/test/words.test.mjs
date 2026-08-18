@@ -16,6 +16,12 @@
  *
  *   The command a sign-in actually needs typing, where the manager is telling
  *   you what it is about to run on your behalf.
+ *
+ *   The name of the one button, which the founder has named `Git Push`. It is
+ *   the single deliberate exception in the product and it is a name rather than
+ *   a description: nothing else on any screen explains a person's own work in
+ *   borrowed words. See D-223. Every sentence around the button still has to
+ *   pass, which is what keeps the exception one name wide.
  */
 
 import { test, describe } from 'node:test';
@@ -31,7 +37,7 @@ const app = join(here, '..');
 
 /** Program names, and the commands the manager offers to run for you. */
 const NAMES = [
-  'GitHub', 'GitHub Pages', 'GitHub CLI', 'Git Bash',
+  'GitHub', 'GitHub Pages', 'GitHub CLI', 'Git Bash', 'Git Push',
   'gh auth login', 'gh auth status', 'vercel login', 'netlify login',
   'cli.github.com', 'viberant-workspace',
 ];
@@ -166,5 +172,9 @@ describe('nothing a person reads is borrowed from somewhere else', () => {
       'while the name of the place itself is fine');
     assert.deepEqual(borrowedWordsIn('Open a terminal in Git Bash.'), [],
       'and so is the name of a program you already have');
+    assert.deepEqual(borrowedWordsIn('Afterwards, Git Push is the only button you need.'), [],
+      'the one button is named, and naming it is not describing your work in its terms');
+    assert.deepEqual(borrowedWordsIn('This branch was pushed.').sort(), ['branch', 'pushed'],
+      'and the exception is the name itself, not the words in it');
   });
 });

@@ -166,7 +166,12 @@ describe('what happens when a name is already taken', () => {
     const body = source.slice(source.indexOf('export async function connectTo'),
       source.indexOf('export async function accounts'));
     // Once for the existing-repository path and once for the newly made one.
-    assert.equal([...body.matchAll(/where-it-used-to-go/g)].length >= 4, true,
+    // Kept under the name every other tool expects to find it under, so a
+    // project Viberant repointed reads correctly to anything that opens it
+    // afterwards. What a person is told says no address at all.
+    assert.equal([...body.matchAll(/'remote', 'add', 'upstream'/g)].length >= 2, true,
       'one of the two paths throws away where the work used to go');
+    assert.equal([...body.matchAll(/'remote', 'remove', 'upstream'/g)].length >= 2, true,
+      'a second attempt would fail on a name already taken in the project');
   });
 });
