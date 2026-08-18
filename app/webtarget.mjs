@@ -109,29 +109,52 @@ const KEY = 'viberant:companion:' + PROJECT;
 const bytes = (size = 32) => { const value = new Uint8Array(size); crypto.getRandomValues(value); return btoa(String.fromCharCode(...value)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); };
 const digest = async (value) => { const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)); return btoa(String.fromCharCode(...new Uint8Array(data))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); };
 
+// What this half of the handshake has to remember while the other half happens
+// somewhere else. Deliberately not sessionStorage: the approval comes back in
+// the window Viberant opened, and sessionStorage belongs to one window only —
+// so the window holding the answer could never read what the question was, and
+// every pairing stopped there, with one page saying "waiting for approval" and
+// the other saying "not connected". Same origin, cleared the moment it is used.
+const HALF = KEY + ':pending';
+
 async function connect() {
   const verifier = bytes(48); const state = bytes(24); const challenge = await digest(verifier);
-  sessionStorage.setItem(KEY + ':verifier', verifier); sessionStorage.setItem(KEY + ':state', state);
+  try { localStorage.setItem(HALF, JSON.stringify({ verifier, state, at: Date.now() })); } catch (e) { void e; }
   const back = location.origin + location.pathname;
   const url = new URL(AGENT + '/web-companion/pair');
   url.search = new URLSearchParams({ project: PROJECT, origin: location.origin, return: back, challenge, state });
   const opened = window.open(url, 'viberant-companion', 'popup,width=620,height=680');
-  if (!opened) location.href = url;
+  if (!opened) { location.href = url; return new Promise(() => {}); }
   return new Promise((resolve) => {
-    const heard = (event) => { if (event.origin === location.origin && event.data?.type === 'viberant-companion') { window.removeEventListener('message', heard); resolve(event.data); } };
+    const stop = (result) => { clearInterval(tick); window.removeEventListener('message', heard); window.removeEventListener('storage', changed); resolve(result); };
+    const heard = (event) => { if (event.origin === location.origin && event.data?.type === 'viberant-companion') stop(event.data); };
+    // The approval finishes in the other window. It says so three ways, because
+    // any one of them can be missed: it tells us, the shared store changes, or
+    // the window simply goes away.
+    const changed = (event) => { if (event.key === KEY && event.newValue) stop({ ok: true }); };
     window.addEventListener('message', heard);
+    window.addEventListener('storage', changed);
+    const tick = setInterval(() => {
+      if (localStorage.getItem(KEY)) return stop({ ok: true });
+      if (opened.closed) return stop({ ok: false, sentence: 'The approval window closed before it finished.', action: 'Press Connect to try again.' });
+    }, 400);
   });
 }
 
 async function completePairing() {
   const at = new URL(location.href); const code = at.searchParams.get('viberant_code');
   if (!code) return null;
+  let half = null;
+  try { half = JSON.parse(localStorage.getItem(HALF) || 'null'); } catch (e) { void e; }
   const state = at.searchParams.get('viberant_state');
-  if (state !== sessionStorage.getItem(KEY + ':state')) return null;
-  const response = await fetch(AGENT + '/web-companion/token', { method: 'POST', mode: 'cors', targetAddressSpace: 'local', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, verifier: sessionStorage.getItem(KEY + ':verifier') }) });
+  const clean = () => { at.searchParams.delete('viberant_code'); at.searchParams.delete('viberant_state'); history.replaceState({}, '', at); };
+  if (!half || state !== half.state) { clean(); return { ok: false, sentence: 'That approval did not match this page.', action: 'Press Connect and approve it again.' }; }
+
+  const response = await fetch(AGENT + '/web-companion/token', { method: 'POST', mode: 'cors', targetAddressSpace: 'local', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, verifier: half.verifier }) });
   const result = await response.json();
   if (result.ok) localStorage.setItem(KEY, result.token);
-  at.searchParams.delete('viberant_code'); at.searchParams.delete('viberant_state'); history.replaceState({}, '', at);
+  try { localStorage.removeItem(HALF); } catch (e) { void e; }
+  clean();
   window.opener?.postMessage({ type: 'viberant-companion', ...result }, location.origin);
   if (window.opener && result.ok) window.close();
   return result;
@@ -206,7 +229,34 @@ async function makeReactTarget(root, target, entry, source, report, architecture
 async function makeCompanionShell(root, target, report) {
   const id = await writeManifest(target, root, report, null, 'WEB_COMPANION');
   await writeFile(join(target, 'index.html'), `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${basename(root).replace(/[<&]/g, '')} Web Companion</title><style>body{font:16px system-ui;background:#090c14;color:#eef0ff;margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(42rem,calc(100% - 3rem));padding:2rem;border:1px solid #30364b;border-radius:16px;background:#111522}button{padding:.7rem 1rem;border:0;border-radius:8px;background:#7048e8;color:white}pre{white-space:pre-wrap;color:#b8c0d2}</style><main><small>WEB COMPANION</small><h1>${basename(root).replace(/[<&]/g, '')}</h1><p>This project relies on desktop capabilities. Its web version connects to Viberant for the explicitly approved adapters and leaves native work on your computer.</p><button id="connect">Connect to Viberant</button><button id="inspect">Check connection</button><pre id="status">Not connected.</pre></main><script type="module" src="./viberant-companion.js"></script><script type="module" src="./app.js"></script>`, 'utf8');
-  await writeFile(join(target, 'app.js'), `const status = document.querySelector('#status'); document.querySelector('#connect').onclick = async () => { status.textContent = 'Waiting for approval…'; const out = await ViberantCompanion.connect(); status.textContent = out?.ok ? 'Connected.' : (out?.sentence || 'Connection was not completed.'); }; document.querySelector('#inspect').onclick = async () => { const out = await ViberantCompanion.call('project.status'); status.textContent = out.ok ? JSON.stringify(out, null, 2) : out.sentence; };\n`, 'utf8');
+  await writeFile(join(target, 'app.js'), `const status = document.querySelector('#status');
+const connect = document.querySelector('#connect');
+
+// What is true right now, said on arrival as well as after pressing anything.
+// A pairing that finished in this window lands a moment after the page does,
+// so this keeps looking for a short while rather than reporting the answer it
+// had before the answer arrived.
+const show = () => {
+  const on = ViberantCompanion.connected();
+  status.textContent = on ? 'Connected to Viberant.' : 'Not connected.';
+  connect.disabled = on;
+  connect.textContent = on ? 'Connected' : 'Connect to Viberant';
+  return on;
+};
+show();
+let waited = 0;
+const settling = setInterval(() => { waited += 300; if (show() || waited > 8000) clearInterval(settling); }, 300);
+
+connect.onclick = async () => {
+  status.textContent = 'Waiting for approval\\u2026';
+  const out = await ViberantCompanion.connect();
+  if (!show() && out?.sentence) status.textContent = out.sentence;
+};
+document.querySelector('#inspect').onclick = async () => {
+  const out = await ViberantCompanion.call('project.status');
+  status.textContent = out.ok ? JSON.stringify(out, null, 2) : out.sentence;
+};
+`, 'utf8');
   return { target, id };
 }
 

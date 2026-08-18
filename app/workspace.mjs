@@ -42,6 +42,7 @@ import { randomBytes } from 'node:crypto';
 
 import { HOUSE } from './projects.mjs';
 import * as github from './github.mjs';
+import * as gitRuntime from './git-runtime.mjs';
 
 const run = promisify(execFile);
 const quiet = async (fn, fallback = null) => { try { return await fn(); } catch { return fallback; } };
@@ -107,7 +108,19 @@ const STILL_HERE = 6 * 60 * 1000;
 /** How often being about is written down. Rarely, because each one is a save. */
 const HEARTBEAT = 2 * 60 * 1000;
 
-const git = (...args) => run('git', args, { cwd: HERE, maxBuffer: 32 * 1024 * 1024 });
+/*
+ * The same way in as everything else here talks to GitHub.
+ *
+ * This used to call plain `git` directly, which quietly meant three things:
+ * the bundled runtime was not used, the account Viberant is signed in to was
+ * never offered, and the computer's own password store answered instead —
+ * with whoever was last signed in to *it*. On a computer where that is a
+ * different person, every write to the shared workspace was refused, and the
+ * page said what this computer wrote had not reached GitHub while every other
+ * GitHub feature worked perfectly. Same fault as sending a project had, same
+ * cure, and no second way of running git.
+ */
+const git = (...args) => gitRuntime.run(HERE, ...args);
 
 let lastBeat = 0;
 /**
@@ -505,12 +518,59 @@ async function push(why) {
 
   // Somebody else got there first. Take theirs, put ours on top, try once more.
   await pull();
-  if (await quiet(() => git('push', '--quiet'))) return { ok: true };
+  let said = '';
+  try {
+    await git('push', '--quiet');
+    return { ok: true };
+  } catch (e) {
+    said = String(e?.stderr ?? e?.message ?? '');
+  }
 
+  /*
+   * Why it would not go, rather than a guess about the network.
+   *
+   * The one answer this always gave was "check you are online", which is the
+   * wrong thing to tell somebody whose connection is fine — and it was almost
+   * always fine. The common cause is an account one: the shared workspace lives
+   * on the account it was made on, and Viberant is signed in as somebody else,
+   * so GitHub refuses. That is worth saying plainly, because the two things a
+   * person can do about it are completely different from waiting for a network.
+   */
+  const owner = await quiet(async () => (await git('remote', 'get-url', 'origin')).stdout.trim(), '')
+    .then((url) => String(url).match(/github\.com[/:]([^/]+)\//i)?.[1] ?? null);
+  const asWho = await quiet(async () => (await github.session())?.login ?? null, null);
+
+  if (/permission to .* denied|403|forbidden|repository not found|not found/i.test(said)) {
+    return {
+      ok: false,
+      sentence: owner && asWho && owner.toLowerCase() !== asWho.toLowerCase()
+        ? `The shared workspace is on the ${owner} account, and Viberant is signed in as ${asWho}.`
+        : 'GitHub would not accept what this computer wrote to the shared workspace.',
+      action: owner && asWho && owner.toLowerCase() !== asWho.toLowerCase()
+        ? `Switch to ${owner} from the account button, or make a workspace on ${asWho}. Nothing was lost — it is all still here.`
+        : 'Check that the account in use can write to the shared workspace.',
+    };
+  }
+  if (/could not resolve host|failed to connect|network is unreachable|timed out/i.test(said)) {
+    return {
+      ok: false,
+      sentence: 'What this computer wrote has not reached GitHub.',
+      action: 'This computer could not reach GitHub. It will go next time.',
+    };
+  }
+  if (/authentication failed|could not read username|terminal prompts disabled/i.test(said)) {
+    return {
+      ok: false,
+      sentence: 'GitHub did not accept who this computer says it is.',
+      action: 'Sign in to GitHub again from the account button, then check again.',
+    };
+  }
   return {
     ok: false,
     sentence: 'What this computer wrote has not reached GitHub.',
-    action: 'Check you are online — it will go next time.',
+    action: said.split('\n').map((one) => one.trim()).find((one) => one && !/^hint:/i.test(one))
+      ? `GitHub said: ${said.split('\n').map((one) => one.trim()).find((one) => one && !/^hint:/i.test(one)).replace(/^(remote|fatal|error):\s*/i, '').slice(0, 160)}`
+      : 'It will go next time.',
   };
 }
 

@@ -64,16 +64,34 @@ export async function run(dir, ...args) {
 
   const token = await signin.activeToken();
   const askpass = join(here, WINDOWS ? 'git-askpass.cmd' : 'git-askpass.sh');
+  const ours = !!token && existsSync(askpass);
   const env = {
     ...process.env,
     GIT_TERMINAL_PROMPT: '0',
-    ...(token && existsSync(askpass) ? {
+    ...(ours ? {
       GIT_ASKPASS: askpass,
       VIBERANT_GITHUB_TOKEN: token,
       VIBERANT_GITHUB_USER: 'x-access-token',
     } : {}),
   };
-  return execute(file, args, { cwd: dir || undefined, env, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
+
+  /*
+   * Ask us who this is, not the computer's password store.
+   *
+   * This is the whole of the "it made the project on GitHub and then sent
+   * nothing to it" fault, and nothing about it is visible from here. A password
+   * store is asked *before* the way we offer a token, and it answers — with
+   * whoever was last signed in to it, which on this computer was a different
+   * person entirely. GitHub then says *Repository not found*, because that is
+   * what it tells somebody asking for a project they cannot see, and the new
+   * project stayed empty while the words on the screen talked about the network.
+   *
+   * Cleared for the length of one command, and only when we have a token of our
+   * own to offer instead. Nothing on the computer changes, no other folder is
+   * touched, and anybody not signed in to Viberant keeps their usual helper.
+   */
+  const how = ours ? ['-c', 'credential.helper='] : [];
+  return execute(file, [...how, ...args], { cwd: dir || undefined, env, windowsHide: true, maxBuffer: 32 * 1024 * 1024 });
 }
 
 export async function global(...args) {

@@ -842,6 +842,48 @@ nav {
 .rail .panel .pick b,
 .rail .panel .sub { overflow-wrap: anywhere; }
 
+/*
+ * The menu is a fixed width and hides what sticks out sideways, which means
+ * anything too wide is not merely untidy — it is gone. And these rows were
+ * always too wide: a row is a flex line, a flex item will not shrink below the
+ * longest thing in it unless told it may, and so "Opens your browser with a
+ * code." sat on one unbreakable line and had its end cut off against the edge.
+ *
+ * Every part of a row may now shrink, and the explanation under each action is
+ * a line of its own rather than a tail on the end of the title — which is what
+ * it always read as anyway.
+ */
+/* A heading inside an answer: a line of its own, spaced away from what it introduces. */
+.ai-said .ai-head {
+  display: block;
+  margin: var(--s3) 0 var(--s1);
+  color: var(--ink);
+  font-weight: var(--w-semi);
+}
+.ai-said .ai-head:first-child { margin-top: 0; }
+.ai-said code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--hover);
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: .92em;
+  overflow-wrap: anywhere;
+}
+.ai-said strong { color: var(--ink); font-weight: var(--w-semi); }
+
+.rail .panel .pick { align-items: flex-start; min-width: 0; }
+.rail .panel .pick > * { min-width: 0; }
+.rail .panel .pick .grow { display: block; min-width: 0; }
+.rail .panel .sub {
+  display: block;
+  margin-top: 1px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+/* The mark beside an action keeps its size while the words beside it give way. */
+.rail .panel .pick > span:first-child:not(.grow) { flex: 0 0 auto; margin-top: 1px; }
+
 /* ------------------------------------------------------------------------- */
 /* The bar across the work                                                    */
 /*                                                                            */
@@ -1816,8 +1858,16 @@ h2:first-of-type { margin-top: 0; }
 .going b { color: var(--quiet); font-weight: var(--w-mid); }
 .going a { color: var(--vibe-b); text-decoration: none; }
 .going a:hover { text-decoration: underline; }
-.going .acts { display: flex; gap: var(--s2); margin-top: var(--s2); }
-.going span { overflow-wrap: anywhere; }
+.going .acts { display: flex; flex-wrap: wrap; gap: var(--s2); margin-top: var(--s2); min-width: 0; }
+.going span { min-width: 0; overflow-wrap: anywhere; }
+/*
+ * An owner and a project name is one long word to a browser, and this panel is
+ * narrow. Without somewhere to break, `codecrafters-io/build-your-own-x` pushed
+ * its own card wider than the column and sat across whatever was beside it.
+ * Every part of this may break mid-word, and the buttons wrap rather than push.
+ */
+.going, .going b, .going .mono { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+.going .acts > button { flex: 0 1 auto; max-width: 100%; white-space: normal; text-align: left; }
 
 /*
  * Held, rather than broken.

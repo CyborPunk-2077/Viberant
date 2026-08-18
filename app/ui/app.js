@@ -1414,14 +1414,56 @@ function showProposal(box, r) {
  * line, a numbered point, a bullet — because that is what these answers
  * actually contain, and anything more is a rendering engine nobody asked for.
  */
+/**
+ * What a model wrote, read as a person would read it.
+ *
+ * Models write `**Fix:**` and `### What I found`, and every one of those marks
+ * used to arrive on screen exactly as typed — asterisks, hashes and all — which
+ * makes a careful answer look like something that leaked out of a machine.
+ *
+ * **Everything is escaped first, and the marks are read afterwards, on the
+ * escaped text.** That order is the whole safety of it: by the time anything is
+ * looked for, there is no `<` left that came from the model, so nothing it says
+ * can become a tag. Only the few marks below are understood, and each one turns
+ * into one plain element this page already knows how to draw.
+ */
+const asRichText = (s) => esc(String(s ?? ''))
+  .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+  .replace(/\*\*([^\n]+?)\*\*/g, '<strong>$1</strong>')
+  .replace(/(^|[\s(])[*_]([^*_\n]+?)[*_](?=$|[\s).,!?:;])/g, '$1<em>$2</em>');
+
+/** A line that is only a heading — hashes, or a bolded line ending in a colon. */
+const headingIn = (line) => {
+  const hashed = line.match(/^\s*#{1,4}\s+(.*)$/);
+  if (hashed) return hashed[1].replace(/\s*#+\s*$/, '');
+  const bolded = line.match(/^\s*\*\*(.+?)\*\*:?\s*$/);
+  return bolded ? bolded[1] : null;
+};
+
 function asParagraphs(text) {
   return String(text ?? '').split(/\n{2,}/).map((para) => {
     const lines = para.split('\n').filter((l) => l.trim());
+    if (!lines.length) return '';
+
     const listed = lines.length > 1 && lines.every((l) => /^\s*(?:[-*•]|\d+[.)])\s/.test(l));
     if (listed) {
-      return `<ul>${lines.map((l) => `<li>${esc(l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, ''))}</li>`).join('')}</ul>`;
+      return `<ul>${lines.map((l) => `<li>${asRichText(l.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, ''))}</li>`).join('')}</ul>`;
     }
-    return `<p>${esc(para.trim())}</p>`;
+
+    // A heading on its own line, then whatever it introduces.
+    const out = [];
+    let run = [];
+    const flush = () => {
+      if (run.length) out.push(`<p>${asRichText(run.join(' ').trim())}</p>`);
+      run = [];
+    };
+    for (const line of lines) {
+      const head = headingIn(line);
+      if (head) { flush(); out.push(`<b class="ai-head">${asRichText(head)}</b>`); }
+      else run.push(line.trim());
+    }
+    flush();
+    return out.join('');
   }).join('');
 }
 
@@ -2369,6 +2411,15 @@ addEventListener('scroll', hideTip, { passive: true, capture: true });
 let lastDrawn = '';
 
 /**
+ * Which screen the last finished paint belonged to.
+ *
+ * Used to tell arriving somewhere new — where there is nothing yet, and waiting
+ * on a blank space is honest — apart from redrawing the screen somebody is
+ * already reading, where replacing it with an outline of itself is not.
+ */
+let lastPaintedTab = null;
+
+/**
  * The shape of what is coming, while it is still coming.
  *
  * Every screen here asks the manager something before it can draw, and until
@@ -2432,7 +2483,25 @@ async function drawOnce({ quietly = false } = {}) {
     // draws in two stages is never overwritten by a skeleton arriving late.
     let drawn = false;
     const before = view.innerHTML;
-    const waiting = setTimeout(() => {
+
+    /*
+     * An outline of the page, and only where there is no page yet.
+     *
+     * This is the whole of "everything vanishes for five seconds". Anything
+     * slower than a tenth of a second replaced the screen with its own outline
+     * — and pressing Deploy, or Save and send, or anything that talks to GitHub
+     * or to another computer, is *always* slower than that. So the reward for
+     * pressing a button was watching the page you were reading disappear, wait,
+     * and come back. The work was never the problem; showing nothing while it
+     * happened was.
+     *
+     * Now it only stands in for a screen that is not there yet: the first paint,
+     * or arriving on a tab you were not on. Redrawing a screen already in front
+     * of somebody leaves it in front of them, however long it takes, and what is
+     * running says so where it was started.
+     */
+    const already = lastPaintedTab === drawingTab && before.length > 200;
+    const waiting = already ? null : setTimeout(() => {
       if (!drawn && view.innerHTML === before) view.innerHTML = skeleton();
     }, HOLD_BACK);
 
@@ -2440,9 +2509,10 @@ async function drawOnce({ quietly = false } = {}) {
       await SCREENS[drawingTab]?.();
     } finally {
       drawn = true;
-      clearTimeout(waiting);
+      if (waiting) clearTimeout(waiting);
     }
 
+    lastPaintedTab = drawingTab;
     lastDrawn = view.innerHTML;
     paintNews();
     return;
@@ -2477,6 +2547,7 @@ async function drawOnce({ quietly = false } = {}) {
   }
   if (focusedId) $(`#${focusedId}`)?.focus?.();
 
+  lastPaintedTab = at.tab;
   lastDrawn = after;
   paintNews();
 }
@@ -4429,28 +4500,25 @@ async function showWhereItGoes() {
   }
   if (d.mismatch) {
     /*
-     * Two facts, then one thing to do — and the thing to do is about the
-     * project, not about the account.
+     * Where it came from, and where it is going — said, not asked.
      *
-     * Offering "switch to whoever owns this" is the wrong shape: it treats the
-     * account you deliberately signed in as as the thing that is wrong, and it
-     * is the one option that quietly changes what every *other* project here
-     * will do. Connecting this project to the account you are using changes one
-     * project, which is what somebody in this situation actually meant.
+     * This used to hold sending back and ask whether to connect a copy under
+     * the account in use. But pressing Save and send is that answer already,
+     * and asking it again left somebody holding a button that would not do what
+     * it said. Sending now puts the work on the account Viberant is signed in
+     * to, keeps where it came from inside the project, and never sends anything
+     * to the other account. So this says what will happen, and gets out of the
+     * way.
      */
-    box.className = 'going bad';
+    box.className = 'going';
     box.innerHTML = `
-      <b>Sending is held until these two agree.</b>
-      <span>This project goes to <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b></span>
-      <span>You are signed in as <b>${esc(d.session.login)}</b></span>
-      <span>Nothing has been changed, and nothing has been sent anywhere.</span>
+      <span>This came from <b class="mono">${esc(d.binding.owner)}/${esc(d.binding.repo)}</b>, which belongs to somebody else.</span>
+      <span>Sending puts it on your own account, as
+        <b class="mono">${esc(d.session.login)}/${esc(d.binding.repo)}</b>. Where it came from is kept in the project.</span>
       <span class="acts">
-        <button class="small" id="going-connect">Connect this project to ${esc(d.session.login)}</button>
-        <button class="quiet small" id="going-accounts">Accounts…</button>
+        <button class="quiet small" id="going-connect">Choose a different destination…</button>
       </span>`;
     $('#going-connect').onclick = () => connectProjectSheet(d);
-    $('#going-accounts').onclick = () => go('settings');
-    $('#pub').disabled = true;
     return;
   }
   if (d.needsRepo) {
@@ -7042,7 +7110,16 @@ async function drawLegacyWorkspace() {
         <button class="go" id="w-offer">Offer…</button>
       </div>
     </div>
-    ${saidHtml()}
+    ${/*
+      * One trouble, said once.
+      *
+      * The standing fault below and the passing message above are two different
+      * things that had become the same words: pressing Check again said what
+      * was wrong, and the page underneath said it too, so the screen carried
+      * the same sentence twice with two different endings. Whichever arrived
+      * second is the same news, so only the standing one is kept.
+      */
+    w.trouble && said?.sentence === w.trouble.sentence ? '' : saidHtml()}
     ${w.trouble ? `<div class="said bad"><b>${esc(w.trouble.sentence)}</b>
       <span>${esc(w.trouble.action ?? '')}</span>
       <span>Until this is fixed, your other computers cannot see this one at all.</span></div>` : ''}
@@ -9045,7 +9122,12 @@ async function drawAccountCenter() {
       </div>
 
       <div class="account-secondary-actions">
-        <button id="account-create-github">Create a GitHub account</button>
+        ${github.active
+    // Offering to make an account to somebody who is signed in reads as though
+    // the app cannot see them. What they might actually want here is a second
+    // account, which is a different sentence and a different button.
+    ? '<button id="account-github-add">Connect another account</button>'
+    : '<button id="account-create-github">Create a GitHub account</button>'}
         ${github.active ? '<button class="danger" id="account-github-out">Disconnect GitHub</button>' : ''}
         ${google.active ? '<button class="danger" id="account-google-out">Disconnect Google</button>' : ''}
       </div>
@@ -9053,7 +9135,8 @@ async function drawAccountCenter() {
 
   $('#account-github-in').onclick = () => signInToGitHub();
   $('#account-google-in').onclick = () => signInToGoogle({});
-  $('#account-create-github').onclick = () => post('/open/page', { at: 'https://github.com/signup' });
+  $('#account-create-github')?.addEventListener('click', () => post('/open/page', { at: 'https://github.com/signup' }));
+  $('#account-github-add')?.addEventListener('click', () => signInToGitHub());
   $('#account-github-out')?.addEventListener('click', async () => {
     say(await post('/github/signout', { name: github.active }));
     await refreshMe(); draw();

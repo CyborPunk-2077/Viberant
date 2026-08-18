@@ -875,6 +875,56 @@ export async function saveOnly(dir, message) {
   return { ok: true, saved: true, sentence: 'Saved on this computer.' };
 }
 
+/** Run something and keep what it said when it failed, rather than only that it did. */
+async function tried(what) {
+  try {
+    const out = await what();
+    return { ok: true, said: '', out };
+  } catch (e) {
+    return { ok: false, said: String(e?.stderr ?? e?.message ?? '') };
+  }
+}
+
+/**
+ * What actually went wrong, in the words of the thing that refused.
+ *
+ * "Check the network connection" was said for every failure here, and it was
+ * the wrong sentence nearly every time: a refused sign-in, a project somebody
+ * else owns and a genuinely lost network all read identically, so the one
+ * suggestion offered could not be followed. Git says which of those it was —
+ * this reads it and says so in the plain way.
+ */
+function whyItWouldNotGo(said, what, binding) {
+  const text = String(said ?? '');
+  const where = binding?.owner ? `${binding.owner}/${binding.repo}` : 'the copy on GitHub';
+  const stem = what === 'sent' ? 'Saved here, but it could not be sent' : 'Saved here, but the copy on GitHub could not be checked';
+
+  if (/could not resolve host|network is unreachable|failed to connect|timed out|temporary failure in name resolution/i.test(text)) {
+    return { sentence: `${stem} — this computer could not reach GitHub.`, action: 'Check the connection and try again. Your work is safe here.' };
+  }
+  if (/authentication failed|could not read username|invalid username or password|terminal prompts disabled/i.test(text)) {
+    return { sentence: `${stem} — GitHub did not accept who this computer says it is.`, action: 'Sign in to GitHub again from the account menu, then send it.' };
+  }
+  if (/repository not found|not found/i.test(text)) {
+    return { sentence: `${stem} — GitHub will not show ${where} to the account in use.`, action: 'It may be gone, or belong to another account. Connect the account that owns it, or send it to your own.' };
+  }
+  if (/permission to .* denied|403|forbidden|write access|protected branch/i.test(text)) {
+    return { sentence: `${stem} — the account in use is not allowed to write to ${where}.`, action: 'Ask whoever owns it for access, or send it to your own account instead.' };
+  }
+  if (/non-fast-forward|fetch first|rejected|behind its remote/i.test(text)) {
+    return { sentence: `${stem} — ${where} holds work this computer does not have.`, action: 'Get the latest first, then send. Nothing was overwritten.' };
+  }
+  if (/rate limit|too many requests/i.test(text)) {
+    return { sentence: `${stem} — GitHub is asking this computer to slow down.`, action: 'Wait a minute and send it again.' };
+  }
+  const first = text.split('\n').map((one) => one.trim())
+    .find((one) => one && !/^warning:/i.test(one) && !/^hint:/i.test(one));
+  return {
+    sentence: `${stem}.`,
+    action: first ? `GitHub said: ${first.replace(/^(remote|fatal|error):\s*/i, '').slice(0, 160)}` : 'Try it again in a moment. Your work is safe here.',
+  };
+}
+
 /**
  * Save and send through the bundled runtime.
  *
@@ -899,17 +949,41 @@ export async function saveAndSend(dir, { message, makeIfMissing = true, private:
   const now = binding.owner ? await session({ fresh: true }) : { signedIn: true, login: null };
   if (binding.owner && !now.signedIn) return { ...notSignedIn, saved: true, sent: false };
   const access = binding.owner ? await repoThere(binding.owner, binding.repo) : null;
+
+  /*
+   * Somebody else's address, and a decision that has already been made.
+   *
+   * A project taken from anywhere keeps the address it came from, and that
+   * address belongs to whoever it came from. This used to stop here and ask
+   * whether to connect a copy under the account in use — but pressing Save and
+   * send *is* that answer. Asking again is asking the same question twice, and
+   * the person is left holding a button that does not do what it says.
+   *
+   * So the work goes to the account Viberant is signed in to, made or reused
+   * under the same name, and where it came from is kept in the project rather
+   * than thrown away. Nothing is ever sent to the other account.
+   */
+  let movedTo = null;
   if (binding.owner && binding.owner.toLowerCase() !== now.login.toLowerCase() && !access?.canWrite) {
-    return {
-      ok: false, saved: true, sent: false, mismatch: true,
-      sentence: `Saved here, but this project belongs to ${binding.owner} on GitHub and Viberant is connected as ${now.login}.`,
-      action: 'Connect the account that has access, or make a separate copy under the account in use.',
-    };
+    const from = `${binding.owner}/${binding.repo}`;
+    let mine = await connectTo(dir, { name: binding.repo, session: now, private: isPrivate });
+
+    // One of that name already there holding unrelated work. Rather than ask a
+    // question with no good answer, a second name is chosen from where this one
+    // came from, which is both obvious to read and the same every time.
+    if (!mine.ok && mine.needsChoice) {
+      const other = `${binding.repo}-from-${binding.owner}`.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 90);
+      mine = await connectTo(dir, { name: other, session: now, private: isPrivate });
+    }
+    if (!mine.ok) return { ...mine, saved: true, sent: false };
+
+    binding = await bindingOf(dir);
+    movedTo = { owner: mine.owner ?? now.login, repo: mine.name ?? binding.repo, from };
   }
 
-  const fetched = await quiet(() => git(dir, 'fetch', '--quiet', 'origin'));
-  if (!fetched) {
-    return { ok: false, saved: true, sent: false, sentence: 'Saved here, but the GitHub copy could not be checked.', action: 'Check the network connection and try again.' };
+  const fetched = await tried(() => git(dir, 'fetch', '--quiet', 'origin'));
+  if (!fetched.ok) {
+    return { ok: false, saved: true, sent: false, ...whyItWouldNotGo(fetched.said, 'checked', binding) };
   }
 
   const branch = (await quiet(() => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim() || 'main';
@@ -933,19 +1007,45 @@ export async function saveAndSend(dir, { message, makeIfMissing = true, private:
     }
   }
 
-  const sent = await quiet(() => git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch));
-  if (!sent) {
+  const sent = await tried(() => git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch));
+  if (!sent.ok) {
+    return { ok: false, saved: true, sent: false, ...whyItWouldNotGo(sent.said, 'sent', binding) };
+  }
+
+  /*
+   * It is only sent when it is there.
+   *
+   * Saying so without looking is how "it made the project and sent nothing"
+   * went unnoticed: the command came back without complaining while the copy on
+   * GitHub stayed empty. One question to GitHub, asking whether the line we
+   * just sent is now there, costs nothing next to being wrong about this.
+   */
+  const landed = await quiet(() => git(dir, 'ls-remote', '--heads', 'origin', branch));
+  const arrived = !!landed?.stdout?.trim();
+
+  const where = binding.owner ? `${binding.owner}/${binding.repo}` : null;
+  if (!arrived) {
     return {
       ok: false, saved: true, sent: false,
-      sentence: 'Saved here, but GitHub did not accept it.',
-      action: 'Check that this account can write to the project, then try again.',
+      sentence: where
+        ? `Saved here, and GitHub accepted it, but ${where} does not show it yet.`
+        : 'Saved here, and it was accepted, but the copy does not show it yet.',
+      action: 'Open it on GitHub to see what is there before sending again.',
     };
   }
+
   return {
     ok: true,
     saved: true,
     sent: true,
-    sentence: binding.owner ? 'Saved here and sent to GitHub.' : 'Saved here and sent to the shared copy.',
+    where,
+    ...(movedTo ? { movedTo } : {}),
+    sentence: movedTo
+      ? `Saved here and sent to ${movedTo.owner}/${movedTo.repo}, on your own account.`
+      : where ? `Saved here and sent to ${where}.` : 'Saved here and sent to the shared copy.',
+    ...(movedTo ? {
+      action: `This project came from ${movedTo.from}, which belongs to somebody else, so it went to your account instead. Where it came from is kept in the project.`,
+    } : {}),
   };
 }
 
