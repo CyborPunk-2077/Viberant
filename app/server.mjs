@@ -581,6 +581,37 @@ const json = (res, body, code = 200) => {
   res.end(JSON.stringify(body));
 };
 
+/**
+ * Which copy of Viberant is answering, and what it has been asked lately.
+ *
+ * Two things kept being guessed at. The first is which process owns this port —
+ * an older installed copy has taken it more than once, and then everything is
+ * tested against code nobody changed. The second is worse: when a browser
+ * refuses to let a page on the internet talk to this computer, the page is told
+ * only "Failed to fetch" — no status, no reason, deliberately. From here it
+ * looks like nothing happened at all. So this writes down what actually
+ * arrived, and the page can ask. Nothing secret is kept: no code, no verifier,
+ * no token — only that a request of a certain shape came, and what went back.
+ */
+const BRIDGE_RUNTIME = 'r3';
+const STARTED_AT = new Date().toISOString();
+const bridgeTrace = [];
+
+/** The permission headers actually going back, by name and value. Never secrets. */
+const sentCors = (res) => ({
+  allowOrigin: res.getHeader('access-control-allow-origin') ?? null,
+  allowMethods: res.getHeader('access-control-allow-methods') ?? null,
+  allowHeaders: res.getHeader('access-control-allow-headers') ?? null,
+  allowCredentials: res.getHeader('access-control-allow-credentials') ?? null,
+  allowPrivateNetwork: res.getHeader('access-control-allow-private-network') ?? null,
+  vary: res.getHeader('vary') ?? null,
+});
+
+function traceCompanion(entry) {
+  bridgeTrace.push({ at: new Date().toISOString(), ...entry });
+  if (bridgeTrace.length > 60) bridgeTrace.splice(0, bridgeTrace.length - 60);
+}
+
 function companionCors(res, origin) {
   let allowed = false;
   try {
@@ -930,10 +961,36 @@ const routes = {
 
   async 'OPTIONS /web-companion/token'({ req, res }) {
     companionCors(res, req.headers.origin);
+    traceCompanion({ method: 'answered', route: '/web-companion/token', status: 204, sent: sentCors(res) });
     res.writeHead(204); res.end(); return null;
   },
 
   async 'OPTIONS /web-companion/call'({ req, res }) {
+    companionCors(res, req.headers.origin);
+    traceCompanion({ method: 'answered', route: '/web-companion/call', status: 204, sent: sentCors(res) });
+    res.writeHead(204); res.end(); return null;
+  },
+
+  /**
+   * What this computer saw, for the page that cannot see it.
+   *
+   * A browser tells a page "Failed to fetch" and nothing else — on purpose. So
+   * the page asks here instead, and learns whether its request ever arrived.
+   * Loopback only, no secrets, and it says which copy of Viberant answered so
+   * an older one holding this port cannot be mistaken for this one.
+   */
+  async 'GET /web-companion/trace'({ req, res }) {
+    companionCors(res, req.headers.origin);
+    return {
+      ok: true,
+      bridgeRuntime: BRIDGE_RUNTIME,
+      startedAt: STARTED_AT,
+      from: process.execPath,
+      seen: bridgeTrace.slice(-30),
+    };
+  },
+
+  async 'OPTIONS /web-companion/trace'({ req, res }) {
     companionCors(res, req.headers.origin);
     res.writeHead(204); res.end(); return null;
   },
@@ -942,6 +999,10 @@ const routes = {
     const origin = String(req.headers.origin ?? '');
     companionCors(res, origin);
     const token = await webcompanion.exchange({ ...body, origin });
+    traceCompanion({
+      method: 'answered', route: '/web-companion/token',
+      status: 200, outcome: token ? 'paired' : 'refused', sent: sentCors(res),
+    });
     return token
       ? { ok: true, ...token }
       : { ok: false, sentence: 'That companion pairing could not be completed.', action: 'Start the connection again from the web version.' };
@@ -3881,6 +3942,20 @@ const server = createServer(async (req, res) => {
     if (url.pathname === '/') return serveUi(res, 'shell.html');
     if (url.pathname.startsWith('/ui/')) return serveUi(res, url.pathname.slice(4));
     if (url.pathname === '/wall/picture') return servePicture(res);
+
+    // Written down before anything else can go wrong with it, so "the request
+    // never arrived" and "the request arrived and was refused" stop looking the
+    // same from the page that asked.
+    if (url.pathname.startsWith('/web-companion/')) {
+      traceCompanion({
+        method: req.method,
+        route: url.pathname,
+        origin: req.headers.origin ?? null,
+        wants: req.headers['access-control-request-method'] ?? null,
+        wantsHeaders: req.headers['access-control-request-headers'] ?? null,
+        wantsPrivateNetwork: req.headers['access-control-request-private-network'] ?? null,
+      });
+    }
 
     const route = routes[`${req.method} ${url.pathname}`];
     if (!route) { res.writeHead(404); return res.end(); }

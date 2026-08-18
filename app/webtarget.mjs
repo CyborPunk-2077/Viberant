@@ -102,10 +102,51 @@ function packageName(specifier) {
   return specifier.startsWith('@') ? parts.slice(0, 2).join('/') : parts[0];
 }
 
+/**
+ * Which build of the companion client a page is actually running.
+ *
+ * Bumped by hand when this file changes what the handshake does. It exists so
+ * "the deployed page is running the code I just wrote" can be *checked* rather
+ * than assumed from a file date — a hosted target keeps whatever client it was
+ * generated with, and that copy goes stale silently.
+ */
+const COMPANION_RUNTIME = 'r3';
+
 function companionClient(id) {
   return `const AGENT = 'http://127.0.0.1:7777';
 const PROJECT = '${id}';
+const RUNTIME = '${COMPANION_RUNTIME}';
+const MADE = '${new Date().toISOString()}';
 const KEY = 'viberant:companion:' + PROJECT;
+const RESULT = KEY + ':result';
+const LOG = KEY + ':log';
+
+/*
+ * What happened, in order, without anything secret in it.
+ *
+ * The handshake finishes in a different window from the one that started it,
+ * so when it goes wrong there is nobody watching the part that failed. Each
+ * step writes one line here, both windows share it, and ?companion_debug=1
+ * puts it on screen — which is the difference between "not connected" and
+ * knowing which of eight things did not happen.
+ */
+function note(step, detail) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LOG) || '[]');
+    all.push({ at: new Date().toISOString(), where: location.origin === AGENT ? 'approval' : 'page', step: step, detail: detail == null ? null : String(detail).slice(0, 200) });
+    localStorage.setItem(LOG, JSON.stringify(all.slice(-40)));
+  } catch (e) { void e; }
+  if (/[?&]companion_debug=1/.test(location.search)) console.log('[viberant-companion]', step, detail ?? '');
+}
+
+const channel = (() => { try { return new BroadcastChannel('viberant-companion:' + PROJECT); } catch (e) { void e; return null; } })();
+
+function announce(result) {
+  try { localStorage.setItem(RESULT, JSON.stringify({ ...result, at: Date.now() })); } catch (e) { void e; }
+  try { channel && channel.postMessage({ type: 'viberant-companion', ...result }); } catch (e) { void e; }
+  try { window.opener && window.opener.postMessage({ type: 'viberant-companion', ...result }, location.origin); } catch (e) { void e; }
+  note('announced', result.ok ? 'ok' : result.reason);
+}
 const bytes = (size = 32) => { const value = new Uint8Array(size); crypto.getRandomValues(value); return btoa(String.fromCharCode(...value)).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); };
 const digest = async (value) => { const data = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)); return btoa(String.fromCharCode(...new Uint8Array(data))).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/, ''); };
 
@@ -119,24 +160,54 @@ const HALF = KEY + ':pending';
 
 async function connect() {
   const verifier = bytes(48); const state = bytes(24); const challenge = await digest(verifier);
-  try { localStorage.setItem(HALF, JSON.stringify({ verifier, state, at: Date.now() })); } catch (e) { void e; }
+  const attempt = bytes(8);
+  try { localStorage.removeItem(RESULT); localStorage.setItem(LOG, '[]'); } catch (e) { void e; }
+  note('connect.begin', 'runtime ' + RUNTIME + ' attempt ' + attempt);
+  try { localStorage.setItem(HALF, JSON.stringify({ verifier, state, attempt, at: Date.now() })); } catch (e) { note('connect.storeFailed', e); }
   const back = location.origin + location.pathname;
   const url = new URL(AGENT + '/web-companion/pair');
   url.search = new URLSearchParams({ project: PROJECT, origin: location.origin, return: back, challenge, state });
+
   const opened = window.open(url, 'viberant-companion', 'popup,width=620,height=680');
+  note('connect.opened', opened ? 'popup' : 'blocked, using this tab');
   if (!opened) { location.href = url; return new Promise(() => {}); }
+
   return new Promise((resolve) => {
-    const stop = (result) => { clearInterval(tick); window.removeEventListener('message', heard); window.removeEventListener('storage', changed); resolve(result); };
-    const heard = (event) => { if (event.origin === location.origin && event.data?.type === 'viberant-companion') stop(event.data); };
-    // The approval finishes in the other window. It says so three ways, because
-    // any one of them can be missed: it tells us, the shared store changes, or
-    // the window simply goes away.
-    const changed = (event) => { if (event.key === KEY && event.newValue) stop({ ok: true }); };
+    const stop = (result) => {
+      clearInterval(tick);
+      window.removeEventListener('message', heard);
+      window.removeEventListener('storage', changed);
+      try { channel && channel.removeEventListener('message', broadcast); } catch (e) { void e; }
+      note('connect.settled', result.ok ? 'connected' : (result.reason || result.sentence));
+      resolve(result);
+    };
+    /*
+     * The approval finishes somewhere else, and any one way of hearing about it
+     * can be taken away: an opener is severed by a cross-origin hop, a popup is
+     * closed by hand, a message arrives before anyone is listening. So it is
+     * heard four ways and the first to arrive wins — and a *failure* is heard
+     * too, which is what stopped this waiting forever with nothing on screen.
+     */
+    const heard = (event) => { if (event.origin === location.origin && event.data && event.data.type === 'viberant-companion') stop(event.data); };
+    const broadcast = (event) => { if (event.data && event.data.type === 'viberant-companion') stop(event.data); };
+    const changed = (event) => {
+      if (event.key === KEY && event.newValue) stop({ ok: true });
+      if (event.key === RESULT && event.newValue) { try { stop(JSON.parse(event.newValue)); } catch (e) { void e; } }
+    };
     window.addEventListener('message', heard);
     window.addEventListener('storage', changed);
+    try { channel && channel.addEventListener('message', broadcast); } catch (e) { void e; }
+
+    let closedFor = 0;
     const tick = setInterval(() => {
       if (localStorage.getItem(KEY)) return stop({ ok: true });
-      if (opened.closed) return stop({ ok: false, sentence: 'The approval window closed before it finished.', action: 'Press Connect to try again.' });
+      let said = null;
+      try { said = JSON.parse(localStorage.getItem(RESULT) || 'null'); } catch (e) { void e; }
+      if (said) return stop(said);
+      // A closed window is only bad news once it has had a moment to say so.
+      if (opened.closed && (closedFor += 400) > 1600) {
+        return stop({ ok: false, reason: 'approval-window-closed', sentence: 'The approval window closed before it finished.', action: 'Press Connect to try again.' });
+      }
     }, 400);
   });
 }
@@ -144,20 +215,116 @@ async function connect() {
 async function completePairing() {
   const at = new URL(location.href); const code = at.searchParams.get('viberant_code');
   if (!code) return null;
-  let half = null;
-  try { half = JSON.parse(localStorage.getItem(HALF) || 'null'); } catch (e) { void e; }
-  const state = at.searchParams.get('viberant_state');
   const clean = () => { at.searchParams.delete('viberant_code'); at.searchParams.delete('viberant_state'); history.replaceState({}, '', at); };
-  if (!half || state !== half.state) { clean(); return { ok: false, sentence: 'That approval did not match this page.', action: 'Press Connect and approve it again.' }; }
 
-  const response = await fetch(AGENT + '/web-companion/token', { method: 'POST', mode: 'cors', targetAddressSpace: 'local', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, verifier: half.verifier }) });
-  const result = await response.json();
-  if (result.ok) localStorage.setItem(KEY, result.token);
-  try { localStorage.removeItem(HALF); } catch (e) { void e; }
+  let half = null;
+  try { half = JSON.parse(localStorage.getItem(HALF) || 'null'); } catch (e) { note('callback.halfUnreadable', e); }
+  const state = at.searchParams.get('viberant_state');
+  note('callback.arrived', 'opener ' + (window.opener ? 'present' : 'severed') + ', half ' + (half ? 'found' : 'missing'));
+
+  if (!half) { clean(); const out = { ok: false, reason: 'pkce-half-missing', sentence: 'This page could not find the request it started.', action: 'Press Connect and approve it again.' }; announce(out); return out; }
+  if (state !== half.state) { clean(); const out = { ok: false, reason: 'state-mismatch', sentence: 'That approval did not match this page.', action: 'Press Connect and approve it again.' }; announce(out); return out; }
+
+  /*
+   * The one request that crosses from a page on the internet to this computer.
+   *
+   * It can be refused by the browser rather than by Viberant — a page served
+   * over https asking something of a local address is exactly the shape modern
+   * browsers ask about, and when they refuse it this throws. Unhandled, that
+   * ended the handshake in silence: the window that had the answer stopped
+   * without telling anyone, and the window waiting for it waited forever. So
+   * the reason is caught, kept, and said out loud to both.
+   */
+  /*
+   * The exchange, asked for in the plainest way a browser offers.
+   *
+   * It used to carry targetAddressSpace 'local' — a setting from a proposal
+   * for reaching this computer that browsers have since changed their minds
+   * about twice. A browser that still enforces the old meaning refuses the
+   * whole request before sending it, and what a page is told when that happens
+   * is "Failed to fetch" and nothing else. So the ordinary request is tried
+   * first, the older shape only if that fails, and which one worked is written
+   * down — because the difference is the answer.
+   */
+  const shapes = [
+    ['plain', { method: 'POST', mode: 'cors', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, verifier: half.verifier }) }],
+    ['address-space', { method: 'POST', mode: 'cors', targetAddressSpace: 'local', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, verifier: half.verifier }) }],
+  ];
+
+  let result; let response = null; let lastError = null;
+  try {
+    for (const [name, options] of shapes) {
+      try {
+        response = await fetch(AGENT + '/web-companion/token', options);
+        note('callback.exchange', name + ' → HTTP ' + response.status);
+        break;
+      } catch (e) {
+        lastError = e; response = null;
+        note('callback.exchangeRefused', name + ' → ' + String(e && e.message ? e.message : e).slice(0, 90));
+      }
+    }
+    if (!response) throw lastError ?? new Error('no answer');
+    if (!response.ok) {
+      clean();
+      const out = { ok: false, reason: 'exchange-http-' + response.status, sentence: 'Viberant did not accept the approval.', action: 'Press Connect and approve it again.' };
+      announce(out); return out;
+    }
+    result = await response.json();
+  } catch (e) {
+    clean();
+    // Did anything of ours reach the computer at all? That single fact splits
+    // "the browser never sent it" from "Viberant answered and the browser threw
+    // the answer away", which the page is otherwise never told.
+    let arrived = 'unknown';
+    try {
+      const seen = await (await fetch(AGENT + '/web-companion/trace')).json();
+      arrived = (seen.seen || []).some((one) => one.route === '/web-companion/token') ? 'yes' : 'no';
+      note('callback.bridgeSaw', 'token request arrived: ' + arrived + ', bridge ' + seen.bridgeRuntime);
+    } catch (e2) { note('callback.traceFailed', String(e2 && e2.message).slice(0, 80)); }
+
+    const out = {
+      ok: false, reason: 'bridge-unreachable',
+      sentence: 'This page could not reach Viberant on your computer.',
+      action: arrived === 'yes'
+        ? 'Viberant received it but your browser would not hand the answer back. The debug panel has the detail.'
+        : 'Check Viberant is open on this computer, then press Connect again.',
+      detail: String(e && e.message ? e.message : e).slice(0, 140) + ' (bridge saw it: ' + arrived + ')',
+    };
+    note('callback.exchangeThrew', out.detail);
+    announce(out); return out;
+  }
+
+  if (result && result.ok && result.token) {
+    localStorage.setItem(KEY, result.token);
+    try { localStorage.removeItem(HALF); } catch (e) { void e; }
+    note('callback.stored', 'session kept');
+  } else {
+    note('callback.refused', result && result.sentence);
+  }
   clean();
-  window.opener?.postMessage({ type: 'viberant-companion', ...result }, location.origin);
-  if (window.opener && result.ok) window.close();
+  announce(result && result.ok ? { ok: true } : { ok: false, reason: 'refused', sentence: (result && result.sentence) || 'The approval was not accepted.', action: (result && result.action) || 'Press Connect and approve it again.' });
+
+  // Terminal either way, so nobody is left looking at two pages that disagree.
+  if (result && result.ok) {
+    try { document.body && (document.body.dataset.viberantPaired = '1'); } catch (e) { void e; }
+    if (window.opener) setTimeout(() => { try { window.close(); } catch (e) { void e; } }, 400);
+  }
   return result;
+}
+
+/** Everything worth knowing about this page's handshake, with nothing secret in it. */
+function diagnostics() {
+  let log = []; let result = null;
+  try { log = JSON.parse(localStorage.getItem(LOG) || '[]'); } catch (e) { void e; }
+  try { result = JSON.parse(localStorage.getItem(RESULT) || 'null'); } catch (e) { void e; }
+  return {
+    runtime: RUNTIME, made: MADE, project: PROJECT, origin: location.origin, agent: AGENT,
+    session: localStorage.getItem(KEY) ? 'present' : 'missing',
+    half: localStorage.getItem(HALF) ? 'present' : 'missing',
+    broadcast: channel ? 'available' : 'unavailable',
+    opener: window.opener ? 'present' : 'severed',
+    lastResult: result, steps: log,
+  };
 }
 
 async function call(method, values = {}) {
@@ -169,8 +336,18 @@ async function call(method, values = {}) {
   } catch { return { ok: false, sentence: 'The desktop companion could not be reached.', action: 'Open Viberant on the desktop computer and try again.' }; }
 }
 
-window.ViberantCompanion = { connect, call, connected: () => !!localStorage.getItem(KEY) };
-completePairing();
+/** What the computer says it saw, asked for directly. Non-secret, loopback only. */
+async function bridge() {
+  try {
+    const r = await fetch(AGENT + '/web-companion/trace');
+    if (!r.ok) return { reachable: false, why: 'HTTP ' + r.status };
+    const seen = await r.json();
+    return { reachable: true, runtime: seen.bridgeRuntime, startedAt: seen.startedAt, seen: seen.seen || [] };
+  } catch (e) { return { reachable: false, why: String(e && e.message ? e.message : e).slice(0, 90) }; }
+}
+
+window.ViberantCompanion = { connect, call, connected: () => !!localStorage.getItem(KEY), diagnostics, bridge, runtime: RUNTIME };
+completePairing().catch((e) => note('callback.crashed', e && e.message));
 `;
 }
 
@@ -220,44 +397,12 @@ async function makeReactTarget(root, target, entry, source, report, architecture
   }, null, 2)}\n`, 'utf8');
   const mount = entry.text.match(/getElementById\(['"]([^'"]+)/)?.[1] || 'root';
   const wantsCompanion = architecture === 'WEB_COMPANION' || (!architecture && report.blockers.length);
-  const companion = wantsCompanion ? '  <script type="module" src="/viberant-companion.js"></script>\n' : '';
-  await writeFile(join(target, 'index.html'), `<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${basename(root).replace(/[<&]/g, '')}</title></head><body><div id="${mount}"></div>\n${companion}  <script type="module" src="/src/${entry.name}"></script>\n</body></html>\n`, 'utf8');
+  const companion = wantsCompanion
+    ? `  <script type="module" src="/viberant-companion.js"></script>\n${companionPill()}`
+    : '';
+  await writeFile(join(target, 'index.html'), `<!doctype html>\n<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>${basename(root).replace(/[<&]/g, '')}</title></head><body><div id="${mount}"></div>\n  <script type="module" src="/src/${entry.name}"></script>\n${companion}</body></html>\n`, 'utf8');
   await writeManifest(target, root, report, entry.name, architecture);
   return target;
-}
-
-async function makeCompanionShell(root, target, report) {
-  const id = await writeManifest(target, root, report, null, 'WEB_COMPANION');
-  await writeFile(join(target, 'index.html'), `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${basename(root).replace(/[<&]/g, '')} Web Companion</title><style>body{font:16px system-ui;background:#090c14;color:#eef0ff;margin:0;min-height:100vh;display:grid;place-items:center}main{width:min(42rem,calc(100% - 3rem));padding:2rem;border:1px solid #30364b;border-radius:16px;background:#111522}button{padding:.7rem 1rem;border:0;border-radius:8px;background:#7048e8;color:white}pre{white-space:pre-wrap;color:#b8c0d2}</style><main><small>WEB COMPANION</small><h1>${basename(root).replace(/[<&]/g, '')}</h1><p>This project relies on desktop capabilities. Its web version connects to Viberant for the explicitly approved adapters and leaves native work on your computer.</p><button id="connect">Connect to Viberant</button><button id="inspect">Check connection</button><pre id="status">Not connected.</pre></main><script type="module" src="./viberant-companion.js"></script><script type="module" src="./app.js"></script>`, 'utf8');
-  await writeFile(join(target, 'app.js'), `const status = document.querySelector('#status');
-const connect = document.querySelector('#connect');
-
-// What is true right now, said on arrival as well as after pressing anything.
-// A pairing that finished in this window lands a moment after the page does,
-// so this keeps looking for a short while rather than reporting the answer it
-// had before the answer arrived.
-const show = () => {
-  const on = ViberantCompanion.connected();
-  status.textContent = on ? 'Connected to Viberant.' : 'Not connected.';
-  connect.disabled = on;
-  connect.textContent = on ? 'Connected' : 'Connect to Viberant';
-  return on;
-};
-show();
-let waited = 0;
-const settling = setInterval(() => { waited += 300; if (show() || waited > 8000) clearInterval(settling); }, 300);
-
-connect.onclick = async () => {
-  status.textContent = 'Waiting for approval\\u2026';
-  const out = await ViberantCompanion.connect();
-  if (!show() && out?.sentence) status.textContent = out.sentence;
-};
-document.querySelector('#inspect').onclick = async () => {
-  const out = await ViberantCompanion.call('project.status');
-  status.textContent = out.ok ? JSON.stringify(out, null, 2) : out.sentence;
-};
-`, 'utf8');
-  return { target, id };
 }
 
 /** What an existing target says it is, read from its own manifest. */
@@ -408,15 +553,18 @@ export async function create(dir, { architecture = null } = {}) {
   }
   await mkdir(target, { recursive: false });
 
-  if (choice === 'WEB_COMPANION') {
-    await makeCompanionShell(root, target, report);
-    return {
-      ok: true, report: await analyze(root), root: target,
-      sentence: 'A Web Companion target was created, as chosen.',
-      action: 'Preview it and approve the connection to Viberant. Native-only capabilities remain on the desktop computer.',
-    };
-  }
-
+  /*
+   * Both shapes make the project's own web version. That is the whole of what
+   * this button says it does.
+   *
+   * Choosing Web Companion used to stop here and write a card that said the
+   * project relies on desktop capabilities — and that card *became* the site.
+   * Whatever the project actually was never got carried across, so pressing
+   * Deploy put a connection dialog online instead of the product. The companion
+   * is plumbing: it belongs inside the real web version, next to it, not
+   * instead of it. So the same target is built either way, and the difference
+   * is only whether the runtime that talks to this computer goes in with it.
+   */
   const react = reactEntries[0]
     ? await makeReactTarget(root, target, reactEntries[0], source, report, choice)
     : null;
@@ -427,15 +575,6 @@ export async function create(dir, { architecture = null } = {}) {
       action: report.blockers.length && choice !== 'STANDALONE_WEB'
         ? 'Install its existing web dependencies, preview it, and connect the desktop companion for approved native adapters.'
         : 'Install its existing web dependencies, preview it, then use Deploy when it looks right.',
-    };
-  }
-
-  if (report.web.category === 'DESKTOP_ONLY') {
-    await makeCompanionShell(root, target, report);
-    return {
-      ok: true, report: await analyze(root), root: target,
-      sentence: 'A truthful Web Companion target was created for this desktop-only project.',
-      action: 'Preview it and approve the connection to Viberant. Native-only capabilities remain on the desktop computer.',
     };
   }
 
@@ -452,8 +591,10 @@ export async function create(dir, { architecture = null } = {}) {
     }
 
     const styles = css.map((_one, i) => `<link rel="stylesheet" href="./style${i || ''}.css">`).join('\n  ');
-    const wantsCompanion = !choice && report.blockers.length;
-    const companion = wantsCompanion ? '  <script type="module" src="./viberant-companion.js"></script>\n' : '';
+    const wantsCompanion = choice === 'WEB_COMPANION' || (!choice && report.blockers.length);
+    const companion = wantsCompanion
+      ? `  <script type="module" src="./viberant-companion.js"></script>\n${companionPill()}`
+      : '';
     await writeFile(join(target, 'index.html'), `<!doctype html>
 <html lang="en">
 <head>
@@ -464,8 +605,8 @@ export async function create(dir, { architecture = null } = {}) {
 </head>
 <body>
   <main id="app" aria-live="polite"></main>
-${companion}
   <script src="./app.js"></script>
+${companion}
 </body>
 </html>\n`, 'utf8');
     await writeManifest(target, root, report, entry.name, choice);
@@ -480,22 +621,56 @@ ${companion}
     };
   }
 
-  if (choice === 'STANDALONE_WEB') {
-    // The isolated entry the earlier check saw could not be carried across
-    // whole. Nothing useful was written, so the empty folder goes too —
-    // leaving it would block the next attempt with a sentence about itself.
-    await rmdir(target).catch(() => null);
-    return {
-      ok: false, report,
-      sentence: 'No part of this project could be carried into a standalone web version whole.',
-      action: 'Separate the browser interface from the native work, or choose the Web Companion instead.',
-    };
-  }
-
-  await makeCompanionShell(root, target, report);
+  /*
+   * Nothing here could become a web version, and saying so is the only honest
+   * answer left.
+   *
+   * What used to happen instead was a card explaining that the project needs a
+   * desktop computer — written into an empty folder, previewed as though it
+   * were the project, and put online by Deploy as though the project were now
+   * live. It was not. A connection dialog with somebody's project name on it
+   * is not that project, and calling it one is the kind of false success this
+   * app is not allowed to hand anybody. So the empty folder goes, and what is
+   * missing is named.
+   */
+  await rmdir(target).catch(() => null);
+  const missing = report.blockers.slice(0, 3).map((one) => one.says);
   return {
-    ok: true, report: await analyze(root), root: target,
-    sentence: 'A Web Companion target was created for the compatible part of this desktop project.',
-    action: 'Preview it and connect Viberant for the approved desktop adapters. Add browser UI to expand the web experience.',
+    ok: false,
+    report,
+    needsWork: true,
+    sentence: 'This project has no browser interface that can be put online yet.',
+    action: (report.browserFiles ?? []).length
+      ? `Its browser-facing files still reach ${missing.join(', ') || 'this computer'}. Separate that part, then create the web version again.`
+      : 'Add the part people would see in a browser — a page and the code behind it — then create the web version again.',
   };
+}
+
+/**
+ * Where a web version says whether the desktop is there, kept small on purpose.
+ *
+ * The companion is something the application uses, not something it is. So this
+ * is a corner of the page rather than the page: the project renders as itself,
+ * and whatever needs this computer says so quietly beside it.
+ */
+function companionPill() {
+  return `  <div id="viberant-companion-state" hidden></div>
+  <style>#viberant-companion-state{position:fixed;right:12px;bottom:12px;z-index:2147483000;display:flex;align-items:center;gap:8px;padding:7px 11px;border:1px solid #2c3450;border-radius:999px;background:rgba(12,16,28,.92);color:#cbd3e6;font:500 12px/1 system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.28)}#viberant-companion-state[hidden]{display:none}#viberant-companion-state .dot{width:7px;height:7px;border-radius:50%;background:#59d98c}#viberant-companion-state.off .dot{background:#8b93a8}#viberant-companion-state button{padding:5px 10px;border:0;border-radius:999px;background:#6f52ff;color:#fff;font:inherit;cursor:pointer}</style>
+  <script type="module">
+    const box = document.querySelector('#viberant-companion-state');
+    const paint = () => {
+      if (!window.ViberantCompanion) return;
+      const on = window.ViberantCompanion.connected();
+      box.hidden = false;
+      box.className = on ? '' : 'off';
+      box.innerHTML = on
+        ? '<span class="dot"></span><span>Desktop connected</span>'
+        : '<span class="dot"></span><span>Desktop not connected</span><button type="button">Connect</button>';
+      const press = box.querySelector('button');
+      if (press) press.onclick = async () => { press.disabled = true; await window.ViberantCompanion.connect(); paint(); };
+    };
+    paint();
+    setInterval(paint, 1500);
+  </script>
+`;
 }

@@ -190,8 +190,22 @@ async function runSite(job, { dir, place }) {
 }
 
 async function toVercel(job, dir) {
-  jobs.step(job, 'Sending it to Vercel, which builds it and gives it an address.');
-  const out = await jobs.runInto(job, { file: 'vercel', args: ['--prod', '--yes'], cwd: dir });
+  /*
+   * The web version, when there is one — not the folder it was made from.
+   *
+   * A project that has been given a web target has two things in it: the
+   * desktop project, and the browser-safe version generated beside it. Sending
+   * the outer folder sends the first of those, which is the one that cannot run
+   * in a browser at all. Whatever shape was chosen — standalone, or a companion
+   * that talks back to this computer — the generated target is the thing meant
+   * to go online, so that is what goes.
+   */
+  const made = join(dir, 'web');
+  const from = existsSync(join(made, 'viberant-web-target.json')) ? made : dir;
+  jobs.step(job, from === made
+    ? 'Sending the web version to Vercel, which gives it an address.'
+    : 'Sending it to Vercel, which builds it and gives it an address.');
+  const out = await jobs.runInto(job, { file: 'vercel', args: ['--prod', '--yes'], cwd: from });
   if (!out.ok) {
     return jobs.end(job, {
       ok: false,

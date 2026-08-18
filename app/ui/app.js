@@ -393,45 +393,52 @@ async function openWhoPanel() {
   // Rolling them into one list made both sound like the same half-promise.
   const mark = (svg) => `<span style="display:grid;place-items:center;width:1.1rem">${svg}</span>`;
 
+  /*
+   * A row is a mark, a title and a line about it — three things, said as three
+   * things.
+   *
+   * The title used to be a bare piece of text with the explanation tucked in
+   * beside it, which meant nothing could lay them out: they ran together on one
+   * line, the line was longer than a menu of fixed width, and the end of every
+   * row was cut off against the edge. Now the title is an element of its own and
+   * the explanation sits under it, so wrapping is the normal case rather than
+   * something a stylesheet has to rescue.
+   */
+  const row = (title, about) => `<span class="grow"><b class="pick-title">${title}</b>${
+    about ? `<span class="sub">${about}</span>` : ''}</span>`;
+
   panel.innerHTML = `
     <div class="head">GitHub</div>
     ${signedIn ? g.accounts.map((a) => `
       <button class="pick ${a.active ? 'on' : ''}" data-gh-use="${esc(a.name)}">
         <span class="dot ${a.active ? 'live' : 'off'}"></span>
-        <span class="grow"><b>${esc(a.name)}</b><br>
-          <span class="sub">${a.active ? 'in use right now' : 'switch to this one'}</span></span>
+        ${row(esc(a.name), a.active ? 'in use right now' : 'switch to this one')}
       </button>`).join('')
-    : `<div class="pick"><span class="sub">Not signed in. Your work stays on this
-         computer until you are, and everything here still works without it.</span></div>`}
+    : `<div class="pick">${row('Not signed in', `Your work stays on this computer
+         until you are, and everything here still works without it.`)}</div>`}
 
     <button class="pick" id="gh-add">
       ${mark(GITHUB_MARK)}
-      <span class="grow">${signedIn ? 'Sign in to another account' : 'Sign in with GitHub'}
-        <span class="sub">Opens your browser with a code.</span></span></button>
+      ${row(signedIn ? 'Sign in to another account' : 'Sign in with GitHub', 'Opens your browser with a code.')}</button>
 
-    ${g.active ? `<button class="pick" id="gh-out"><span>↷</span>
-      <span class="grow">Sign ${esc(g.active)} out
-        <span class="sub">On this computer only. You can sign back in from here.</span></span></button>` : ''}
+    ${g.active ? `<button class="pick" id="gh-out"><span class="pick-mark">↷</span>
+      ${row(`Sign ${esc(g.active)} out`, 'On this computer only. You can sign back in from here.')}</button>` : ''}
 
     <div class="head">Google</div>
     ${me.google ? `
       <div class="pick on">
         <span class="dot live"></span>
-        <span class="grow"><b>${esc(me.google.email ?? me.google.name ?? 'signed in')}</b><br>
-          <span class="sub">a name on this computer, nothing more</span></span>
+        ${row(esc(me.google.email ?? me.google.name ?? 'signed in'), 'a name on this computer, nothing more')}
       </div>
-      <button class="pick" id="google-out"><span>↷</span>
-        <span class="grow">Sign out of Google
-          <span class="sub">On this computer only.</span></span></button>` : `
+      <button class="pick" id="google-out"><span class="pick-mark">↷</span>
+        ${row('Sign out of Google', 'On this computer only.')}</button>` : `
       <button class="pick" id="gh-google">
         ${mark(GOOGLE_MARK)}
-        <span class="grow">Sign in with Google
-          <span class="sub">Puts your name on this computer. Not where work is kept.</span></span></button>`}
+        ${row('Sign in with Google', 'Puts your name on this computer. Not where work is kept.')}</button>`}
 
     <hr>
-    <button class="pick" id="gh-name"><span>✎</span>
-      <span class="grow">Your name on saved work
-        <span class="sub">${esc(g.identity?.name || 'not set yet')}</span></span></button>`;
+    <button class="pick" id="gh-name"><span class="pick-mark">✎</span>
+      ${row('Your name on saved work', esc(g.identity?.name || 'not set yet'))}</button>`;
 
   // It was placed while it said "looking…". It is a different size now.
   if (!panel.hidden) placeFloating(panel);
@@ -7100,9 +7107,19 @@ async function drawLegacyWorkspace() {
         <p class="sub">This workspace was made on the GitHub account
           <b>${esc(w.account ?? 'unknown')}</b>. Folders move straight between your
           computers across this network — never through GitHub.</p>
-        ${w.mismatch ? `<p class="sub" style="color:var(--attention)">
-          You are signed in as <b>${esc(me.github ?? 'somebody else')}</b> right now, so this
-          computer cannot write to it. Switch account, or make a workspace on this one.</p>` : ''}
+        ${/*
+          * Two accounts, said as two accounts.
+          *
+          * A workspace belongs to whoever made it, and the account Viberant is
+          * signed in to is a separate thing that may differ — which is an
+          * ordinary arrangement, not a fault. Saying only one of them is how
+          * this page came to name the wrong owner.
+          */
+    w.workspaceGithub ? `<p class="sub ws-accounts">
+          <span>Workspace owner <b>${esc(w.owner ?? 'unknown')}</b></span>
+          <span>Workspace GitHub <b class="mono">${esc(w.workspaceGithub)}</b></span>
+          <span>Current Viberant GitHub <b>${esc(w.signedInAs ?? 'not signed in')}</b></span>
+        </p>` : ''}
       </div>
       <div class="acts">
         <button class="quiet small" id="legacy-back">\u2190 Workspaces</button>

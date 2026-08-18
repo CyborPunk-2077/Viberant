@@ -1,6 +1,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -37,9 +38,23 @@ describe('desktop to web analysis reports facts and never invents a translation'
     });
     const report = await analyze(at);
     assert.equal(report.web.category, 'DESKTOP_ONLY');
+
+    /*
+     * And nothing is made for it.
+     *
+     * This used to write a card saying the project relies on a desktop
+     * computer, and that card then *was* the web version: it was what Preview
+     * showed and what Deploy put online, under the project's own name. A
+     * connection dialog is not somebody's project, and putting it online is
+     * not putting their project online. With nothing here that a browser could
+     * show, the honest answer is to say so and leave no folder behind.
+     */
     const made = await create(at);
-    assert.equal(made.ok, true);
-    assert.match(await readFile(join(at, 'web', 'index.html'), 'utf8'), /Connect to Viberant/);
+    assert.equal(made.ok, false, 'a project with no browser surface was given a web version anyway');
+    assert.equal(made.needsWork, true);
+    assert.match(made.sentence, /no browser interface/i);
+    assert.ok(made.action, 'a refusal carries one thing to do');
+    assert.equal(existsSync(join(at, 'web')), false, 'an empty target was left behind to block the next attempt');
   });
 
   test('a browser surface that calls native features asks for adapters and a companion', async () => {

@@ -123,6 +123,10 @@ const HEARTBEAT = 2 * 60 * 1000;
 const git = (...args) => gitRuntime.run(HERE, ...args);
 
 let lastBeat = 0;
+
+/** How often it is worth asking GitHub for what other computers have written. */
+const PULL_EVERY = 15_000;
+let lastPull = 0;
 /**
  * The last reason this computer could not write, kept so the page can say it
  * even on the reads that do no work. A fault that only appears on the two
@@ -540,6 +544,17 @@ async function push(why) {
     .then((url) => String(url).match(/github\.com[/:]([^/]+)\//i)?.[1] ?? null);
   const asWho = await quiet(async () => (await github.session())?.login ?? null, null);
 
+  // Archived is not a permission problem and not a network one, and it is the
+  // only one of the three nobody can fix by signing in differently.
+  if (/archived so it is read-only|repository was archived/i.test(said)) {
+    const who = await belongsTo();
+    return {
+      ok: false,
+      sentence: `The shared workspace${who.workspaceGithub ? ` (${who.workspaceGithub})` : ''} is archived on GitHub, so nothing can be written to it.`,
+      action: 'Unarchive it in its GitHub settings, or make a new workspace. Everything on this computer is still here.',
+    };
+  }
+
   if (/permission to .* denied|403|forbidden|repository not found|not found/i.test(said)) {
     return {
       ok: false,
@@ -585,12 +600,45 @@ export async function sync({ machine, name = null, project = null, sharing = nul
     return { ok: false, sentence: 'This computer is not in a shared workspace yet.', action: 'Join one first.' };
   }
 
-  await pull();
+  /*
+   * Fetching from GitHub is not free, and this runs whenever the page is up.
+   *
+   * It used to happen on every single read. The page redraws on a timer, so
+   * every timer tick — and every click that reads the workspace — waited on a
+   * round trip to GitHub before anything could be shown. On the same network
+   * that is merely wasteful; from another country it is the four or five
+   * seconds that made every click feel broken, and it happened again the moment
+   * you clicked anything else. What is on the disk is what the last fetch
+   * brought, and it is good enough to draw; asking again is worth doing often,
+   * not constantly.
+   */
+  if (force || Date.now() - lastPull > PULL_EVERY) {
+    lastPull = Date.now();
+    await pull();
+  }
 
   const me = thisMachine(machine, name || (await marker())?.name);
   const due = force || sharing !== null || Date.now() - lastBeat > HEARTBEAT;
   let reached = null;
   let trouble = null;
+
+  /*
+   * A refusal we already have is not worth asking for again every few seconds.
+   *
+   * This workspace belongs to whoever made it, and the account Viberant is
+   * signed in to may be a different one — which is allowed, and is the case on
+   * this computer. GitHub then refuses the write. Retrying that on every
+   * heartbeat costs a failed round trip each time, which is slow in exactly the
+   * way this page was slow, and the answer never changes between one minute and
+   * the next. So it is remembered, said plainly, and asked again occasionally
+   * rather than constantly.
+   */
+  const barred = await whyItCannotWrite();
+  if (due && barred) {
+    lastTrouble = barred;
+    lastBeat = Date.now();
+    return { ok: true, reached: false, trouble: barred, ...(await belongsTo()), ...(await read(machine)) };
+  }
 
   if (due) {
     await mkdir(path.join(HERE, 'machines'), { recursive: true });
@@ -621,8 +669,59 @@ export async function sync({ machine, name = null, project = null, sharing = nul
     lastBeat = Date.now();
   }
 
-  return { ok: true, reached, trouble: trouble ?? lastTrouble, ...(await read(machine)) };
+  return { ok: true, reached, trouble: trouble ?? lastTrouble, ...(await belongsTo()), ...(await read(machine)) };
 }
+
+/**
+ * Who this workspace belongs to, and who Viberant is signed in as.
+ *
+ * Two different things, and conflating them is what made the page claim a
+ * workspace was on an account it was not. The workspace belongs to whoever made
+ * it — that fact lives in its own address and does not change — while the
+ * account in use here is whatever was last signed in to. Worked out once and
+ * kept, because it is a fact about a folder rather than a question for GitHub.
+ */
+let belonging = null;
+export async function belongsTo() {
+  if (!belonging) {
+    const url = await quiet(async () => (await git('remote', 'get-url', 'origin')).stdout.trim(), '');
+    const named = String(url ?? '').match(/github\.com[/:]([^/]+)\/([^/.]+)/i);
+    belonging = named ? { owner: named[1], repo: named[2] } : { owner: null, repo: null };
+  }
+  const signedInAs = await quiet(async () => (await github.session())?.login ?? null, null);
+  return {
+    owner: belonging.owner,
+    repo: belonging.repo,
+    workspaceGithub: belonging.owner && belonging.repo ? `${belonging.owner}/${belonging.repo}` : null,
+    signedInAs,
+    // Different accounts is an ordinary arrangement, not a fault. It only
+    // matters when this computer tries to write.
+    differentAccount: !!(belonging.owner && signedInAs
+      && belonging.owner.toLowerCase() !== signedInAs.toLowerCase()),
+  };
+}
+
+/** Whether writing is refused, remembered so it is not re-asked every beat. */
+let refusal = null;
+const ASK_AGAIN = 5 * 60_000;
+async function whyItCannotWrite() {
+  if (refusal && Date.now() - refusal.at < ASK_AGAIN) return refusal.why;
+  const who = await belongsTo();
+  if (!who.differentAccount) { refusal = null; return null; }
+
+  const access = await quiet(() => github.repoThere(who.owner, who.repo), null);
+  if (access?.canWrite) { refusal = null; return null; }
+
+  const why = {
+    sentence: `This workspace belongs to ${who.owner}. Connect an account with access to continue syncing.`,
+    action: `Viberant is signed in as ${who.signedInAs ?? 'another account'}. Everything on this computer is still safe here.`,
+  };
+  refusal = { at: Date.now(), why };
+  return why;
+}
+
+/** Asked again on purpose — after signing in or out, the answer may differ. */
+export function forgetWhoCanWrite() { refusal = null; belonging = null; }
 
 /**
  * The picture as it already is on this computer, with nothing asked of the
