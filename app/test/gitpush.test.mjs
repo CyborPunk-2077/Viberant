@@ -281,8 +281,20 @@ describe('a project that came from somebody else', () => {
       'https://github.com/SomebodyElse/borrowed.git');
     assert.equal(world.made.includes('YouHere/borrowed-mine'), true);
 
-    // And it arrived, in the history that stands in for the far end.
+    /*
+     * And **this save** arrived, not merely a line of that name.
+     *
+     * Asking whether the line exists is what let "it made the project and sent
+     * nothing" pass for a send: a line can be there for reasons that have
+     * nothing to do with the press. The far end has to hold the very save this
+     * computer meant to send, and the answer has to say which one that was.
+     */
+    const mine = (await run('git', ['rev-parse', 'HEAD'], { cwd: at })).stdout.trim();
     const there = join(over, 'YouHere', 'borrowed-mine.git');
+    const arrived = (await run('git', ['rev-parse', 'main'], { cwd: there })).stdout.trim();
+    assert.equal(arrived, mine, 'it reported a send while the far end held something else');
+    assert.equal(out.at, mine, 'the answer did not say which save went');
+    assert.equal(out.branch, 'main', 'it sent on a line the project is not on');
     assert.match((await run('git', ['log', '--format=%s'], { cwd: there })).stdout, /My own work/);
   });
 
@@ -423,6 +435,68 @@ describe('the account in use decides, and switching accounts changes nothing on 
   });
 });
 
+describe('the account in use is the account a send actually goes as', () => {
+  /**
+   * Held through the send itself, not through a helper that agrees with it.
+   *
+   * Everything about who this computer is used to be provable one function at a
+   * time while the button did something else. So this switches accounts and
+   * presses, and the far end decides who asked by the key that arrived —
+   * exactly as the real one does.
+   */
+  test('switching accounts changes where the next send lands, with no other step', async () => {
+    await connect([
+      { name: 'YouHere', key: 'key-for-you' },
+      { name: 'SomebodyElse', key: 'key-for-somebody' },
+    ], 'YouHere');
+
+    const first = await projectAt('two-accounts-one', { files: { 'x.txt': 'one\n' } });
+    const mine = await github.saveAndSend(first, { message: 'Mine', name: 'landed-on-mine' });
+    assert.equal(mine.ok, true, mine.sentence);
+    assert.equal(mine.where, 'YouHere/landed-on-mine');
+    assert.equal(world.made.includes('YouHere/landed-on-mine'), true,
+      'it was made on an account that is not the one in use');
+
+    await signin.switchTo('SomebodyElse');
+
+    const second = await projectAt('two-accounts-two', { files: { 'y.txt': 'two\n' } });
+    const theirs = await github.saveAndSend(second, { message: 'Theirs', name: 'landed-on-theirs' });
+    assert.equal(theirs.ok, true, theirs.sentence);
+    assert.equal(theirs.where, 'SomebodyElse/landed-on-theirs',
+      'the send used the account that was in use before the switch');
+    assert.equal(world.made.includes('SomebodyElse/landed-on-theirs'), true);
+    assert.equal(await remoteOf(second), 'https://github.com/SomebodyElse/landed-on-theirs.git');
+
+    // And the first project is untouched by any of it.
+    assert.equal(await remoteOf(first), 'https://github.com/YouHere/landed-on-mine.git');
+
+    await signin.switchTo('YouHere');
+  });
+
+  test('the same account after the book is read again from disk, not from memory', async () => {
+    // What a restart does: nothing is held, everything is read off the file.
+    github.forgetWho();
+    const before = (await signin.accounts()).active;
+    const named = (await github.session({ fresh: true })).login;
+    assert.equal(named, before, 'the screen and the send would have used two different accounts');
+
+    const dir = await projectAt('after-a-restart', { files: { 'z.txt': 'z\n' } });
+    const out = await github.saveAndSend(dir, { message: 'After', name: 'after-a-restart' });
+    assert.equal(out.ok, true, out.sentence);
+    assert.equal(out.where, `${named}/after-a-restart`);
+  });
+
+  test('a project already pointed at the account in use is never repointed by a send', async () => {
+    const dir = join(work, 'after-a-restart');
+    const was = await remoteOf(dir);
+    await writeFile(join(dir, 'z.txt'), 'z again\n');
+    const out = await github.saveAndSend(dir, { message: 'Again' });
+    assert.equal(out.ok, true, out.sentence);
+    assert.equal(out.movedTo, undefined, 'it moved a project that was already where it belongs');
+    assert.equal(await remoteOf(dir), was);
+  });
+});
+
 describe('a name already holding something else', () => {
   test('it is refused and another asked for, never worked around', async () => {
     await bareHolding('YouHere', 'taken', { 'unrelated.txt': 'nothing to do with it\n' });
@@ -443,6 +517,33 @@ describe('a name already holding something else', () => {
     assert.equal((await remotesOf(at)).includes('origin'), false,
       'it pointed the project at a destination it had just refused');
     assert.equal(world.made.includes('YouHere/taken-from-someone'), false);
+  });
+
+  /**
+   * A project full of somebody's work that GitHub says is nothing.
+   *
+   * GitHub works a project's size out on its own schedule, so one filled a
+   * minute ago reads as zero — and zero was being taken to mean *empty, take
+   * it*. The comparison of the two histories was skipped entirely, this folder
+   * was pointed at their work, and the only thing that stopped it being written
+   * over was the send afterwards refusing for a different reason. Found against
+   * real GitHub; held here so it cannot come back.
+   */
+  test('a full project that reports itself as nothing is still a collision', async () => {
+    await bareHolding('YouHere', 'looks-empty', { 'theirs.txt': 'real work\n' });
+    world.projects.set('youhere/looks-empty', {
+      owner: 'YouHere', name: 'looks-empty', size: 0, private: true, writers: [],
+    });
+    const before = await linesOn(join(over, 'YouHere', 'looks-empty.git'));
+
+    const at = await projectAt('wants-looks-empty', { files: { 'mine.txt': 'unrelated\n' } });
+    const out = await github.saveAndSend(at, { message: 'Mine', name: 'looks-empty' });
+
+    assert.equal(out.ok, false, 'a project reporting no size was treated as free to take');
+    assert.equal(out.nameTaken, true);
+    assert.deepEqual(await linesOn(join(over, 'YouHere', 'looks-empty.git')), before);
+    assert.equal((await remotesOf(at)).includes('origin'), false,
+      'the folder was pointed at somebody work on the strength of a reported size');
   });
 
   test('and no second name is invented on somebody behalf', async () => {

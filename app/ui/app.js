@@ -12,6 +12,7 @@
  */
 
 import * as wall from './wallpaper.js';
+import { bindTo } from './bind.js';
 
 const $ = (s) => document.querySelector(s);
 const view = $('#view');
@@ -61,6 +62,28 @@ Object.defineProperty(view, 'innerHTML', {
   },
   configurable: true,
 });
+
+/**
+ * Bind one action to one element, once, however many times a screen is drawn.
+ *
+ * **This is the other half of the saving above, and leaving it out cost four
+ * browser tabs for one press — then twelve.**
+ *
+ * Every screen writes its page and then binds what is on it. That was safe for
+ * as long as writing the page threw the old elements away, because the handlers
+ * went with them. The moment an identical page stopped being written, the
+ * elements survived — and the binding pass ran over them again anyway, adding a
+ * second handler, and a third. `onclick` overwrites and was unharmed;
+ * `addEventListener` accumulates, and one press of *Open on GitHub* opened as
+ * many tabs as the page had been drawn.
+ *
+ * So binding is idempotent here rather than by discipline: the handler bound
+ * last for a given element and kind is the only one there. A screen may be
+ * drawn a hundred times and one press is still one errand.
+ */
+function on(target, type, fn, options) {
+  return bindTo(typeof target === 'string' ? $(target) : target, type, fn, options);
+}
 
 /**
  * Asking the server something, and telling it to do something.
@@ -453,8 +476,8 @@ async function openWhoPanel() {
   }
 
   $('#gh-add').onclick = () => { closePanels(); signInToGitHub(); };
-  $('#gh-google')?.addEventListener('click', () => { closePanels(); signInToGoogle(); });
-  $('#google-out')?.addEventListener('click', async () => {
+  on($('#gh-google'), 'click', () => { closePanels(); signInToGoogle(); });
+  on($('#google-out'), 'click', async () => {
     closePanels();
     say(await post('/google/signout'));
     await refreshMe();
@@ -462,7 +485,7 @@ async function openWhoPanel() {
   });
   $('#gh-name').onclick = () => { closePanels(); identitySheet(g); };
 
-  $('#gh-out')?.addEventListener('click', async () => {
+  on($('#gh-out'), 'click', async () => {
     closePanels();
     const sure = await confirmThat({
       title: 'Sign out',
@@ -1909,7 +1932,7 @@ async function whatIsDifferent(m, w, about = null) {
     };
   }
 
-  $('#diff-sync')?.addEventListener('click', async () => {
+  on($('#diff-sync'), 'click', async () => {
     const b = $('#diff-sync');
     b.disabled = true;
     b.textContent = 'Bringing it over…';
@@ -2946,7 +2969,7 @@ SCREENS.home = async () => {
   $('#home-add').onclick = add;
   $('#home-add-card').onclick = add;
   $('#home-quick-add').onclick = add;
-  $('#home-add-empty')?.addEventListener('click', add);
+  on($('#home-add-empty'), 'click', add);
   $('#home-search').onclick = openPalette;
   $('#home-all-projects').onclick = async () => {
     at.inside = false;
@@ -2954,8 +2977,8 @@ SCREENS.home = async () => {
     await refreshMe();
     go('projects');
   };
-  $('#home-ask')?.addEventListener('click', () => go('ask'));
-  $('#home-terminal')?.addEventListener('click', () => go('terminals'));
+  on($('#home-ask'), 'click', () => go('ask'));
+  on($('#home-terminal'), 'click', () => go('terminals'));
   $('#home-workspace').onclick = () => go('workspace');
   $('#home-activity').onclick = () => go('activity');
   $('#home-github').onclick = () => fromGitHub();
@@ -3212,9 +3235,9 @@ SCREENS.projects = async () => {
     const path = await pickFolder({ title: 'Which folder is the project?', confirm: 'Open this folder' });
     if (path) await openProject(path);
   };
-  $('#p-add')?.addEventListener('click', addFolder);
-  $('#p-add-2')?.addEventListener('click', addFolder);
-  $('#p-cloud')?.addEventListener('click', fromGitHub);
+  on($('#p-add'), 'click', addFolder);
+  on($('#p-add-2'), 'click', addFolder);
+  on($('#p-cloud'), 'click', fromGitHub);
   $('#p-explore').onclick = openGitHubExplorer;
 
   // Narrowing a list is a thing you do to the page you are looking at, so it
@@ -3250,10 +3273,10 @@ SCREENS.projects = async () => {
   lastMarks = d.marks;
 
   const wireProjectFocus = (p) => {
-    $('#focus-open')?.addEventListener('click', () => openProject(p.path));
-    $('#focus-inspect')?.addEventListener('click', () => inspectProject(p));
-    $('#focus-reveal')?.addEventListener('click', () => post('/reveal', { path: p.path }));
-    $('#focus-more')?.addEventListener('click', (e) => {
+    on($('#focus-open'), 'click', () => openProject(p.path));
+    on($('#focus-inspect'), 'click', () => inspectProject(p));
+    on($('#focus-reveal'), 'click', () => post('/reveal', { path: p.path }));
+    on($('#focus-more'), 'click', (e) => {
       const room = e.currentTarget.getBoundingClientRect();
       menuAt({ x: room.right - 200, y: room.bottom + 6 }, moreForProject(p.path, !!p.private));
     });
@@ -4091,15 +4114,15 @@ SCREENS.ask = async () => {
     </div>`;
   said = null;
 
-  $('#ask-pick')?.addEventListener('click', chooseProjectForAssistant);
-  $('#ask-change-project')?.addEventListener('click', chooseProjectForAssistant);
-  $('#assistant-all-projects')?.addEventListener('click', chooseProjectForAssistant);
-  $('#assistant-view-projects')?.addEventListener('click', chooseProjectForAssistant);
-  $('#ai-pick')?.addEventListener('click', () => setUpAi());
-  $('#assistant-model-details')?.addEventListener('click', () => setUpAi());
-  $('#assistant-ai-settings')?.addEventListener('click', () => setUpAi());
-  $('#assistant-open-apps')?.addEventListener('click', () => go('apps'));
-  $('#assistant-new')?.addEventListener('click', () => {
+  on($('#ask-pick'), 'click', chooseProjectForAssistant);
+  on($('#ask-change-project'), 'click', chooseProjectForAssistant);
+  on($('#assistant-all-projects'), 'click', chooseProjectForAssistant);
+  on($('#assistant-view-projects'), 'click', chooseProjectForAssistant);
+  on($('#ai-pick'), 'click', () => setUpAi());
+  on($('#assistant-model-details'), 'click', () => setUpAi());
+  on($('#assistant-ai-settings'), 'click', () => setUpAi());
+  on($('#assistant-open-apps'), 'click', () => go('apps'));
+  on($('#assistant-new'), 'click', () => {
     const out = $('#ai-out');
     if (out) out.innerHTML = '';
     $('.assistant-panel')?.classList.remove('has-output');
@@ -4276,7 +4299,7 @@ async function drawOpenProject() {
 
           <section class="ref-project-overview">
             <div class="section-rubric"><span><b>Project overview</b><small>${esc(p.says || 'Ready to work')}</small></span><div class="acts"><button data-project-look="1">Inspect files</button><button data-project-jump="ask">AI Assistant</button></div></div>
-            <div class="ref-project-work"><div>${askPanel(p,{heading:'Project intelligence'})}</div><div class="save-console-v2"><div class="panel-title"><b>Git Push</b><span>${p.situation?.unsaved ? `${p.situation.unsaved} waiting` : 'Up to date'}</span></div><label class="field" for="msg">What did you do?</label><textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea><button class="go wide" id="pub">Git Push</button><div id="going" class="going"></div></div></div>
+            <div class="ref-project-work"><div>${askPanel(p,{heading:'Project intelligence'})}</div><div class="save-console-v2"><div class="panel-title"><b>Git Push</b><span id="push-state">${esc(pushState(p.situation))}</span></div><label class="field" for="msg">What did you do?</label><textarea id="msg" rows="3" placeholder="Made the sign-in page work"></textarea><button class="go wide" id="pub">Git Push</button><div id="going" class="going"></div></div></div>
           </section>
 
           <section class="project-sessions-v2 ref-project-sessions">
@@ -4320,15 +4343,15 @@ async function drawOpenProject() {
   $('#pd-reveal').onclick = () => post('/reveal', { path: p.dir });
   $('#pub').onclick = saveAndSend;
   $('#msg').onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveAndSend(); };
-  showWhereItGoes();
+  showWhereItGoes(p.dir);
   $('#more').onclick = () => gitHubSheet(p);
-  $('#p-explore-inline')?.addEventListener('click', openGitHubExplorer);
-  $('#p-yours-inline')?.addEventListener('click', fromGitHub);
-  $('#ref-launch-explorer')?.addEventListener('click', openGitHubExplorer);
-  $('#ref-explorer-search')?.addEventListener('click', openGitHubExplorer);
-  $('#ref-connect-github')?.addEventListener('click', () => gitHubSheet(p));
-  $('#ref-open-github')?.addEventListener('click', () => post('/open-outside', { url: binding.url }));
-  $('#ref-explorer-close')?.addEventListener('click', () => document.querySelector('.ref-project-layout')?.classList.add('explorer-closed'));
+  on($('#p-explore-inline'), 'click', openGitHubExplorer);
+  on($('#p-yours-inline'), 'click', fromGitHub);
+  on($('#ref-launch-explorer'), 'click', openGitHubExplorer);
+  on($('#ref-explorer-search'), 'click', openGitHubExplorer);
+  on($('#ref-connect-github'), 'click', () => gitHubSheet(p));
+  on($('#ref-open-github'), 'click', () => post('/open-outside', { url: binding.url }));
+  on($('#ref-explorer-close'), 'click', () => document.querySelector('.ref-project-layout')?.classList.add('explorer-closed'));
   /**
    * Which one is about to be asked, said before anybody asks it.
    *
@@ -4353,9 +4376,9 @@ async function drawOpenProject() {
     document.getElementById(b.dataset.projectScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   $('#platform-analyze').onclick = async () => { await get('/project/platforms?fresh=1'); draw(); };
-  $('#platform-deploy')?.addEventListener('click', () => go('ship'));
-  $('#platform-open-web')?.addEventListener('click', () => post('/open-outside', { url: platforms.web.at }));
-  $('#platform-open-root')?.addEventListener('click', () => post('/reveal', { path: platforms.web.root }));
+  on($('#platform-deploy'), 'click', () => go('ship'));
+  on($('#platform-open-web'), 'click', () => post('/open-outside', { url: platforms.web.at }));
+  on($('#platform-open-root'), 'click', () => post('/reveal', { path: platforms.web.root }));
   for (const b of document.querySelectorAll('[data-arch]')) b.onclick = () => {
     chosenArchitecture = b.dataset.arch;
     for (const other of document.querySelectorAll('[data-arch]')) other.classList.toggle('on', other === b);
@@ -4365,7 +4388,7 @@ async function drawOpenProject() {
    * a double click cannot start two of anything — and the server reuses a
    * preview already running rather than starting another.
    */
-  $('#platform-preview')?.addEventListener('click', async (e) => {
+  on($('#platform-preview'), 'click', async (e) => {
     const b = e.currentTarget;
     if (b.disabled) return;
     b.disabled = true;
@@ -4385,13 +4408,13 @@ async function drawOpenProject() {
       draw();
     }
   };
-  $('#platform-create')?.addEventListener('click', createWebTarget);
-  $('#platform-create-inline')?.addEventListener('click', createWebTarget);
+  on($('#platform-create'), 'click', createWebTarget);
+  on($('#platform-create-inline'), 'click', createWebTarget);
   for (const b of document.querySelectorAll('[data-platform-blocker]')) b.onclick = () => {
     const blocker = (platforms.blockers ?? []).find((one) => one.id === b.dataset.platformBlocker);
     inspect({ name: blocker.says, kind: 'Web adaptation detail', facts: blocker.files.map((file) => ({ label: 'Found in', value: file })) });
   };
-  $('#tidy')?.addEventListener('click', async () => {
+  on($('#tidy'), 'click', async () => {
     const sure = await confirmThat({
       title: 'Clear the list',
       what: 'Everything on this list stops being listed.',
@@ -4489,16 +4512,51 @@ async function openAgain(assistant) {
  *
  * Fetched after the page is drawn rather than before, because it asks GitHub
  * who you are and nothing else on this screen should wait for that.
+ *
+ * **Every answer is stamped with the project it is about.** It arrives a moment
+ * later than the page, and in that moment somebody can be looking at a
+ * different project — so an answer about the one they left is dropped rather
+ * than written under the name of the one they are on. Checking that the box is
+ * still on the page is not enough and used to be the whole guard: when a page
+ * is drawn again to the same words the very same box is still there.
  */
 let goingTo = null;
+let goingFor = null;
 
-async function showWhereItGoes() {
+/** What the line above the button says about where this project stands. */
+function pushState(situation) {
+  if (!situation?.tracked) return 'Not saved here yet';
+  if (situation.unsaved) return `${situation.unsaved} waiting`;
+  if (!situation.shared) return 'Not on GitHub yet';
+  if (situation.waitingToSend === null || situation.waitingToSend === undefined) return 'Never sent';
+  return situation.waitingToSend ? `${situation.waitingToSend} to send` : 'Up to date';
+}
+
+async function showWhereItGoes(forDir) {
   const box = $('#going');
   if (!box) return;
 
+  goingFor = forDir ?? null;
   const d = await get('/project/destination');
-  goingTo = d;
+
+  // Answered about somebody else's project, because the page moved on while
+  // this was in the air. Not this project's truth, so not shown as it.
+  const about = d.binding?.localRoot ?? null;
+  const same = (a, b) => String(a ?? '').replace(/[\/]+$/, '').toLowerCase()
+    === String(b ?? '').replace(/[\/]+$/, '').toLowerCase();
+  if (forDir && about && !same(about, forDir)) return;
+  if (forDir && goingFor && !same(goingFor, forDir)) return;
+
+  goingTo = { ...d, dir: about ?? forDir ?? null };
   if (!box.isConnected) return;
+
+  // The line above the button, once the account is known. A project bound to
+  // somebody else's account has not been published from here, whatever its own
+  // history says about being clean.
+  const state = $('#push-state');
+  if (state && d.plan === 'name') {
+    state.textContent = d.reason === 'another-account' ? 'Not on your account yet' : 'Not on GitHub yet';
+  }
 
   if (d.binding?.isWorkspace) {
     box.className = 'going bad';
@@ -4591,14 +4649,21 @@ async function saveAndSend() {
   button.disabled = true;
   button.textContent = 'Saving…';
 
-  // What the page said, handed back with the press. If the project has been
-  // repointed since this screen was drawn, the manager refuses rather than
-  // sending somewhere the person was never shown.
+  /*
+   * What the page said, handed back with the press.
+   *
+   * Two facts, and both are refused when they no longer hold: the project this
+   * screen was drawn for, and where that project was going. A page that has
+   * been left open while somebody opened another project cannot be allowed to
+   * send that other project's work, and the only thing that can tell the two
+   * apart is the screen saying which one it meant.
+   */
+  const dir = goingTo?.dir ?? null;
   const expect = goingTo?.binding?.bound
     ? `${goingTo.binding.owner}/${goingTo.binding.repo}` : null;
 
   const message = $('#msg').value.trim();
-  let out = await post('/publish', { message, expect });
+  let out = await post('/publish', { message, dir, expect });
 
   // A handful of tries, because each refusal is a real answer from GitHub about
   // that one name and the person is choosing the next one.
@@ -4618,7 +4683,7 @@ async function saveAndSend() {
       say(out.saved ? out : { ok: true, sentence: 'Nothing was sent, and nothing was changed.' });
       return draw();
     }
-    out = await post('/publish', { message, expect, name });
+    out = await post('/publish', { message, dir, expect, name });
   }
 
   say(out);
@@ -4965,13 +5030,13 @@ function whereBar(p) {
 }
 
 function wireWhereBar() {
-  $('#where-all')?.addEventListener('click', async () => {
+  on($('#where-all'), 'click', async () => {
     const path = await pickFolder({ title: 'Start everything in which folder?', confirm: 'Start in here' });
     if (!path) return;
     chosen.folder.all = path;
     draw();
   });
-  $('#where-clear')?.addEventListener('click', () => { delete chosen.folder.all; draw(); });
+  on($('#where-clear'), 'click', () => { delete chosen.folder.all; draw(); });
 }
 
 const whereFor = (id, p) => chosen.folder.all ?? p?.dir ?? null;
@@ -5436,7 +5501,7 @@ SCREENS.terminals = async () => {
     </div>`;
   said = null;
 
-  $('#t-pick')?.addEventListener('click', () => $('#where')?.click());
+  on($('#t-pick'), 'click', () => $('#where')?.click());
 
   for (const b of document.querySelectorAll('[data-stop-here]')) {
     b.onclick = async () => {
@@ -5447,7 +5512,7 @@ SCREENS.terminals = async () => {
 
   wireWhereBar();
 
-  $('#terminal-search')?.addEventListener('input', (event) => {
+  on($('#terminal-search'), 'input', (event) => {
     const query = event.target.value.trim().toLowerCase();
     for (const row of document.querySelectorAll('[data-terminal-choice]')) {
       row.hidden = query && !row.innerText.toLowerCase().includes(query);
@@ -5739,20 +5804,20 @@ SCREENS.ship = async () => {
       b.textContent = 'Copied';
     };
   }
-  $('#dep-platforms')?.addEventListener('click', async () => {
+  on($('#dep-platforms'), 'click', async () => {
     await go('projects');
     setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
   });
   // Deployment settings are who every deploy and release acts as — the
   // accounts part of Settings — not the general list of preferences.
-  $('#deploy-settings')?.addEventListener('click', () => { settingsPlace = 'accounts'; go('settings'); });
-  $('#deploy-new')?.addEventListener('click', () => document.getElementById('deploy-websites')?.scrollIntoView({ behavior: 'smooth' }));
+  on($('#deploy-settings'), 'click', () => { settingsPlace = 'accounts'; go('settings'); });
+  on($('#deploy-new'), 'click', () => document.getElementById('deploy-websites')?.scrollIntoView({ behavior: 'smooth' }));
   /*
    * "Open web target" opens the web target — running, in the browser, once
    * per press. Only when there is nothing to open yet does it go to the
    * Projects panel where one is configured.
    */
-  $('#deploy-adapt')?.addEventListener('click', async (e) => {
+  on($('#deploy-adapt'), 'click', async (e) => {
     if (platforms.web?.root) {
       const b = e.currentTarget;
       if (b.disabled) return;
@@ -5765,15 +5830,15 @@ SCREENS.ship = async () => {
     await go('projects');
     setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
   });
-  $('#deploy-guide')?.addEventListener('click', async () => {
+  on($('#deploy-guide'), 'click', async () => {
     await go('projects');
     setTimeout(() => document.getElementById('project-platforms')?.scrollIntoView({ behavior: 'smooth' }), 100);
   });
-  $('#deploy-inspect-project')?.addEventListener('click', () => go('projects'));
-  $('#deploy-inspector-close')?.addEventListener('click', () => document.querySelector('.ref-deploy-shell')?.classList.add('inspector-closed'));
+  on($('#deploy-inspect-project'), 'click', () => go('projects'));
+  on($('#deploy-inspector-close'), 'click', () => document.querySelector('.ref-deploy-shell')?.classList.add('inspector-closed'));
 
   for (const id of ['#dep-publish', '#dep-publish2']) {
-    $(id)?.addEventListener('click', () => firstTimeSheet());
+    on($(id), 'click', () => firstTimeSheet());
   }
 
   /**
@@ -5806,7 +5871,7 @@ SCREENS.ship = async () => {
     b.onclick = () => begin(b, '/ship/site', { place: b.dataset.site });
   }
 
-  $('#v-connect')?.addEventListener('click', () => connectVercel());
+  on($('#v-connect'), 'click', () => connectVercel());
 
   /**
    * Ask Vercel again, rather than trusting what was true twenty seconds ago.
@@ -5814,7 +5879,7 @@ SCREENS.ship = async () => {
    * The answer is kept for a moment so that drawing this page three times does
    * not ask three times. This is how somebody says "no, ask now".
    */
-  $('#v-again')?.addEventListener('click', async () => {
+  on($('#v-again'), 'click', async () => {
     const b = $('#v-again');
     b.disabled = true;
     b.textContent = 'Asking…';
@@ -5825,7 +5890,7 @@ SCREENS.ship = async () => {
     draw();
   });
 
-  $('#v-how')?.addEventListener('click', () => {
+  on($('#v-how'), 'click', () => {
     say({
       ok: false,
       sentence: 'The command that builds and uploads is not on this computer.',
@@ -5834,7 +5899,7 @@ SCREENS.ship = async () => {
     draw();
   });
 
-  $('#v-manage')?.addEventListener('click', async () => {
+  on($('#v-manage'), 'click', async () => {
     const sure = await confirmThat({
       title: `Stop acting as ${d.vercel?.login ?? 'this account'}?`,
       what: 'The token is removed from this computer, and nothing here can put a site online until another is added.',
@@ -6071,7 +6136,7 @@ async function paintJob({ again = true } = {}) {
       ? '<button class="small" id="job-why">Ask why this failed</button><div id="ai-out"></div>'
       : '';
     ask.style.display = worthAsking ? '' : 'none';
-    $('#job-why')?.addEventListener('click', () => {
+    on($('#job-why'), 'click', () => {
       askAssistant('explain', '/ai/explain', { job: watching });
     });
   }
@@ -6096,7 +6161,7 @@ async function paintJob({ again = true } = {}) {
   const more = $('#job-more');
   if (more && j.ok === false && !more.dataset.opened) { more.open = true; more.dataset.opened = '1'; }
 
-  $('#job-close')?.addEventListener('click', () => {
+  on($('#job-close'), 'click', () => {
     watching = null;
     stopWatchingJob();
     box.innerHTML = '';
@@ -6594,7 +6659,7 @@ async function manageWorkspace(t) {
 
   $('#ws-no').onclick = closeLayer;
 
-  $('[data-ws="rename"]')?.addEventListener('click', async () => {
+  on($('[data-ws="rename"]'), 'click', async () => {
     closeLayer();
     const name = await ask({
       title: 'Rename this workspace',
@@ -6607,9 +6672,9 @@ async function manageWorkspace(t) {
     draw();
   });
 
-  $('[data-ws="leave"]')?.addEventListener('click', () => leaveWorkspace(t));
+  on($('[data-ws="leave"]'), 'click', () => leaveWorkspace(t));
 
-  $('[data-ws="close"]')?.addEventListener('click', () => deleteWorkspace(t));
+  on($('[data-ws="close"]'), 'click', () => deleteWorkspace(t));
 }
 
 async function revokeDevice(one) {
@@ -7021,7 +7086,7 @@ async function drawLegacyWorkspace() {
       </div>`;
     said = null;
     $('#legacy-back').onclick = () => { workspacePlace = 'home'; draw(); };
-    $('#w-join')?.addEventListener('click', async () => {
+    on($('#w-join'), 'click', async () => {
       const b = $('#w-join');
       b.disabled = true;
       b.textContent = 'Joining…';
@@ -7227,8 +7292,8 @@ async function drawLegacyWorkspace() {
     say(r.ok === false ? r : (r.trouble ?? { ok: true, sentence: 'Checked. Everything this computer knows has gone out.' }));
     draw();
   };
-  $('#w-share-on')?.addEventListener('click', async () => { say(await post('/local/on')); await refreshMe(); draw(); });
-  $('#w-rename')?.addEventListener('click', async () => {
+  on($('#w-share-on'), 'click', async () => { say(await post('/local/on')); await refreshMe(); draw(); });
+  on($('#w-rename'), 'click', async () => {
     const name = await ask({
       title: 'Name this computer',
       label: 'What should your other computers call it?',
@@ -7287,7 +7352,7 @@ async function drawLegacyWorkspace() {
     ]);
   };
   $('#w-offer').onclick = offerMenu;
-  $('#w-offer-empty')?.addEventListener('click', offerMenu);
+  on($('#w-offer-empty'), 'click', offerMenu);
 
   for (const b of document.querySelectorAll('[data-offered-more]')) {
     const one = (w.offers ?? []).find((o) => o.id === b.dataset.offeredMore);
@@ -7551,14 +7616,14 @@ async function drawGitHubSettings() {
       : 'Nothing can be saved at all until this is set.',
     `<button class="small" id="gh-name">${g.identity?.name ? 'Change it' : 'Set it'}</button>`)}`;
 
-  $('#gh-out')?.addEventListener('click', async () => { say(await post('/github/signout')); await refreshMe(); draw(); });
-  $('#gh-in')?.addEventListener('click', () => signInToGitHub({}));
-  $('#gh-again')?.addEventListener('click', async () => {
+  on($('#gh-out'), 'click', async () => { say(await post('/github/signout')); await refreshMe(); draw(); });
+  on($('#gh-in'), 'click', () => signInToGitHub({}));
+  on($('#gh-again'), 'click', async () => {
     say(await post('/github/refresh', {}));
     await refreshMe();
     draw();
   });
-  $('#gh-add')?.addEventListener('click', () => signInToGitHub({}));
+  on($('#gh-add'), 'click', () => signInToGitHub({}));
   $('#gh-name').onclick = () => identitySheet(g);
   for (const b of box.querySelectorAll('[data-gh-use]')) {
     b.onclick = async () => {
@@ -7620,8 +7685,8 @@ async function drawGoogleSettings() {
     '<button class="small" id="goog-add">Add an account</button>',
   ) : ''}`;
 
-  $('#goog-in')?.addEventListener('click', () => signInToGoogle({}));
-  $('#goog-add')?.addEventListener('click', () => signInToGoogle({}));
+  on($('#goog-in'), 'click', () => signInToGoogle({}));
+  on($('#goog-add'), 'click', () => signInToGoogle({}));
   for (const b of box.querySelectorAll('[data-goog-use]')) {
     b.onclick = async () => {
       say(await post('/google/switch', { name: b.dataset.googUse }));
@@ -7684,8 +7749,8 @@ async function drawNewerSettings({ force = false } = {}) {
     '',
   )}`;
 
-  $('#newer-again')?.addEventListener('click', () => drawNewerSettings({ force: true }));
-  $('#newer-get')?.addEventListener('click', async () => {
+  on($('#newer-again'), 'click', () => drawNewerSettings({ force: true }));
+  on($('#newer-get'), 'click', async () => {
     if (!n.at) return;
     say(await post('/open/page', { at: n.at }));
     draw();
@@ -8319,13 +8384,13 @@ async function drawWorkspaceHome() {
   $('#home-join').onclick = joinWorkspace;
   $('#home-create-card').onclick = makeWorkspace;
   $('#home-join-card').onclick = joinWorkspace;
-  $('#home-quick-invite')?.addEventListener('click', inviteSomebody);
-  $('#home-quick-offer')?.addEventListener('click', offerSomething);
-  $('#home-quick-manage')?.addEventListener('click', () => manageWorkspace(t));
-  $('#home-activity-all')?.addEventListener('click', () => go('activity'));
+  on($('#home-quick-invite'), 'click', inviteSomebody);
+  on($('#home-quick-offer'), 'click', offerSomething);
+  on($('#home-quick-manage'), 'click', () => manageWorkspace(t));
+  on($('#home-activity-all'), 'click', () => go('activity'));
   $('#home-legacy').onclick = () => { workspacePlace = 'legacy'; draw(); };
   $('#home-view-all').onclick = () => document.querySelector('.wshome-carousel')?.scrollTo({ left: 9999, behavior: 'smooth' });
-  $('#home-open-active')?.addEventListener('click', async () => {
+  on($('#home-open-active'), 'click', async () => {
     workspacePlace = 'inside'; lookingAtProject = null; await draw();
   });
   const memberSearch = $('#workspace-member-search');
@@ -8601,17 +8666,17 @@ SCREENS.workspace = async () => {
     (view.closest('main') || view).scrollTop = 0;
     draw();
   };
-  $('#ws-invite')?.addEventListener('click', inviteSomebody);
-  $('#ws-invite-person')?.addEventListener('click', inviteSomebody);
-  $('#ws-manage')?.addEventListener('click', () => manageWorkspace(t));
-  $('#ws-settings-tab')?.addEventListener('click', () => manageWorkspace(t));
-  $('#ws-leave')?.addEventListener('click', () => leaveWorkspace(t));
-  $('#ws-delete')?.addEventListener('click', () => deleteWorkspace(t));
-  for (const b of [$('#ws-offer'), $('#ws-offer-empty'), $('#ws-offer-project')]) b?.addEventListener('click', offerSomething);
-  $('#ws-github')?.addEventListener('click', () => { workspacePlace = 'legacy'; draw(); });
-  $('#ws-activity-all')?.addEventListener('click', () => go('activity'));
-  $('#ws-room-join')?.addEventListener('click', joinWorkspace);
-  $('#ws-room-join-link')?.addEventListener('click', joinWorkspace);
+  on($('#ws-invite'), 'click', inviteSomebody);
+  on($('#ws-invite-person'), 'click', inviteSomebody);
+  on($('#ws-manage'), 'click', () => manageWorkspace(t));
+  on($('#ws-settings-tab'), 'click', () => manageWorkspace(t));
+  on($('#ws-leave'), 'click', () => leaveWorkspace(t));
+  on($('#ws-delete'), 'click', () => deleteWorkspace(t));
+  for (const b of [$('#ws-offer'), $('#ws-offer-empty'), $('#ws-offer-project')]) on(b, 'click', offerSomething);
+  on($('#ws-github'), 'click', () => { workspacePlace = 'legacy'; draw(); });
+  on($('#ws-activity-all'), 'click', () => go('activity'));
+  on($('#ws-room-join'), 'click', joinWorkspace);
+  on($('#ws-room-join-link'), 'click', joinWorkspace);
   for (const b of document.querySelectorAll('[data-room-scroll]')) b.onclick = () => document.getElementById(b.dataset.roomScroll)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   for (const b of document.querySelectorAll('[data-room-workspace]')) b.onclick = async () => {
     if (b.classList.contains('on')) return;
@@ -8855,11 +8920,11 @@ function projectInWorkspace(p) {
 function wireProjectInWorkspace(p, t) {
   if (!p) return;
 
-  $('#ws-alone-invite')?.addEventListener('click', inviteSomebody);
-  $('#ws-alone-offer')?.addEventListener('click', offerSomething);
-  $('#ws-project-offer')?.addEventListener('click', offerSomething);
+  on($('#ws-alone-invite'), 'click', inviteSomebody);
+  on($('#ws-alone-offer'), 'click', offerSomething);
+  on($('#ws-project-offer'), 'click', offerSomething);
 
-  for (const open of [$('#ws-open'), $('#ws-open-secondary')]) open?.addEventListener('click', async () => {
+  for (const open of [$('#ws-open'), $('#ws-open-secondary')]) on(open, 'click', async () => {
     say(await post('/open', { path: p.mine.path }));
     await refreshMe();
     draw();
@@ -9107,13 +9172,13 @@ async function drawAccountCenter() {
 
   $('#account-github-in').onclick = () => signInToGitHub();
   $('#account-google-in').onclick = () => signInToGoogle({});
-  $('#account-create-github')?.addEventListener('click', () => post('/open/page', { at: 'https://github.com/signup' }));
-  $('#account-github-add')?.addEventListener('click', () => signInToGitHub());
-  $('#account-github-out')?.addEventListener('click', async () => {
+  on($('#account-create-github'), 'click', () => post('/open/page', { at: 'https://github.com/signup' }));
+  on($('#account-github-add'), 'click', () => signInToGitHub());
+  on($('#account-github-out'), 'click', async () => {
     say(await post('/github/signout', { name: github.active }));
     await refreshMe(); draw();
   });
-  $('#account-google-out')?.addEventListener('click', async () => {
+  on($('#account-google-out'), 'click', async () => {
     say(await post('/google/signout', { name: google.active }));
     await refreshMe(); draw();
   });
@@ -9246,7 +9311,7 @@ SCREENS.settings = async () => {
     b.onclick = () => { settingsPlace = b.dataset.place; draw(); };
   }
 
-  $('#diag')?.addEventListener('click', async () => {
+  on($('#diag'), 'click', async () => {
     const d = await get('/diagnostics');
     await navigator.clipboard?.writeText(JSON.stringify(d, null, 2));
     $('#diag').textContent = 'Copied';
@@ -9267,7 +9332,7 @@ SCREENS.settings = async () => {
    * one that could not tell you it had failed. This is the same dialog somebody
    * gets when they try to ask a question with nothing set up.
    */
-  $('#ai-setup-here')?.addEventListener('click', () => setUpAi());
+  on($('#ai-setup-here'), 'click', () => setUpAi());
   get('/ai').then((who) => {
     const line = $('#ai-here');
     if (!line) return;
@@ -9347,7 +9412,7 @@ SCREENS.settings = async () => {
       checkPictureReads({ fix: true });
     };
   }
-  $('[data-picture-off]')?.addEventListener('click', async () => {
+  on($('[data-picture-off]'), 'click', async () => {
     await post('/settings', { id: 'wallPicture', value: '' });
     await post('/settings', { id: 'appearance', value: 'dark' });
     await refreshMe();
@@ -9393,8 +9458,8 @@ SCREENS.settings = async () => {
     };
   }
 
-  $('#open-record')?.addEventListener('click', async () => { say(await post('/settings/openRecord')); draw(); });
-  $('#reset')?.addEventListener('click', async () => {
+  on($('#open-record'), 'click', async () => { say(await post('/settings/openRecord')); draw(); });
+  on($('#reset'), 'click', async () => {
     const sure = await confirmThat({
       title: 'Put every setting back',
       what: 'Every setting goes back to how it started.',
@@ -9891,8 +9956,8 @@ async function signInToGitHub({ inGate = false } = {}) {
         whenLayerCloses(() => {
           if (!stopping) detached = true;
         });
-        $('#in-again')?.addEventListener('click', () => post('/open/page', { at: openAt }));
-        $('#in-copy')?.addEventListener('click', async () => {
+        on($('#in-again'), 'click', () => post('/open/page', { at: openAt }));
+        on($('#in-copy'), 'click', async () => {
           await navigator.clipboard?.writeText(currentCode);
           $('#in-copy').textContent = 'Copied';
         });
@@ -10047,8 +10112,8 @@ async function signInToGoogle({ inGate = false } = {}) {
           clearInterval(watching);
           if (!stopping) post('/google/signin/stop');
         });
-        $('#g-again')?.addEventListener('click', () => post('/open/page', { at: openAt }));
-        $('#g-copy')?.addEventListener('click', async () => {
+        on($('#g-again'), 'click', () => post('/open/page', { at: openAt }));
+        on($('#g-copy'), 'click', async () => {
           await navigator.clipboard?.writeText(currentCode);
           $('#g-copy').textContent = 'Copied';
         });

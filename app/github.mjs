@@ -396,7 +396,10 @@ export async function repoThere(owner, name) {
     name: said.name ?? name,
     url: said.html_url ?? `https://github.com/${owner}/${name}`,
     branch: said.default_branch ?? null,
-    empty: Number(said.size ?? 0) === 0,
+    // What GitHub reports as a size, which is **not** whether it is empty:
+    // it is worked out on their own schedule and reads zero for a project that
+    // was filled a minute ago. Kept only as a hint; nothing decides on it.
+    reportedSize: Number(said.size ?? 0),
     // Whether this account may actually send to it. A project you can see and
     // cannot write to is worse than one that is not there, because everything
     // looks right until the moment it matters.
@@ -471,6 +474,42 @@ export async function howTheyCompare(gitRoot, remote) {
  * somebody's work used to go in order to make a send succeed is exactly the
  * quiet damage this product is not allowed to do.
  */
+/**
+ * Point a project at an address, keep the one it had, and **check it took**.
+ *
+ * Every one of these used to be run through the swallowing helper and none of
+ * their answers was read, so a project could be made on GitHub and this folder
+ * left pointing exactly where it was pointing before — with the whole errand
+ * still reporting that it had worked. That is the shape of "it made an empty
+ * project and sent nothing to it": the address it went on to send to was the
+ * old one all along.
+ *
+ * So the address is read back out of the project afterwards. What is on disk
+ * decides whether this worked, not whether a command declined to complain.
+ */
+async function pointAt(gitRoot, to, old) {
+  if (old && old !== to) {
+    // The conventional name, so anything else that opens this project reads
+    // the original source the way it expects to.
+    await quiet(() => git(gitRoot, 'remote', 'remove', 'upstream'));
+    await quiet(() => git(gitRoot, 'remote', 'add', 'upstream', old));
+  }
+  await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
+    || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+
+  const now = await originAddress(gitRoot);
+  return (now?.stdout.trim() ?? '') === to;
+}
+
+const notRepointed = (owner, name) => ({
+  ok: false,
+  madeButNotPointed: true,
+  owner,
+  name,
+  sentence: `${owner}/${name} was made on GitHub, but this folder could not be pointed at it, so nothing was sent.`,
+  action: 'Check the folder is not open in another program, then send again. The project on GitHub is empty and safe to reuse.',
+});
+
 export async function connectTo(gitRoot, { name, session: now, useExisting = null, private: isPrivate = true }) {
   if (workspace.isInsideWorkspace(gitRoot)) {
     return {
@@ -498,7 +537,17 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
       };
     }
 
-    const how = there.empty ? { ok: true, empty: true } : await howTheyCompare(gitRoot, to);
+    /*
+     * Always asked of the histories themselves.
+     *
+     * This used to skip the comparison whenever GitHub reported a size of
+     * zero, and GitHub reports zero for a project that was filled moments ago.
+     * So a project holding somebody's work read as empty, was treated as free
+     * to take, and this folder was quietly pointed at it — the very outcome
+     * every other line in here exists to prevent. Only Git can answer whether
+     * two histories have anything in common, so only Git is asked.
+     */
+    const how = await howTheyCompare(gitRoot, to);
 
     if (!how.ok) {
       return {
@@ -526,12 +575,8 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
       };
     }
 
-    if (old) {
-      await quiet(() => git(gitRoot, 'remote', 'remove', 'upstream'));
-      await quiet(() => git(gitRoot, 'remote', 'add', 'upstream', old));
-    }
-    await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
-      || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+    const pointed = await pointAt(gitRoot, to, old);
+    if (!pointed) return notRepointed(there.owner, there.name);
     await rememberDestination(gitRoot, there.owner, there.name);
     await useOwnCredentials(gitRoot);
 
@@ -568,12 +613,8 @@ export async function connectTo(gitRoot, { name, session: now, useExisting = nul
     };
   }
 
-  if (old) {
-    await quiet(() => git(gitRoot, 'remote', 'remove', 'upstream'));
-    await quiet(() => git(gitRoot, 'remote', 'add', 'upstream', old));
-  }
-  await quiet(() => git(gitRoot, 'remote', 'set-url', 'origin', to))
-    || await quiet(() => git(gitRoot, 'remote', 'add', 'origin', to));
+  const pointed = await pointAt(gitRoot, to, old);
+  if (!pointed) return notRepointed(now.login, name);
   await rememberDestination(gitRoot, now.login, name);
   await useOwnCredentials(gitRoot);
 
@@ -629,7 +670,7 @@ export async function connectExisting(gitRoot, { owner, repo }) {
   }
 
   const remote = `https://github.com/${owner}/${repo}.git`;
-  const compared = there.empty ? { ok: true, empty: true } : await howTheyCompare(at, remote);
+  const compared = await howTheyCompare(at, remote);
   if (!compared.ok) {
     return { ok: false, sentence: 'The shared GitHub project could not be read.', action: 'Check the connection and try again.' };
   }
@@ -642,14 +683,10 @@ export async function connectExisting(gitRoot, { owner, repo }) {
     };
   }
 
+  // The same one place, so this cannot report a connection it did not make.
   const old = await originAddress(at);
-  if (old?.stdout.trim() && old.stdout.trim() !== remote) {
-    await quiet(() => git(at, 'remote', 'remove', 'upstream'));
-    await quiet(() => git(at, 'remote', 'add', 'upstream', old.stdout.trim()));
-  }
-  const changed = await quiet(() => git(at, 'remote', 'set-url', 'origin', remote))
-    || await quiet(() => git(at, 'remote', 'add', 'origin', remote));
-  if (!changed) {
+  const pointed = await pointAt(at, remote, old?.stdout.trim() ?? null);
+  if (!pointed) {
     return { ok: false, sentence: 'This copy could not be connected to the shared GitHub project.', action: 'Try again.' };
   }
   // Written down as chosen, not merely arrived at. This is what later lets a
@@ -1047,11 +1084,14 @@ export async function saveAndSend(dir, {
 
   const saved = await saveOnly(dir, message);
   if (!saved.ok) return saved;
+  // Whether a new save was actually made. Reporting one that did not happen
+  // is the same untruth as reporting a send that did not happen.
+  const didSave = saved.saved === true;
 
   // The first save gives a folder a history, so the answer above can have
   // changed underneath us. Asked again rather than assumed.
   if (going.plan === 'name') going = await destinationFor(dir);
-  if (going.plan === 'refuse') return { ...going, ok: false, saved: true, sent: false };
+  if (going.plan === 'refuse') return { ...going, ok: false, saved: didSave, sent: false };
 
   /*
    * A destination on the account in use, made or reused under the name the
@@ -1071,7 +1111,7 @@ export async function saveAndSend(dir, {
     if (!mine.ok) {
       return {
         ...mine,
-        saved: true,
+        saved: didSave,
         sent: false,
         // A name problem has an answer the person can give; a lost network
         // does not, and must not be dressed up as one.
@@ -1085,12 +1125,37 @@ export async function saveAndSend(dir, {
 
   const binding = going.binding;
 
+  /*
+   * Which line this is on, asked of the project rather than assumed.
+   *
+   * `main` was the fallback for everything, and most projects taken from
+   * anywhere are on `master`. The two states below have no line at all and both
+   * used to fall through to a send that could only be wrong.
+   */
+  const onLine = (await quiet(() => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim() ?? '';
+  const here = (await quiet(() => git(dir, 'rev-parse', 'HEAD')))?.stdout.trim() ?? '';
+
+  if (!here) {
+    return {
+      ok: false, saved: didSave, sent: false,
+      sentence: 'There is nothing saved in this project yet, so there is nothing to send.',
+      action: 'Make a change and save it first.',
+    };
+  }
+  if (!onLine || onLine === 'HEAD') {
+    return {
+      ok: false, saved: didSave, sent: false,
+      sentence: 'This project is parked on one point in its own history rather than on a line, so nothing can be sent from it.',
+      action: 'Put it back on its usual line, then send it.',
+    };
+  }
+  const branch = onLine;
+
   const fetched = await tried(() => git(dir, 'fetch', '--quiet', 'origin'));
   if (!fetched.ok) {
-    return { ok: false, saved: true, sent: false, ...whyItWouldNotGo(fetched.said, 'checked', binding) };
+    return { ok: false, saved: didSave, sent: false, ...whyItWouldNotGo(fetched.said, 'checked', binding) };
   }
 
-  const branch = (await quiet(() => git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')))?.stdout.trim() || 'main';
   const remoteRef = `origin/${branch}`;
   const remoteExists = !!(await quiet(() => git(dir, 'rev-parse', '--verify', remoteRef)));
   if (remoteExists) {
@@ -1098,7 +1163,7 @@ export async function saveAndSend(dir, {
     const [behind = 0, ahead = 0] = counts?.stdout.trim().split(/\s+/).map(Number) ?? [];
     if (behind > 0 && ahead > 0) {
       return {
-        ok: false, saved: true, sent: false, diverged: true, behind, ahead,
+        ok: false, saved: didSave, sent: false, diverged: true, behind, ahead,
         sentence: `Saved here, but the GitHub copy and this computer both moved on independently.`,
         action: 'Get the latest with reapply, combine the two with an AI app, or create a review request on GitHub. Nothing was overwritten.',
       };
@@ -1106,43 +1171,49 @@ export async function saveAndSend(dir, {
     if (behind > 0) {
       const moved = await quiet(() => git(dir, 'merge', '--ff-only', remoteRef));
       if (!moved) {
-        return { ok: false, saved: true, sent: false, sentence: 'The GitHub copy is ahead and could not be brought in safely.', action: 'Open the project and review what changed before sending.' };
+        return { ok: false, saved: didSave, sent: false, sentence: 'The GitHub copy is ahead and could not be brought in safely.', action: 'Open the project and review what changed before sending.' };
       }
     }
   }
 
+  // What is being sent, read after any bringing-in above may have moved it.
+  const intended = (await quiet(() => git(dir, 'rev-parse', 'HEAD')))?.stdout.trim() || here;
+
   const sent = await tried(() => git(dir, 'push', '--quiet', '--set-upstream', 'origin', branch));
   if (!sent.ok) {
-    return { ok: false, saved: true, sent: false, ...whyItWouldNotGo(sent.said, 'sent', binding) };
+    return { ok: false, saved: didSave, sent: false, ...whyItWouldNotGo(sent.said, 'sent', binding) };
   }
 
   /*
-   * It is only sent when it is there.
+   * It is only sent when **that save** is there.
    *
-   * Saying so without looking is how "it made the project and sent nothing"
-   * went unnoticed: the command came back without complaining while the copy on
-   * GitHub stayed empty. One question to GitHub, asking whether the line we
-   * just sent is now there, costs nothing next to being wrong about this.
+   * Asking whether the line exists was not enough, and the difference is the
+   * whole of "it made the project and sent nothing": a line can be there
+   * because somebody else put it there, or because a previous attempt got
+   * halfway. So the far end is asked what that line points at, and it has to be
+   * the very save this computer meant to send. Anything else is not a send.
    */
-  const landed = await quiet(() => git(dir, 'ls-remote', '--heads', 'origin', branch));
-  const arrived = !!landed?.stdout?.trim();
+  const landed = await quiet(() => git(dir, 'ls-remote', 'origin', `refs/heads/${branch}`));
+  const arrivedAt = landed?.stdout?.trim().split(/\s+/)[0] ?? '';
 
   const where = binding.owner ? `${binding.owner}/${binding.repo}` : null;
-  if (!arrived) {
+  if (arrivedAt !== intended) {
     return {
-      ok: false, saved: true, sent: false,
+      ok: false, saved: didSave, sent: false,
       sentence: where
-        ? `Saved here, and GitHub accepted it, but ${where} does not show it yet.`
-        : 'Saved here, and it was accepted, but the copy does not show it yet.',
-      action: 'Open it on GitHub to see what is there before sending again.',
+        ? `Saved here, and GitHub accepted it, but ${where} does not hold this save yet.`
+        : 'Saved here, and it was accepted, but the copy does not hold this save yet.',
+      action: 'Open it on GitHub to see what is there before sending again. Nothing here was changed.',
     };
   }
 
   return {
     ok: true,
-    saved: true,
+    saved: didSave,
     sent: true,
     where,
+    at: intended,
+    branch,
     ...(movedTo ? { movedTo } : {}),
     sentence: movedTo
       ? `Saved here and sent to ${movedTo.owner}/${movedTo.repo}, on your own account.`

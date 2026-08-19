@@ -2699,21 +2699,46 @@ const routes = {
    * A destination the account in use does not own is not a failure and not a
    * guess: the page is told a name is needed and asks for one, and until it
    * comes back nothing in the project has been touched.
+   *
+   * **What happened is never written over by how things stand.** The screen's
+   * own picture used to be spread on top of the answer, and it carries a key of
+   * the same name — so "nothing was saved" came back as the words "Saved 14
+   * years ago", and any future field of the same name would have quietly turned
+   * a refusal into a success. The picture goes underneath now, always.
    */
   async 'POST /publish'({ body }) {
     if (!current) return noProject;
 
+    /*
+     * The project the page was looking at when it pressed.
+     *
+     * Handed back with the press, and refused when it is not the project this
+     * manager has open. Two screens' worth of GitHub state cannot be told apart
+     * from inside one of them, and sending somebody's work because a stale page
+     * asked for it is the worst version of that.
+     */
+    const meant = String(body?.dir ?? '').trim();
+    const sameFolder = (a, b) => resolve(String(a)).toLowerCase() === resolve(String(b)).toLowerCase();
+    if (meant && !sameFolder(meant, current.dir)) {
+      return {
+        ...(await routes['GET /project']()),
+        ok: false,
+        sentence: `The open project is ${current.name}, not the one that page was showing.`,
+        action: 'Look at the project on screen, then send it again.',
+      };
+    }
+
     const going = await github.destinationFor(current.dir, { fresh: true });
     if (going.plan === 'refuse') {
-      return { ...going, ok: false, ...(await routes['GET /project']()) };
+      return { ...(await routes['GET /project']()), ...going, ok: false };
     }
     if (body.expect && going.binding?.bound
       && `${going.binding.owner}/${going.binding.repo}` !== body.expect) {
       return {
+        ...(await routes['GET /project']()),
         ok: false,
         sentence: `This project now sends to ${going.binding.owner}/${going.binding.repo}, not where the page said.`,
         action: 'Look at where it is going, then send it again.',
-        ...(await routes['GET /project']()),
       };
     }
 
@@ -2721,12 +2746,12 @@ const routes = {
     const asked = String(body?.name ?? '').trim();
     if (asked && !/^[\w.-]+$/.test(asked)) {
       return {
+        ...(await routes['GET /project']()),
         ok: false,
         needsName: true,
         suggested: github.tidyName(asked),
         sentence: 'That name has characters GitHub will not accept.',
         action: 'Letters, numbers, dots and dashes.',
-        ...(await routes['GET /project']()),
       };
     }
 
@@ -2736,34 +2761,33 @@ const routes = {
       private: body.private !== false,
     });
     projects.forgetSituations();
-    return { ...r, destination: going.binding, ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), destination: going.binding, ...r };
   },
-
   async 'POST /github/save'({ body }) {
     if (!current) return noProject;
     const saved = await github.saveOnly(current.dir, body.message);
     projects.forgetSituations();
-    return { ...saved, ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), ...saved };
   },
   async 'POST /github/latest'() {
     if (!current) return noProject;
     const got = await github.getLatest(current.dir);
     projects.forgetSituations();
-    return { ...got, ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), ...got };
   },
   async 'POST /github/copy'({ body }) {
     if (!current) return noProject;
-    return { ...(await github.makeCopy(current.dir, { visibility: body.visibility })), ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), ...(await github.makeCopy(current.dir, { visibility: body.visibility })) };
   },
   async 'POST /github/visibility'({ body }) {
     if (!current) return noProject;
-    return { ...(await github.setVisibility(current.dir, body.visibility)), ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), ...(await github.setVisibility(current.dir, body.visibility)) };
   },
   async 'POST /github/undo'() {
     if (!current) return noProject;
     const undone = await github.undoLastSave(current.dir);
     projects.forgetSituations();
-    return { ...undone, ...(await routes['GET /project']()) };
+    return { ...(await routes['GET /project']()), ...undone };
   },
   async 'GET /github/history'() {
     if (!current) return { ok: true, saves: [] };

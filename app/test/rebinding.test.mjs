@@ -161,17 +161,44 @@ describe('what happens when a name is already taken', () => {
     assert.equal(/--force/.test(body), false, 'connecting a project can force a push');
   });
 
-  test('where it used to go is kept, both ways through', async () => {
+  test('where it used to go is kept, both ways through, in one place', async () => {
     const source = await readFile(new URL('../github.mjs', import.meta.url), 'utf8');
     const body = source.slice(source.indexOf('export async function connectTo'),
       source.indexOf('export async function accounts'));
-    // Once for the existing-repository path and once for the newly made one.
-    // Kept under the name every other tool expects to find it under, so a
-    // project Viberant repointed reads correctly to anything that opens it
-    // afterwards. What a person is told says no address at all.
-    assert.equal([...body.matchAll(/'remote', 'add', 'upstream'/g)].length >= 2, true,
-      'one of the two paths throws away where the work used to go');
-    assert.equal([...body.matchAll(/'remote', 'remove', 'upstream'/g)].length >= 2, true,
+
+    // Both branches — the one that reuses a project and the one that makes it —
+    // point the folder through the same function, so neither can grow its own
+    // idea of what to keep.
+    assert.equal([...body.matchAll(/await pointAt\(gitRoot, to, old\)/g)].length, 2,
+      'one of the two paths points the folder by itself');
+    assert.equal(/'remote', 'set-url'|'remote', 'add', 'origin'/.test(body), false,
+      'a branch writes the address directly, so it is not checked afterwards');
+
+    // And that one place keeps the old address under the name every other tool
+    // expects, then reads back what the project actually says.
+    const pointing = source.slice(source.indexOf('async function pointAt('),
+      source.indexOf('const notRepointed'));
+    assert.match(pointing, /'remote', 'add', 'upstream'/,
+      'where the work used to go is thrown away to make a send succeed');
+    assert.match(pointing, /'remote', 'remove', 'upstream'/,
       'a second attempt would fail on a name already taken in the project');
+    assert.match(pointing, /originAddress\(gitRoot\)/,
+      'nothing checks that pointing the folder actually took');
+  });
+
+  /**
+   * What GitHub calls a size is not whether a project is empty.
+   *
+   * It is worked out on their schedule and reads zero for one filled a minute
+   * ago. Deciding "empty, take it" on that skipped the only question that
+   * matters — whether the two histories have anything in common — and pointed
+   * somebody's folder at somebody else's work.
+   */
+  test('nothing decides a project is empty from what GitHub says its size is', async () => {
+    const source = await readFile(new URL('../github.mjs', import.meta.url), 'utf8');
+    assert.equal(/there\.empty/.test(source), false,
+      'a reported size is being read as whether a project is empty again');
+    assert.match(source, /const how = await howTheyCompare\(gitRoot, to\);/,
+      'the comparison of the two histories can still be skipped');
   });
 });
